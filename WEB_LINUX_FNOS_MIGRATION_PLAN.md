@@ -579,7 +579,8 @@ Validated in the current Linux environment:
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 40/40;
-  Server tests: 40/40, including the Data Protection service wiring test.
+  Server tests: 42/42, including the Data Protection service wiring test and
+  registry-level VLC/MPC adapter coverage.
   A Linux cross-target solution build with `EnableWindowsTargeting=true` also
   completed with 0 errors; its 58 existing nullable/analyzer warnings do not
   replace the WindowsDesktop runtime and WPF UI execution gates.

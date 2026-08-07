@@ -1043,6 +1043,34 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         }
     }
 
+    [Theory]
+    [InlineData("vlc")]
+    [InlineData("mpc")]
+    public async Task Media_source_registry_connects_http_player_adapters(string kind)
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions { ConfigRoot = Path.Combine(temp.Path, "config") };
+        await using var registry = new MediaSourceRegistry(storage,
+            NullLogger<MediaSourceRegistry>.Instance,
+            networkFactory: new StubNetworkFactory(),
+            secretProvider: _ => "test-token");
+        await registry.StartAsync(CancellationToken.None);
+
+        var result = await registry.CreateAsync(new MediaSourceDefinition(
+            kind, kind.ToUpperInvariant(), kind, "http://media.example.local",
+            DeviceId: "remote-player"));
+
+        Assert.Equal(MediaSourceOperationStatus.Success, result.Status);
+        Assert.True(result.Source!.Connected);
+        Assert.Equal("ready", result.Source.ImplementationStatus);
+        Assert.Equal("/media/remote.mp4", result.Source.MediaState!.Path);
+        Assert.Equal(2.5, result.Source.MediaState.PositionSeconds);
+        Assert.Equal(MediaSourceOperationStatus.Success, (await registry.PlayAsync(kind)).Status);
+        Assert.Equal(MediaSourceOperationStatus.Success, (await registry.PauseAsync(kind)).Status);
+        Assert.Equal(MediaSourceOperationStatus.Success,
+            (await registry.SeekAsync(kind, TimeSpan.FromSeconds(4))).Status);
+    }
+
     [Fact]
     public async Task Media_source_http_contract_exposes_capability_state_and_rejects_credentials()
     {
@@ -1401,7 +1429,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     {
         public NetworkMediaSourceAdapter Create(NetworkMediaSourceKind kind, Uri endpoint,
             string? token, string? deviceId = null, HttpMessageHandler? handler = null)
-            => new(kind, endpoint, token, deviceId, new StubNetworkHandler(),
+            => new(kind, endpoint, token, deviceId, new StubNetworkHandler(kind),
                 new NetworkMediaSourceAdapterOptions
                 {
                     PollInterval = TimeSpan.FromMilliseconds(100),
@@ -1412,14 +1440,34 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
     private sealed class StubNetworkHandler : HttpMessageHandler
     {
+        private readonly NetworkMediaSourceKind _kind;
+
+        public StubNetworkHandler(NetworkMediaSourceKind kind) => _kind = kind;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            var body = request.RequestUri?.AbsolutePath switch
+            var path = request.RequestUri?.AbsolutePath;
+            var body = _kind switch
             {
-                "/System/Ping" => "{}",
-                "/Sessions" => "[{\"Id\":\"session-1\",\"DeviceId\":\"browser-1\",\"PlayState\":{\"PositionTicks\":25000000,\"IsPaused\":false},\"NowPlayingItem\":{\"Id\":\"item-1\",\"Path\":\"/media/remote.mp4\",\"RunTimeTicks\":120000000}}]",
-                _ => "{}"
+                NetworkMediaSourceKind.Vlc => path switch
+                {
+                    "/requests/status.json" => "{\"apiversion\":4,\"state\":\"playing\",\"currentplid\":7,\"length\":12,\"time\":2.5,\"rate\":1}",
+                    "/requests/playlist.json" => "{\"children\":[{\"type\":\"leaf\",\"current\":\"current\",\"uri\":\"file:///media/remote.mp4\"}]}",
+                    _ => "{}"
+                },
+                NetworkMediaSourceKind.Mpc => path switch
+                {
+                    "/" => "<html>MPC-HC</html>",
+                    "/variables.html" => "<html><p id=\"state\">2</p><p id=\"filepath\">/media/remote.mp4</p><p id=\"duration\">12000</p><p id=\"position\">2500</p><p id=\"playbackrate\">1</p></html>",
+                    _ => "{}"
+                },
+                _ => path switch
+                {
+                    "/System/Ping" => "{}",
+                    "/Sessions" => "[{\"Id\":\"session-1\",\"DeviceId\":\"browser-1\",\"PlayState\":{\"PositionTicks\":25000000,\"IsPaused\":false},\"NowPlayingItem\":{\"Id\":\"item-1\",\"Path\":\"/media/remote.mp4\",\"RunTimeTicks\":120000000}}]",
+                    _ => "{}"
+                }
             };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
