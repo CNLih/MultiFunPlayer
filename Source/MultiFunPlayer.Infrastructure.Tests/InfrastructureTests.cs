@@ -1,9 +1,11 @@
 using System.Text;
 using System.Text.Json;
 using System.IO.Ports;
+using System.Runtime.InteropServices;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using Microsoft.Win32.SafeHandles;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -395,6 +397,25 @@ public sealed class InfrastructureTests
         Assert.Equal(230400, transport.Settings.BaudRate);
         Assert.Equal(Parity.Even, transport.Settings.Parity);
         Assert.Throws<ArgumentOutOfRangeException>(() => new SerialPortSettings { DataBits = 9 }.Validate());
+    }
+
+    [Fact]
+    public async Task SerialTransportWritesToLinuxPseudoTerminal()
+    {
+        if (!OperatingSystem.IsLinux())
+            return;
+
+        using var terminal = LinuxPseudoTerminal.Create();
+        await using var transport = new SerialOutputTransport("serial-pty",
+            terminal.SlavePath, new SerialPortSettings { BaudRate = 115200 });
+        await transport.ConnectAsync();
+
+        var buffer = new byte[64];
+        var read = terminal.Master.ReadAsync(buffer).AsTask();
+        await transport.SendAsync(Encoding.UTF8.GetBytes("L0500\n"));
+
+        var count = await read.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("L0500\n", Encoding.UTF8.GetString(buffer, 0, count));
     }
 
     [Fact]
@@ -806,5 +827,64 @@ public sealed class InfrastructureTests
             if (Directory.Exists(Path))
                 Directory.Delete(Path, recursive: true);
         }
+    }
+
+    private sealed class LinuxPseudoTerminal : IDisposable
+    {
+        private const int OReadWrite = 2;
+        private const int ONoControllingTerminal = 0x100;
+
+        private LinuxPseudoTerminal(FileStream master, string slavePath)
+        {
+            Master = master;
+            SlavePath = slavePath;
+        }
+
+        public FileStream Master { get; }
+        public string SlavePath { get; }
+
+        public static LinuxPseudoTerminal Create()
+        {
+            var descriptor = PosixOpenPt(OReadWrite | ONoControllingTerminal);
+            if (descriptor < 0)
+                throw new IOException($"posix_openpt failed: {Marshal.GetLastWin32Error()}");
+
+            try
+            {
+                if (GrantPt(descriptor) != 0 || UnlockPt(descriptor) != 0)
+                    throw new IOException($"PTY setup failed: {Marshal.GetLastWin32Error()}");
+                var name = PtsName(descriptor);
+                if (name == IntPtr.Zero)
+                    throw new IOException($"ptsname failed: {Marshal.GetLastWin32Error()}");
+                var slavePath = Marshal.PtrToStringAnsi(name);
+                if (string.IsNullOrWhiteSpace(slavePath))
+                    throw new IOException("PTY slave path was empty.");
+                var handle = new SafeFileHandle((nint)descriptor, ownsHandle: true);
+                var master = new FileStream(handle, FileAccess.ReadWrite, 4096, isAsync: false);
+                return new LinuxPseudoTerminal(master, slavePath);
+            }
+            catch
+            {
+                Close(descriptor);
+                throw;
+            }
+        }
+
+        public void Dispose() => Master.Dispose();
+
+        [DllImport("libc", EntryPoint = "posix_openpt", SetLastError = true)]
+        private static extern int PosixOpenPt(int flags);
+
+        [DllImport("libc", EntryPoint = "grantpt", SetLastError = true)]
+        private static extern int GrantPt(int descriptor);
+
+        [DllImport("libc", EntryPoint = "unlockpt", SetLastError = true)]
+        private static extern int UnlockPt(int descriptor);
+
+        [DllImport("libc", EntryPoint = "ptsname", SetLastError = true)]
+        private static extern IntPtr PtsName(int descriptor);
+
+        [DllImport("libc", EntryPoint = "close", SetLastError = true)]
+        private static extern int Close(int descriptor);
     }
 }

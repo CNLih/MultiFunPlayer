@@ -608,9 +608,10 @@ Validated in the current Linux environment:
   a TCP/UDP/WebSocket loopback test that creates, connects, sends a multi-axis
   engine frame, verifies diagnostics, and disconnects all three targets.
 - Linux serial discovery is verified against stable `/dev/serial/by-id`
-  identities and re-enumerates cleanly after a device link is removed; actual
-  serial open/write permissions and hardware reconnect behavior remain
-  external validation gates.
+  identities and re-enumerates cleanly after a device link is removed. A Linux
+  pseudo-terminal integration test now opens the real `SerialOutputTransport`
+  and reads a TCode payload from the master side; physical device permissions
+  and hardware reconnect behavior remain external validation gates.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or
@@ -754,8 +755,8 @@ Validated in the current Linux environment:
   by multi-axis load, legacy configuration migration, the Core/Application
   desktop-reference scan, backend playback/output after browser disconnect,
   including a state-WebSocket connect/close followed by continued file-output
-  frames, TCP and WebSocket peer restart/reconnect simulations, and the published
-  operations/security documentation.
+  frames, TCP and WebSocket peer restart/reconnect simulations, Linux PTY
+  serial open/write, and the published operations/security documentation.
 - Configuration migration acceptance now rejects non-object JSON roots,
   preserves the source byte-for-byte, rejects missing/oversized/reparse-point
   sources and targets, honors cancellation, and proves the explicit Data
