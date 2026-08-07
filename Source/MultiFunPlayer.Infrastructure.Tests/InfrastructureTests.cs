@@ -113,9 +113,11 @@ public sealed class InfrastructureTests
         // 46 ms is early by less than the documented 10% scheduler tolerance.
         sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(46),
             new Dictionary<string, double> { ["L0"] = 0.1 }));
+        sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(90),
+            new Dictionary<string, double> { ["L0"] = 0.2 }));
 
         Assert.Equal(2, sink.SentFrames);
-        Assert.Equal(0, sink.DroppedFrames);
+        Assert.Equal(1, sink.DroppedFrames);
     }
 
     [Fact]
