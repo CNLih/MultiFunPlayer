@@ -246,6 +246,10 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(0, Assert.Single(registry.List()).SentFrames);
         Assert.Equal(0, Assert.Single(registry.List()).DroppedFrames);
         Assert.Equal(0, Assert.Single(registry.List()).FailedFrames);
+        Assert.Equal(OutputTargetOperationStatus.Success,
+            (await registry.ConnectAsync("file-1")).Status);
+        Assert.Equal(1, Assert.Single(registry.List()).Reconnects);
+        await registry.DisconnectAsync("file-1");
         await registry.StopAsync(CancellationToken.None);
 
         await using var restarted = new OutputTargetRegistry(storage, engine,
