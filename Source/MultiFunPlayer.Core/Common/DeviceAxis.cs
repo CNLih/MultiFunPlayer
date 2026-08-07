@@ -85,13 +85,13 @@ public sealed class DeviceAxis
 
     internal static void InitializeFromDevice(DeviceSettings device)
     {
+        ArgumentNullException.ThrowIfNull(device);
+
         if (_count != 0)
             throw new NotSupportedException();
 
         _outputMaximum = (int)(Math.Pow(10, device.OutputPrecision) - 1);
         _outputFormat = CompositeFormat.Parse($"{{0:{new string('0', device.OutputPrecision)}}}");
-
-        ArgumentNullException.ThrowIfNull(device);
 
         All = device.Axes.Where(s => s.Enabled && Regex.IsMatch(s.Name, "^[A-Z][0-9]$"))
                          .DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
