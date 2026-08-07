@@ -887,9 +887,10 @@ Validated in the current Linux environment:
   coalescing budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
   RSS was about 117 MiB, CPU time was 9.27 s, and shutdown was graceful. A
   reproducible follow-up from the current branch (`/tmp/mfp-portable-soak-5m-final.json`)
-  completed graceful shutdown with 5,932 sent, 63 sampled/coalesced, 0 failed,
-  and 0 reconnects; p95 revision interval was 50.347 ms, peak RSS about 127 MiB,
-  and CPU time 9.14 s. That run failed only the diagnostic 60-frame coalescing
+  completed graceful shutdown with 5,932 sent, `droppedFrames=63` in the old
+  schema (canonical interpretation: 63 sampled/coalesced), 0 failed, and 0
+  reconnects; p95 revision interval was 50.347 ms, peak RSS about 127 MiB, and
+  CPU time 9.14 s. That run failed only the diagnostic 60-frame coalescing
   budget; it does not indicate transport loss (`failedFrames` stayed zero), but
   it also does not satisfy the budgeted soak gate. CI runs a 10-second smoke with
   the same p95/coalescing budgets and uploads the report. Neither run replaces the

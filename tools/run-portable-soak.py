@@ -92,6 +92,11 @@ def percentile(values: list[float], fraction: float) -> float | None:
     return ordered[index]
 
 
+def coalesced_frame_count(output: dict[str, Any]) -> int:
+    """Read the canonical count while accepting the schema-v1 alias."""
+    return output.get("coalescedFrames", output.get("droppedFrames", 0))
+
+
 def stop_process(process: subprocess.Popen[Any]) -> bool:
     if process.poll() is not None:
         return process.returncode == 0
@@ -120,7 +125,7 @@ def evaluate_acceptance(report: dict[str, Any],
         failures.append("output sink reported failed frames")
     # ``droppedFrames`` is the historical API name for rate-limited samples.
     # Prefer the explicit report field while accepting older evidence files.
-    coalesced_frames = output.get("coalescedFrames", output.get("droppedFrames", 0))
+    coalesced_frames = coalesced_frame_count(output)
     if max_dropped_frames is not None and coalesced_frames > max_dropped_frames:
         failures.append(
             f"output sink coalesced {coalesced_frames} frames (budget {max_dropped_frames})"
@@ -231,8 +236,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "state": status["state"],
                     "positionSeconds": status["positionSeconds"],
                     "sentFrames": target["sentFrames"],
-                    "droppedFrames": target["droppedFrames"],
-                    "coalescedFrames": target["droppedFrames"],
+                    "droppedFrames": target.get("droppedFrames", coalesced_frame_count(target)),
+                    "coalescedFrames": coalesced_frame_count(target),
                     "failedFrames": target["failedFrames"],
                     "reconnects": target["reconnects"],
                     "rssBytes": rss_bytes,
@@ -244,7 +249,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report["gracefulStop"] = graceful_stop
             output = report["samples"][-1] if report["samples"] else {}
             report["result"] = "pass" if output.get("sentFrames", 0) > 0 and output.get("failedFrames", 0) == 0 else "fail"
-            coalesced_frames = output.get("coalescedFrames", output.get("droppedFrames", 0))
+            coalesced_frames = coalesced_frame_count(output)
             report["output"] = {
                 "sentFrames": output.get("sentFrames", 0),
                 # Keep the old API-shaped field for consumers of schema v1.
