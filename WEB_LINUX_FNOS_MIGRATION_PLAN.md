@@ -876,9 +876,12 @@ Validated in the current Linux environment:
   process interruption, and verifies restoration of an uploaded script, an
   axis policy, runtime logs, and all persistent directories. The local
   rehearsal provides process-level restart evidence, and optional baseline and
-  rollback DLL arguments allow a versioned upgrade rehearsal. The forced-stop
-  helper has a unit test. Docker volume and fnOS package upgrade/rollback
-  evidence remains external.
+  rollback DLL arguments allow a versioned upgrade rehearsal. A current-branch
+  run using the same Release DLL for baseline, upgrade, and rollback passed all
+  three phases (including forced interruption and state restoration); this
+  validates the harness path only, not a different-version upgrade. The
+  forced-stop helper has a unit test. Docker volume and fnOS package
+  upgrade/rollback evidence remains external.
 - The output view now shows per-target sent/coalesced/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
