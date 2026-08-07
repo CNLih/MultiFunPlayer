@@ -38,7 +38,12 @@ public sealed record OutputTargetDefinition(
     bool DtrEnable = false,
     bool RtsEnable = false,
     string SourceAxis = "L0",
-    int UpdateRateHz = 20);
+    int UpdateRateHz = 20,
+    string? DeviceName = null,
+    uint? DeviceIndex = null,
+    string ActuatorType = "Vibrate",
+    uint ActuatorIndex = 0,
+    int DurationMilliseconds = 50);
 
 /// <summary>
 /// Owns configured output transports and their engine sink registrations.
@@ -49,7 +54,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 {
     private const string StoreFile = "output-targets.json";
     private static readonly HashSet<string> SupportedProtocols =
-        new(StringComparer.OrdinalIgnoreCase) { "tcp", "udp", "websocket", "file", "serial", "the-handy" };
+        new(StringComparer.OrdinalIgnoreCase)
+        { "tcp", "udp", "websocket", "file", "serial", "the-handy", "buttplug" };
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, RuntimeTarget> _targets = new(StringComparer.OrdinalIgnoreCase);
     private readonly StorageOptions _storage;
@@ -344,6 +350,32 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 target.Adapter = adapter;
                 target.Sink = sink;
             }
+            else if (string.Equals(target.Definition.Protocol, "buttplug", StringComparison.OrdinalIgnoreCase))
+            {
+                adapter = new ButtplugOutputAdapter(target.Definition.Id,
+                    ParseButtplugUri(target.Definition.Endpoint), new ButtplugOutputOptions
+                    {
+                        SourceAxis = target.Definition.SourceAxis,
+                        DeviceName = target.Definition.DeviceName,
+                        DeviceIndex = target.Definition.DeviceIndex,
+                        ActuatorType = target.Definition.ActuatorType,
+                        ActuatorIndex = target.Definition.ActuatorIndex,
+                        DurationMilliseconds = target.Definition.DurationMilliseconds
+                    });
+                var result = await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                if (!result.Connected)
+                    throw new InvalidOperationException(result.Error ?? "The Buttplug connection failed.");
+                adapter.Faulted += exception =>
+                {
+                    target.LastError = exception.Message;
+                    target.Registration?.Dispose();
+                    target.Registration = null;
+                };
+                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz);
+                target.Registration = _engine.AddSink(sink);
+                target.Adapter = adapter;
+                target.Sink = sink;
+            }
             else
             {
                 transport = CreateTransport(target.Definition);
@@ -509,6 +541,18 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     ParseTheHandyUri(definition.Endpoint);
                     ValidateSourceAxis(definition.SourceAxis);
                     break;
+                case "buttplug":
+                    ParseButtplugUri(definition.Endpoint);
+                    new ButtplugOutputOptions
+                    {
+                        SourceAxis = definition.SourceAxis,
+                        DeviceName = definition.DeviceName,
+                        DeviceIndex = definition.DeviceIndex,
+                        ActuatorType = definition.ActuatorType,
+                        ActuatorIndex = definition.ActuatorIndex,
+                        DurationMilliseconds = definition.DurationMilliseconds
+                    }.Validate();
+                    break;
             }
             return null;
         }
@@ -527,7 +571,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 120)
             return "name is required and must be at most 120 characters.";
         if (!SupportedProtocols.Contains(definition.Protocol))
-            return "protocol must be tcp, udp, websocket, file, serial, or the-handy.";
+            return "protocol must be tcp, udp, websocket, file, serial, the-handy, or buttplug.";
         if (string.IsNullOrWhiteSpace(definition.Endpoint) || definition.Endpoint.Length > 2048)
             return "endpoint is required and must be at most 2048 characters.";
         if (ValidateSourceAxis(definition.SourceAxis) is not null)
@@ -544,6 +588,17 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             || uri.Query.Length != 0 || uri.Fragment.Length != 0)
             throw new ArgumentException(
                 "The Handy output requires an absolute http(s) endpoint without credentials.", nameof(endpoint));
+        return uri;
+    }
+
+    private static Uri ParseButtplugUri(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("ws" or "wss") || !string.IsNullOrEmpty(uri.UserInfo)
+            || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            throw new ArgumentException(
+                "Buttplug output requires an absolute ws(s) endpoint without credentials or query data.",
+                nameof(endpoint));
         return uri;
     }
 
@@ -580,7 +635,10 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             target.Definition.Enabled, target.Definition.AutoConnect,
             target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
             target.Adapter?.LastError ?? target.LastError,
-            sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc);
+            sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc,
+            target.Definition.DeviceName, target.Definition.DeviceIndex,
+            target.Definition.ActuatorType, target.Definition.ActuatorIndex,
+            target.Definition.DurationMilliseconds);
     }
 
     private static void CaptureDiagnostics(RuntimeTarget target)

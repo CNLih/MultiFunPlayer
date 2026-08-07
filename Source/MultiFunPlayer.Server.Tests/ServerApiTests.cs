@@ -58,7 +58,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("1.0", payload.GetProperty("schemaVersion").GetString());
         var transports = payload.GetProperty("transports").EnumerateArray()
             .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
-        foreach (var id in new[] { "tcp", "udp", "websocket", "serial", "file", "the-handy" })
+        foreach (var id in new[] { "tcp", "udp", "websocket", "serial", "file", "the-handy", "buttplug" })
         {
             Assert.True(transports.ContainsKey(id));
             Assert.Equal("direct", transports[id].GetProperty("integration").GetString());
@@ -68,7 +68,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         var adapters = payload.GetProperty("adapters").EnumerateArray()
             .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
         Assert.Equal("ready", adapters["output.tcp"].GetProperty("implementationStatus").GetString());
-        Assert.Equal("external-proxy", adapters["output.buttplug"].GetProperty("integration").GetString());
+        Assert.Equal("direct", adapters["output.buttplug"].GetProperty("integration").GetString());
+        Assert.Equal("ready", adapters["output.buttplug"].GetProperty("implementationStatus").GetString());
         Assert.Equal("ready", adapters["output.the-handy"].GetProperty("implementationStatus").GetString());
         Assert.Equal("unsupported", adapters["output.pipe"].GetProperty("implementationStatus").GetString());
         Assert.Equal("blocked", adapters["media.mpv"].GetProperty("implementationStatus").GetString());
@@ -319,7 +320,12 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 protocol = "file",
                 endpoint = "http.tcode",
                 enabled = false,
-                autoConnect = false
+                autoConnect = false,
+                deviceName = "Simulated Toy",
+                deviceIndex = 2,
+                actuatorType = "Linear",
+                actuatorIndex = 1,
+                durationMilliseconds = 125
             });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
 
@@ -333,7 +339,12 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 && item.GetProperty("droppedFrames").GetInt64() == 0
                 && item.GetProperty("failedFrames").GetInt64() == 0
                 && item.GetProperty("reconnects").GetInt64() == 0
-                && item.GetProperty("lastSentAtUtc").ValueKind == JsonValueKind.Null);
+                && item.GetProperty("lastSentAtUtc").ValueKind == JsonValueKind.Null
+                && item.GetProperty("deviceName").GetString() == "Simulated Toy"
+                && item.GetProperty("deviceIndex").GetUInt32() == 2
+                && item.GetProperty("actuatorType").GetString() == "Linear"
+                && item.GetProperty("actuatorIndex").GetUInt32() == 1
+                && item.GetProperty("durationMilliseconds").GetInt32() == 125);
 
             var delete = await client.DeleteAsync("/api/v1/output-targets/http-file");
             Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);

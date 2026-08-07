@@ -387,7 +387,7 @@ Tasks:
 
 - [x] P4-01 Port network-native media sources without process detection requirements.
 - [x] P4-02 Add capability reporting for sources that require remote player configuration.
-- [ ] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
+- [x] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
 - [x] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
 - [x] P4-05 Keep serial open/write behavior behind an adapter and preserve TCode timing semantics.
 - [x] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
@@ -550,10 +550,9 @@ by the Server, switch to the authenticated REST and bounded WebSocket store.
 Validated in the current Linux environment:
 
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
-  with `EnableWindowsTargeting=true`. The build still reports 58 existing
-  nullable/analyzer warnings in copied legacy Core/WPF code; they are not
-  hidden by this migration.
-- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 25/25;
+  with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
+  outside the portable migration boundary and are not hidden by this work.
+- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 28/28;
   Server tests: 24/24.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully; only the existing
@@ -609,7 +608,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 25/25). Registry
+  simulator tests cover all three sources (Infrastructure 28/28). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -631,26 +630,39 @@ Validated in the current Linux environment:
   ongoing request logging cannot change the response content length.
 - Final Release server smoke after the network/axis changes returned 200 for
   liveness, adapter capabilities, device-axis listing, OpenAPI, and SPA
-  fallback; the Emby/Jellyfin/Plex entries reported `ready`, Buttplug remained
-  explicitly `planned`, an axis policy PUT persisted successfully, and Ctrl-C
-  shutdown completed cleanly.
+  fallback; the Emby/Jellyfin/Plex and Buttplug entries reported `ready`, an
+  axis policy PUT persisted successfully, and Ctrl-C shutdown completed
+  cleanly.
 - Headless operations, architecture, and contribution guides now document
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
+- The packaging contract validator reports 40/40 checks passed for the
+  multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
+  roots, health check, secret interpolation, and the structural fnOS manifest.
+  The same validator runs in the packaging CI job. Docker Buildx, `fnpack`,
+  official fnOS schema validation, image scanning, and target-NAS execution are
+  intentionally still external gates.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
   serial, and log state with a real refresh action. Device-axis editing covers
   range, inversion, interpolation, and optional limits with persisted REST
   settings and Application-level evaluation tests.
+- P4-03 now includes the direct Buttplug protocol-v3 WebSocket output adapter.
+  It performs server-info negotiation, current-device enumeration, scanning,
+  strict device selection, Scalar/Linear/Rotate/Stop commands, bounded queue
+  handling, cancellation, malformed-message rejection, and fault propagation.
+  The adapter has no WPF, Stylet, or Buttplug SDK dependency, and its simulator
+  tests pass alongside the existing TCP/UDP/WebSocket, The Handy, file, and
+  serial coverage.
 
 Still open and intentionally not advertised as complete:
 
-- Buttplug output remains open; The Handy HTTP adapter and Emby/Jellyfin/Plex
-  network media adapters are directly wired and capability-reported. The
-  CRUD/registry contracts now exist and clearly report planned or blocked
-  capabilities. Initial pairing is implemented, but
+- The Handy HTTP adapter, Buttplug protocol-v3 output adapter, and
+  Emby/Jellyfin/Plex network media adapters are directly wired and
+  capability-reported. The remaining CRUD/registry entries clearly report
+  planned or blocked capabilities. Initial pairing is implemented, but
   upgrade/backup rehearsal and
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data

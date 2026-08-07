@@ -16,6 +16,8 @@ public static class InfrastructureCapabilities
         new("tcp", "TCode over TCP", true, ["linux", "windows", "container"], []),
         new("udp", "TCode over UDP", true, ["linux", "windows", "container"], []),
         new("websocket", "TCode over WebSocket", true, ["linux", "windows", "container"], []),
+        new("buttplug", "Buttplug protocol-v3 over WebSocket", true,
+            ["linux", "windows", "container"], []),
         new("ofs-websocket", "OFS media events over WebSocket", true,
             ["linux", "windows", "container"], []),
         new("file", "TCode file sink", true, ["linux", "windows", "container"], []),

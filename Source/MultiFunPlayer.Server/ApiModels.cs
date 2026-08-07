@@ -63,7 +63,12 @@ public sealed record OutputTargetResponse(
     long DroppedFrames,
     long FailedFrames,
     long Reconnects,
-    DateTimeOffset? LastSentAtUtc);
+    DateTimeOffset? LastSentAtUtc,
+    string? DeviceName = null,
+    uint? DeviceIndex = null,
+    string ActuatorType = "Vibrate",
+    uint ActuatorIndex = 0,
+    int DurationMilliseconds = 50);
 
 public sealed record OutputTargetRequest(
     string? Id,
@@ -79,7 +84,12 @@ public sealed record OutputTargetRequest(
     bool DtrEnable = false,
     bool RtsEnable = false,
     string SourceAxis = "L0",
-    int UpdateRateHz = 20);
+    int UpdateRateHz = 20,
+    string? DeviceName = null,
+    uint? DeviceIndex = null,
+    string ActuatorType = "Vibrate",
+    uint ActuatorIndex = 0,
+    int DurationMilliseconds = 50);
 
 public sealed record MediaSourceResponse(
     string Id,

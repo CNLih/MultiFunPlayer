@@ -45,6 +45,11 @@ export interface OutputTarget {
   error?: string;
   enabled?: boolean;
   autoConnect?: boolean;
+  deviceName?: string | null;
+  deviceIndex?: number | null;
+  actuatorType?: string;
+  actuatorIndex?: number;
+  durationMilliseconds?: number;
 }
 
 export interface MediaSourceInput {
@@ -65,6 +70,11 @@ export interface OutputTargetInput {
   rate: number;
   enabled: boolean;
   autoConnect: boolean;
+  deviceName?: string | null;
+  deviceIndex?: number | null;
+  actuatorType?: string;
+  actuatorIndex?: number;
+  durationMilliseconds?: number;
 }
 
 export interface DeviceAxisSetting {
@@ -346,6 +356,11 @@ export function createMockStore() {
         signal: input.enabled && input.autoConnect ? 86 : 0,
         enabled: input.enabled,
         autoConnect: input.autoConnect,
+        deviceName: input.deviceName,
+        deviceIndex: input.deviceIndex,
+        actuatorType: input.actuatorType,
+        actuatorIndex: input.actuatorIndex,
+        durationMilliseconds: input.durationMilliseconds,
       };
       state.outputs = [output, ...state.outputs];
       appendLog('info', `Added ${output.name}`, 'outputs');
@@ -363,6 +378,11 @@ export function createMockStore() {
       output.rate = input.rate;
       output.enabled = input.enabled;
       output.autoConnect = input.autoConnect;
+      output.deviceName = input.deviceName;
+      output.deviceIndex = input.deviceIndex;
+      output.actuatorType = input.actuatorType;
+      output.actuatorIndex = input.actuatorIndex;
+      output.durationMilliseconds = input.durationMilliseconds;
       output.status = input.enabled && input.autoConnect ? 'online' : 'offline';
       output.signal = output.status === 'online' ? 86 : 0;
       output.lastPacket = output.status === 'online' ? 'Just now' : 'Never';
@@ -496,6 +516,11 @@ export function createRemoteStore(client: MfpApiClient) {
     error: target.lastError ?? undefined,
     enabled: target.enabled,
     autoConnect: target.autoConnect,
+    deviceName: target.deviceName,
+    deviceIndex: target.deviceIndex,
+    actuatorType: target.actuatorType,
+    actuatorIndex: target.actuatorIndex,
+    durationMilliseconds: target.durationMilliseconds,
   });
   const axisFromResponse = (axis: ApiDeviceAxis): DeviceAxisSetting => ({
     axis: axis.axis,
@@ -568,6 +593,11 @@ export function createRemoteStore(client: MfpApiClient) {
     updateRateHz: input.rate,
     enabled: input.enabled,
     autoConnect: input.autoConnect,
+    deviceName: input.deviceName || null,
+    deviceIndex: input.deviceIndex ?? null,
+    actuatorType: input.actuatorType || 'Vibrate',
+    actuatorIndex: input.actuatorIndex ?? 0,
+    durationMilliseconds: input.durationMilliseconds ?? 50,
   });
   const axisRequest = (input: DeviceAxisSetting): ApiDeviceAxisRequest => ({
     axis: input.axis,

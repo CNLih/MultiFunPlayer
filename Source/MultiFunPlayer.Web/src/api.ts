@@ -142,6 +142,11 @@ export interface ApiOutputTarget {
   failedFrames: number;
   reconnects: number;
   lastSentAtUtc: string | null;
+  deviceName?: string | null;
+  deviceIndex?: number | null;
+  actuatorType?: string;
+  actuatorIndex?: number;
+  durationMilliseconds?: number;
 }
 
 export interface ApiOutputTargetRequest {
@@ -153,6 +158,11 @@ export interface ApiOutputTargetRequest {
   updateRateHz: number;
   enabled: boolean;
   autoConnect: boolean;
+  deviceName?: string | null;
+  deviceIndex?: number | null;
+  actuatorType?: string;
+  actuatorIndex?: number;
+  durationMilliseconds?: number;
 }
 
 export type StateListener = (status: StatusResponse) => void;

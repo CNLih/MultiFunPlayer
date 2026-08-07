@@ -35,7 +35,7 @@ This matrix is the Phase 0 baseline for the headless Web/Linux/fnOS migration. `
 | Serial TCode | Baseline | MVP | Pass the serial device into Docker and use stable `/dev/serial/by-id` paths. |
 | TCP, UDP, and WebSocket TCode | Baseline | MVP | Endpoint must be reachable from the service. |
 | The Handy | Baseline | MVP | API endpoint and connection key are configured server-side. |
-| Buttplug.io | Baseline | MVP (conditional, planned) | Buttplug server WebSocket must be reachable from the service; the direct adapter remains open. |
+| Buttplug.io | Baseline | MVP (conditional) | Buttplug server WebSocket must be reachable from the service; device selection and actuator policy are configured per target. |
 | File output | Baseline | MVP | Writes are restricted to configured server volume roots. |
 | Windows Named Pipe | Baseline | Deferred | Use a Unix socket or a Windows companion in a later release. |
 
