@@ -554,7 +554,7 @@ Validated in the current Linux environment:
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
-  Server tests: 10/10.
+  Server tests: 11/11.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking

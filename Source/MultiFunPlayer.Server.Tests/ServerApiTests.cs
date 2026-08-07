@@ -55,6 +55,23 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Environment_tick_rate_overrides_configuration_section()
+    {
+        var previous = Environment.GetEnvironmentVariable("MFP_TICK_HZ");
+        try
+        {
+            Environment.SetEnvironmentVariable("MFP_TICK_HZ", "7");
+            using var client = _factory.CreateClient();
+            var capabilities = await client.GetFromJsonAsync<JsonElement>("/api/v1/capabilities");
+            Assert.Equal(7, capabilities.GetProperty("tickHz").GetInt32());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_TICK_HZ", previous);
+        }
+    }
+
+    [Fact]
     public void Auth_token_store_persists_only_a_hash_and_rejects_repairing()
     {
         var previousPairing = Environment.GetEnvironmentVariable("MFP_PAIRING_TOKEN");

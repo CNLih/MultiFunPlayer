@@ -115,7 +115,7 @@ public static class ServerProgram
         });
         app.MapGet("/api/v1/capabilities", (IConfiguration config) =>
         {
-            var hz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
+            var hz = ServerOptions.ResolveTickHz(config);
             return Results.Ok(new CapabilitiesResponse("v1", hz,
                 ["play", "pause", "stop", "seek", "load"],
                 ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
@@ -123,8 +123,8 @@ public static class ServerProgram
         });
         app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage) =>
         {
-            var tickHz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
-            var maxClients = Math.Clamp(config.GetValue("MultiFunPlayer:MaxWebSocketClients", 16), 1, 128);
+            var tickHz = ServerOptions.ResolveTickHz(config);
+            var maxClients = ServerOptions.ResolveMaxWebSocketClients(config);
             return Results.Ok(new SettingsResponse(1, tickHz, maxClients, storage.ConfigRoot,
                 storage.ScriptsRoot, storage.LogsRoot, storage.KeysRoot,
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"))));

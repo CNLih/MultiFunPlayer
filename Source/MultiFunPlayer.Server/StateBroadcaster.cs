@@ -17,7 +17,7 @@ public sealed class StateBroadcaster
 
     public StateBroadcaster(IConfiguration configuration)
     {
-        _maxClients = Math.Clamp(configuration.GetValue("MultiFunPlayer:MaxWebSocketClients", 16), 1, 128);
+        _maxClients = ServerOptions.ResolveMaxWebSocketClients(configuration);
     }
 
     public int ClientCount => _clients.Count;

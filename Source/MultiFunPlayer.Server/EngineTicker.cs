@@ -16,7 +16,7 @@ public sealed class EngineTicker : BackgroundService
         _engine = engine;
         _broadcaster = broadcaster;
         _logger = logger;
-        var hz = Math.Clamp(configuration.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
+        var hz = ServerOptions.ResolveTickHz(configuration);
         _interval = TimeSpan.FromSeconds(1d / hz);
         _engine.SnapshotChanged += OnSnapshotChanged;
     }

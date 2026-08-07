@@ -33,7 +33,7 @@ public sealed class RuntimeLogStore
 
     public RuntimeLogStore(IConfiguration configuration)
     {
-        _capacity = Math.Clamp(configuration.GetValue("MultiFunPlayer:LogCapacity", 500), 50, 10_000);
+        _capacity = ServerOptions.ResolveLogCapacity(configuration);
         _redactor = new SecretRedactor(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"));
     }
 
