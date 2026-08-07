@@ -712,6 +712,10 @@ Validated in the current Linux environment:
   now builds and inspects x86/ARM FPK archives with pinned official `fnpack`
   1.2.3. Docker Buildx, image scanning, official target-firmware validation,
   and target-NAS execution remain external gates.
+- `deploy/validate-fpk.sh` now inspects the Compose file inside `app.tgz` and
+  rejects packages that lose the read-only, bounded `/tmp`, privilege,
+  graceful-stop, or CPU/memory constraints during archive creation. Both
+  freshly rebuilt x86 and ARM packages pass this nested contract check.
 - The FPK wrapper now normalizes relative output directories before invoking
   `fnpack` and writes a portable `multifunplayer.fpk.sha256` sidecar. A local
   relative-output build, checksum verification, and FPK content validation
