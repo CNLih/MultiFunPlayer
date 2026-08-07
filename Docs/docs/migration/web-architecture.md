@@ -39,6 +39,26 @@ dialogs.
   `unsupported` capabilities; entries are not feature claims until their
   implementation status is `ready`.
 
+The output-target diagnostics response keeps the historical `droppedFrames`
+field for older clients while exposing the unambiguous `coalescedFrames` name:
+
+```json
+{
+  "id": "studio-bridge",
+  "protocol": "tcp",
+  "connected": true,
+  "sentFrames": 1200,
+  "coalescedFrames": 12,
+  "droppedFrames": 12,
+  "failedFrames": 0,
+  "reconnects": 1,
+  "lastError": null
+}
+```
+
+`coalescedFrames` and its historical alias count samples merged by the
+per-target rate limiter; `failedFrames` is reserved for sink write failures.
+
 ## Ownership rules
 
 - Core/Application cannot reference WPF, Stylet, registry, WMI, Win32, or
