@@ -27,6 +27,6 @@ The compose file in this directory builds only the static web preview. The combi
 
 ## Scope notes
 
-- State is held in `src/store.ts`; `src/api.ts` maps REST commands and the WebSocket state contract into the same store shape used by the preview.
+- State is held in `src/store.ts`; `src/api.ts` maps REST commands and the WebSocket state contract into the same store shape used by the preview. Connected Emby/Jellyfin/Plex/OFS media cards expose backend-owned play, pause, and bounded seek commands when a normalized remote media clock is available.
 - `public/sw.js` uses a versioned shell cache and removes older cache names on activation.
 - No credentials, tokens, private endpoints, or user data are embedded in the prototype.

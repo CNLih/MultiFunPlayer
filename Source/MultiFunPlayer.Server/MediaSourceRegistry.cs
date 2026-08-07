@@ -269,6 +269,21 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     public Task<MediaSourceOperation> DisconnectAsync(string id, CancellationToken cancellationToken = default)
         => RunLifecycleAsync(id, false, cancellationToken);
 
+    public Task<MediaSourceOperation> PlayAsync(string id, CancellationToken cancellationToken = default)
+        => SendCommandAsync(id, MediaSourceCommand.Play, null, cancellationToken);
+
+    public Task<MediaSourceOperation> PauseAsync(string id, CancellationToken cancellationToken = default)
+        => SendCommandAsync(id, MediaSourceCommand.Pause, null, cancellationToken);
+
+    public Task<MediaSourceOperation> SeekAsync(string id, TimeSpan position,
+        CancellationToken cancellationToken = default)
+    {
+        if (position < TimeSpan.Zero || !double.IsFinite(position.TotalSeconds))
+            return Task.FromResult(new MediaSourceOperation(MediaSourceOperationStatus.Invalid,
+                Error: "position must be a finite non-negative duration."));
+        return SendCommandAsync(id, MediaSourceCommand.Seek, position, cancellationToken);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -297,6 +312,70 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
             return new(source.LastError is null ? MediaSourceOperationStatus.Success : MediaSourceOperationStatus.Failed,
                 ToResponse(source), source.LastError);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<MediaSourceOperation> SendCommandAsync(string id, MediaSourceCommand command,
+        TimeSpan? position, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_sources.TryGetValue(id, out var source))
+                return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
+            if (!source.Connected)
+                return new(MediaSourceOperationStatus.Failed, ToResponse(source),
+                    "The media source is not connected.");
+
+            try
+            {
+                switch (command)
+                {
+                    case MediaSourceCommand.Play:
+                    case MediaSourceCommand.Pause:
+                        var playing = command == MediaSourceCommand.Play;
+                        if (source.Adapter is not null)
+                            await source.Adapter.SendPlayAsync(playing, cancellationToken).ConfigureAwait(false);
+                        else if (source.NetworkAdapter is not null)
+                            await source.NetworkAdapter.SendPlayAsync(playing, cancellationToken).ConfigureAwait(false);
+                        else
+                            return new(MediaSourceOperationStatus.Failed, ToResponse(source),
+                                "This connected media source does not expose playback controls.");
+                        break;
+                    case MediaSourceCommand.Seek:
+                        if (position is null)
+                            return new(MediaSourceOperationStatus.Invalid, ToResponse(source),
+                                "A seek position is required.");
+                        if (source.Adapter is not null)
+                            await source.Adapter.SendSeekAsync(position.Value, cancellationToken).ConfigureAwait(false);
+                        else if (source.NetworkAdapter is not null)
+                            await source.NetworkAdapter.SendSeekAsync(position.Value, cancellationToken).ConfigureAwait(false);
+                        else
+                            return new(MediaSourceOperationStatus.Failed, ToResponse(source),
+                                "This connected media source does not expose playback controls.");
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(command));
+                }
+
+                source.LastError = null;
+                return new(MediaSourceOperationStatus.Success, ToResponse(source));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                source.LastError = $"{command.ToString().ToLowerInvariant()} failed: {exception.Message}";
+                _logger.LogWarning(exception, "Media source command {Command} failed for {SourceId}.",
+                    command, source.Definition.Id);
+                return new(MediaSourceOperationStatus.Failed, ToResponse(source), source.LastError);
+            }
         }
         finally
         {
@@ -563,5 +642,12 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         public OfsMediaState? LastMediaState { get; set; }
         public NetworkMediaSourceAdapter? NetworkAdapter { get; set; }
         public NetworkMediaState? LastNetworkMediaState { get; set; }
+    }
+
+    private enum MediaSourceCommand
+    {
+        Play,
+        Pause,
+        Seek
     }
 }

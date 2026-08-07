@@ -175,7 +175,16 @@ function renderMedia(state: AppState): string {
   return `${pageHeading('Inputs', 'Media sources', 'Connect local folders and live relays. Capabilities are advertised before a source is enabled.', '<button class="button button-primary" data-action="focus-media-form">Add source</button>')}
     <div class="notice notice-info"><strong>Server-managed resources.</strong><span>Changes are persisted by the API; unsupported integrations remain visible with their implementation status.</span></div>
     ${renderMediaForm()}
-    <section class="source-grid" aria-label="Media source list">${state.media.length === 0 ? '<div class="empty-state panel">No media sources configured.</div>' : state.media.map((source) => `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-media-edit="${escapeHtml(source.id)}">Edit</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`).join('')}</section>`;
+    <section class="source-grid" aria-label="Media source list">${state.media.length === 0 ? '<div class="empty-state panel">No media sources configured.</div>' : state.media.map(renderMediaSourceCard).join('')}</section>`;
+}
+
+function renderMediaSourceCard(source: AppState['media'][number]): string {
+  const mediaState = source.mediaState;
+  const controls = mediaState && source.status === 'online' ? `<div class="media-controls" aria-label="Remote playback controls">
+    <div class="media-position"><span>${mediaState.playing ? 'Playing' : 'Paused'}</span><span>${formatTime(mediaState.positionSeconds)}${mediaState.durationSeconds > 0 ? ` / ${formatTime(mediaState.durationSeconds)}` : ''}</span></div>
+    <div class="resource-actions"><button class="button button-secondary" data-media-play="${escapeHtml(source.id)}">Play</button><button class="button button-secondary" data-media-pause="${escapeHtml(source.id)}">Pause</button><input class="media-seek-input" data-media-seek-value="${escapeHtml(source.id)}" type="number" min="0" step="0.1" value="${Math.max(0, mediaState.positionSeconds).toFixed(1)}" aria-label="Seek position in seconds" /><button class="button button-secondary" data-media-seek="${escapeHtml(source.id)}">Seek</button></div>
+  </div>` : '';
+  return `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}${controls}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-media-edit="${escapeHtml(source.id)}">Edit</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`;
 }
 
 function renderMediaForm(): string {
@@ -415,6 +424,25 @@ function handleClick(event: MouseEvent) {
     if (source) {
       const request = source.status === 'online' ? store.disconnectMediaSource(mediaId) : store.connectMediaSource(mediaId);
       void request.catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media source action failed.', 'error'));
+    }
+  }
+  const mediaPlayId = target.closest<HTMLElement>('[data-media-play]')?.dataset.mediaPlay;
+  if (mediaPlayId) {
+    void store.playMediaSource(mediaPlayId).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media playback command failed.', 'error'));
+  }
+  const mediaPauseId = target.closest<HTMLElement>('[data-media-pause]')?.dataset.mediaPause;
+  if (mediaPauseId) {
+    void store.pauseMediaSource(mediaPauseId).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media playback command failed.', 'error'));
+  }
+  const mediaSeekId = target.closest<HTMLElement>('[data-media-seek]')?.dataset.mediaSeek;
+  if (mediaSeekId) {
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-media-seek-value]'))
+      .find((candidate) => candidate.dataset.mediaSeekValue === mediaSeekId);
+    const position = Number(input?.value);
+    if (!Number.isFinite(position) || position < 0) {
+      showToast('Seek position must be a non-negative number.', 'error');
+    } else {
+      void store.seekMediaSource(mediaSeekId, position).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media seek failed.', 'error'));
     }
   }
   const outputId = target.closest<HTMLElement>('[data-output-toggle]')?.dataset.outputToggle;

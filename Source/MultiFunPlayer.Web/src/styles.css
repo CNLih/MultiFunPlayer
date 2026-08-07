@@ -183,6 +183,9 @@ h2 { margin-bottom: 7px; font-size: 17px; line-height: 1.25; }
 .protocol-label { color: var(--subtle); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .status-badge { width: fit-content; padding: 4px 7px; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; }
 .source-card h2 { margin-top: 24px; margin-bottom: 6px; font-size: 16px; }
+.media-controls { display: grid; gap: 9px; margin: 18px 0 4px; padding-top: 14px; border-top: 1px solid var(--line); }
+.media-position { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.media-seek-input { width: 92px; border: 1px solid var(--line); border-radius: 4px; background: #111a20; color: var(--text); padding: 7px 8px; }
 .muted { color: var(--muted); font-size: 11px; }
 .capability-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 21px; }
 .capability-list span { padding: 4px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 10px; }

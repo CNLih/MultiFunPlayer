@@ -53,6 +53,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("empty", status.GetProperty("state").GetString(), ignoreCase: true);
         Assert.Equal("v1", capabilities.GetProperty("apiVersion").GetString());
         Assert.InRange(capabilities.GetProperty("tickHz").GetInt32(), 1, 20);
+        Assert.Contains("media.play", capabilities.GetProperty("commands").EnumerateArray()
+            .Select(command => command.GetString()));
     }
 
     [Fact]
@@ -1017,6 +1019,14 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Equal("browser-1", result.Source.DeviceId);
             Assert.Equal("/media/remote.mp4", result.Source.MediaState!.Path);
             Assert.Equal(2.5, result.Source.MediaState.PositionSeconds);
+            Assert.Equal(MediaSourceOperationStatus.Success,
+                (await registry.PlayAsync("jellyfin")).Status);
+            Assert.Equal(MediaSourceOperationStatus.Success,
+                (await registry.PauseAsync("jellyfin")).Status);
+            Assert.Equal(MediaSourceOperationStatus.Success,
+                (await registry.SeekAsync("jellyfin", TimeSpan.FromSeconds(4))).Status);
+            Assert.Equal(MediaSourceOperationStatus.Invalid,
+                (await registry.SeekAsync("jellyfin", TimeSpan.FromSeconds(-1))).Status);
             var updated = await registry.UpdateAsync("jellyfin", new MediaSourceDefinition(
                 "jellyfin", "Renamed Jellyfin", "jellyfin", "https://media.example.local",
                 DeviceId: "browser-1"));
@@ -1062,6 +1072,11 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
             var connect = await client.PostAsync("/api/v1/media-sources/remote-jellyfin/connect", null);
             Assert.Equal(HttpStatusCode.BadGateway, connect.StatusCode);
+            Assert.Equal(HttpStatusCode.BadGateway,
+                (await client.PostAsync("/api/v1/media-sources/remote-jellyfin/play", null)).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest,
+                (await client.PostAsJsonAsync("/api/v1/media-sources/remote-jellyfin/seek",
+                    new { positionSeconds = -1 })).StatusCode);
 
             var invalid = await client.PostAsJsonAsync("/api/v1/media-sources", new
             {
@@ -1146,6 +1161,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/play", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/pause", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/seek", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs/file", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));

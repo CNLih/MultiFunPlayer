@@ -109,7 +109,13 @@ successful later write clears the transient `lastError`; reconnect remains an
 explicit lifecycle operation.
 
 Media sources are managed through `/api/v1/media-sources` and the matching
-`connect`, `disconnect`, update, and delete subroutes. The `internal` source
+`connect`, `disconnect`, update, and delete subroutes. Connected network-native
+sources additionally expose `POST /api/v1/media-sources/{id}/play`,
+`POST /api/v1/media-sources/{id}/pause`, and
+`POST /api/v1/media-sources/{id}/seek` with a JSON body such as
+`{ "positionSeconds": 12.5 }`. These commands are serialized by the registry,
+remain backend-owned, and return `502` when the configured adapter cannot
+execute them. The `internal` source
 is directly available to the headless timeline. OFS is a direct WebSocket
 adapter implementing the event/command envelope observed in the desktop
 client: `media_change`, `play_change`, `duration_change`, `time_change`,

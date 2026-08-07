@@ -16,6 +16,11 @@ export interface MediaSource {
   enabled?: boolean;
   autoConnect?: boolean;
   deviceId?: string | null;
+  mediaState?: {
+    playing: boolean;
+    positionSeconds: number;
+    durationSeconds: number;
+  };
 }
 
 export interface ScriptResource {
@@ -342,6 +347,31 @@ export function createMockStore() {
       notify();
       return source;
     },
+    async playMediaSource(id: string): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0 }), playing: true };
+      appendLog('info', `${source.name} playback resumed`, id);
+      notify();
+      return source;
+    },
+    async pauseMediaSource(id: string): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0 }), playing: false };
+      appendLog('info', `${source.name} playback paused`, id);
+      notify();
+      return source;
+    },
+    async seekMediaSource(id: string, positionSeconds: number): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      if (!Number.isFinite(positionSeconds) || positionSeconds < 0) throw new Error('Position must be non-negative.');
+      source.mediaState = { ...(source.mediaState ?? { playing: false, durationSeconds: 0 }), positionSeconds };
+      appendLog('info', `${source.name} seeked to ${formatTime(positionSeconds)}`, id);
+      notify();
+      return source;
+    },
     async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
       if (state.outputs.some((output) => output.id === input.id)) throw new Error('An output target with that id already exists.');
       const output: OutputTarget = {
@@ -504,6 +534,11 @@ export function createRemoteStore(client: MfpApiClient) {
     enabled: source.enabled,
     autoConnect: source.autoConnect,
     deviceId: source.deviceId,
+    mediaState: source.mediaState ? {
+      playing: source.mediaState.playing,
+      positionSeconds: source.mediaState.positionSeconds,
+      durationSeconds: source.mediaState.durationSeconds,
+    } : undefined,
   });
   const outputFromResponse = (target: ApiOutputTarget): OutputTarget => ({
     id: target.id,
@@ -720,6 +755,34 @@ export function createRemoteStore(client: MfpApiClient) {
       const source = state.media.find((item) => item.id === id);
       if (!source) throw new Error('The server did not return the media source.');
       appendLog('warn', `${source.name} disconnected`, id);
+      notify();
+      return source;
+    },
+    async playMediaSource(id: string): Promise<MediaSource> {
+      await client.playMediaSource(id);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('The server did not return the media source.');
+      appendLog('info', `${source.name} playback resumed`, id);
+      notify();
+      return source;
+    },
+    async pauseMediaSource(id: string): Promise<MediaSource> {
+      await client.pauseMediaSource(id);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('The server did not return the media source.');
+      appendLog('info', `${source.name} playback paused`, id);
+      notify();
+      return source;
+    },
+    async seekMediaSource(id: string, positionSeconds: number): Promise<MediaSource> {
+      if (!Number.isFinite(positionSeconds) || positionSeconds < 0) throw new Error('Position must be non-negative.');
+      await client.seekMediaSource(id, positionSeconds);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('The server did not return the media source.');
+      appendLog('info', `${source.name} seeked to ${formatTime(positionSeconds)}`, id);
       notify();
       return source;
     },

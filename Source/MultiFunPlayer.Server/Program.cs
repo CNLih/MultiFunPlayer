@@ -134,7 +134,7 @@ public static class ServerProgram
         {
             var hz = ServerOptions.ResolveTickHz(config);
             return Results.Ok(new CapabilitiesResponse("v1", hz,
-                ["play", "pause", "stop", "seek", "load"],
+                ["play", "pause", "stop", "seek", "load", "media.play", "media.pause", "media.seek"],
                 ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
         });
@@ -193,6 +193,25 @@ public static class ServerProgram
             MediaSourceRegistry registry, CancellationToken cancellationToken) =>
             MapMediaSourceOperation(await registry.DisconnectAsync(id, cancellationToken)
                 .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/play", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.PlayAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/pause", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.PauseAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/seek", async (string id, SeekRequest request,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+        {
+            if (!double.IsFinite(request.PositionSeconds) || request.PositionSeconds < 0
+                || request.PositionSeconds > TimeSpan.MaxValue.TotalSeconds)
+                return Problem(StatusCodes.Status400BadRequest, "Invalid seek position",
+                    "positionSeconds must be a finite non-negative number.", "invalid_position");
+            return MapMediaSourceOperation(await registry.SeekAsync(id,
+                    TimeSpan.FromSeconds(request.PositionSeconds), cancellationToken)
+                .ConfigureAwait(false), created: false);
+        });
         app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
         {
             var root = Environment.GetEnvironmentVariable("MFP_SERIAL_BY_ID_ROOT");
@@ -514,6 +533,9 @@ internal static class OpenApiDocument
             ["/api/v1/media-sources/{id}"] = new { put = Operation("Update media source"), delete = Operation("Delete media source") },
             ["/api/v1/media-sources/{id}/connect"] = new { post = Operation("Connect media source") },
             ["/api/v1/media-sources/{id}/disconnect"] = new { post = Operation("Disconnect media source") },
+            ["/api/v1/media-sources/{id}/play"] = new { post = Operation("Play remote media source") },
+            ["/api/v1/media-sources/{id}/pause"] = new { post = Operation("Pause remote media source") },
+            ["/api/v1/media-sources/{id}/seek"] = new { post = Operation("Seek remote media source") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/logs/file"] = new { get = Operation("Download redacted persisted runtime logs") },

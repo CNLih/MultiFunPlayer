@@ -146,8 +146,19 @@ test.describe('control room demo journey', () => {
       deviceId: 'remote-session-1',
       integration: 'direct',
       implementationStatus: 'ready',
-      connected: false,
+      connected: true,
       lastError: null,
+      mediaState: {
+        sessionId: 'session-1',
+        deviceId: 'remote-session-1',
+        mediaId: 'remote-item-1',
+        path: '/media/remote.mp4',
+        playing: true,
+        durationSeconds: 60,
+        positionSeconds: 3,
+        playbackSpeed: 1,
+        contentType: 'video',
+      },
     };
 
     await page.addInitScript(() => {
@@ -201,6 +212,18 @@ test.describe('control room demo journey', () => {
       if (url.pathname === '/api/v1/devices/serial') return json([]);
       if (url.pathname === '/api/v1/logs') return json({ items: [{ timestampUtc: '2026-08-07T00:00:00Z', level: 'Information', category: 'remote-test', eventId: 1, message: 'Remote state loaded', traceId: null, properties: {} }], truncated: false, capacity: 500 });
       if (url.pathname === '/api/v1/device-axes') return json([{ axis: 'L0', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 }]);
+      if (url.pathname === '/api/v1/media-sources/remote-media/pause') {
+        mediaSource.mediaState.playing = false;
+        return json(mediaSource);
+      }
+      if (url.pathname === '/api/v1/media-sources/remote-media/play') {
+        mediaSource.mediaState.playing = true;
+        return json(mediaSource);
+      }
+      if (url.pathname === '/api/v1/media-sources/remote-media/seek') {
+        mediaSource.mediaState.positionSeconds = Number((request.postDataJSON() as { positionSeconds: number }).positionSeconds);
+        return json(mediaSource);
+      }
       if (url.pathname === '/api/v1/media-sources') return json([mediaSource]);
       if (url.pathname === '/api/v1/output-targets') return json([]);
       return json({ title: 'Not found' }, 404);
@@ -210,6 +233,14 @@ test.describe('control room demo journey', () => {
     await expect(page.getByRole('heading', { name: 'Media sources' })).toBeVisible();
     await expect(page.getByText('Server API connected')).toBeVisible();
     await expect(page.getByText('Remote Jellyfin')).toBeVisible();
+    const remoteCard = page.locator('.source-card').filter({ hasText: 'Remote Jellyfin' });
+    await remoteCard.getByRole('button', { name: 'Pause' }).click();
+    await expect(remoteCard.getByText('Paused', { exact: true })).toBeVisible();
+    await remoteCard.getByRole('button', { name: 'Play' }).click();
+    await expect(remoteCard.getByText('Playing', { exact: true })).toBeVisible();
+    await remoteCard.getByLabel('Seek position in seconds').fill('12.5');
+    await remoteCard.getByRole('button', { name: 'Seek' }).click();
+    await expect(remoteCard.getByText('00:12 / 01:00', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Remote device id', { exact: true })).toHaveValue('');
     await page.locator('.source-card').filter({ hasText: 'Remote Jellyfin' }).getByRole('button', { name: 'Edit' }).click();
     await expect(page.getByLabel('Remote device id', { exact: true })).toHaveValue('remote-session-1');

@@ -130,6 +130,17 @@ export interface ApiMediaSource {
   connected: boolean;
   lastError: string | null;
   deviceId?: string | null;
+  mediaState?: {
+    sessionId: string | null;
+    deviceId: string | null;
+    mediaId: string | null;
+    path: string | null;
+    playing: boolean;
+    durationSeconds: number;
+    positionSeconds: number;
+    playbackSpeed: number;
+    contentType: string | null;
+  } | null;
 }
 
 export interface ApiMediaSourceRequest {
@@ -309,6 +320,21 @@ export class MfpApiClient {
 
   async disconnectMediaSource(id: string): Promise<ApiMediaSource> {
     return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/disconnect`, { method: 'POST' });
+  }
+
+  async playMediaSource(id: string): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/play`, { method: 'POST' });
+  }
+
+  async pauseMediaSource(id: string): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/pause`, { method: 'POST' });
+  }
+
+  async seekMediaSource(id: string, positionSeconds: number): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/seek`, {
+      method: 'POST',
+      body: JSON.stringify({ positionSeconds }),
+    });
   }
 
   async listOutputTargets(): Promise<ApiOutputTarget[]> {

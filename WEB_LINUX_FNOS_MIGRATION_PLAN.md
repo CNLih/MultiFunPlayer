@@ -357,7 +357,9 @@ GET    /api/v1/status
 GET    /api/v1/capabilities
 GET    /api/v1/media-sources
 POST   /api/v1/media-sources/{id}/connect
-POST   /api/v1/media-sources/{id}/commands
+POST   /api/v1/media-sources/{id}/play
+POST   /api/v1/media-sources/{id}/pause
+POST   /api/v1/media-sources/{id}/seek
 GET    /api/v1/output-targets
 POST   /api/v1/output-targets
 POST   /api/v1/output-targets/{id}/connect
@@ -710,6 +712,12 @@ Validated in the current Linux environment:
   all ten executions using user-local Chromium runtime libraries. The base
   host still lacks `libnspr4.so`, so CI continues to install the browser image
   dependencies explicitly.
+- Network-native media sources now expose authenticated REST playback controls
+  (`play`, `pause`, and bounded `seek`) through the same registry used by the
+  Web SPA. Emby/Jellyfin/Plex HTTP commands and OFS WebSocket commands remain
+  backend-owned; the browser sends commands and receives the next throttled
+  media-state snapshot. Registry forwarding and negative seek validation are
+  covered by the Server test suite.
 - The Web `Device settings` route now surfaces the server-managed repository,
   effective runtime, security, and legacy-migration panels alongside axis
   policies. These panels are deliberately read-only because root paths,
