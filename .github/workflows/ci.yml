@@ -116,3 +116,40 @@ jobs:
       with:
         name: MultiFunPlayer-${{ steps.gitversion.outputs.fullSemVer }}.${{ steps.gitversion.outputs.shortSha }}-${{ matrix.build_type }}
         path: Source\MultiFunPlayer\bin\${{ matrix.build_type }}\win-x64\publish
+
+  portable:
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ (needs.detect-changes.outputs.source == 'true') || (needs.detect-changes.outputs.docs == 'true') || (github.event.inputs.force-build == 'true') }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup .NET 10 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.302'
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: ./Source/MultiFunPlayer.Web/package-lock.json
+    - name: Restore portable projects (locked)
+      run: dotnet restore --locked-mode --disable-parallel -p:EnableWindowsTargeting=true
+    - name: Test portable projects
+      run: |
+        dotnet test Source/MultiFunPlayer.Core.Tests/MultiFunPlayer.Core.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
+        dotnet test Source/MultiFunPlayer.Application.Tests/MultiFunPlayer.Application.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
+        dotnet test Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
+        dotnet test Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
+    - name: Build solution
+      run: dotnet build MultiFunPlayer.sln --no-restore --configuration Release -p:EnableWindowsTargeting=true
+    - name: Install Web dependencies
+      run: npm ci --no-audit --no-fund
+      working-directory: ./Source/MultiFunPlayer.Web
+    - name: Check Web contracts
+      run: |
+        npm run typecheck
+        npm run check:static
+        npm run build
+      working-directory: ./Source/MultiFunPlayer.Web

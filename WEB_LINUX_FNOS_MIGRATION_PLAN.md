@@ -558,6 +558,10 @@ Validated in the current Linux environment:
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully; only the existing
   Browserslist database freshness warning is reported.
+- GitHub Actions now includes an Ubuntu portable job that performs locked
+  restore, Core/Application/Infrastructure/Server tests, solution build, and
+  SPA type/static/production checks. Windows runner execution remains required
+  before P0-04/P1 WPF acceptance can be checked.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
