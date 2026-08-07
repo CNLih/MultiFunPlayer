@@ -552,7 +552,7 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 28/28;
+- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 29/29;
   Server tests: 24/24.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
@@ -689,7 +689,8 @@ Validated in the current Linux environment:
 - Acceptance evidence now includes pairing/authentication tests, simulated
   Jellyfin/Emby/Plex configuration and connection, scripts-root upload followed
   by multi-axis load, legacy configuration migration, the Core/Application
-  desktop-reference scan, and the published operations/security documentation.
+  desktop-reference scan, backend playback/output after browser disconnect,
+  and the published operations/security documentation.
 
 Still open and intentionally not advertised as complete:
 
@@ -802,7 +803,7 @@ The community MVP is complete only when all of the following are true:
 - [x] A user can configure at least one supported remote media source.
 - [x] A user can load a local-volume Funscript and observe correct multi-axis state.
 - [ ] Serial and at least TCP, UDP, and WebSocket outputs pass integration tests.
-- [ ] Backend playback/output continues when all browsers disconnect.
+- [x] Backend playback/output continues when all browsers disconnect.
 - [ ] Configuration and keys survive restart and upgrade.
 - [x] Existing supported desktop configuration has a tested migration or a documented safe re-entry path.
 - [x] No Core/Application project references Windows desktop assemblies.

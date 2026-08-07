@@ -8,8 +8,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Infrastructure.Media;
 using MultiFunPlayer.Infrastructure.Storage;
+using MultiFunPlayer.Script;
 
 namespace MultiFunPlayer.Server.Tests;
 
@@ -255,7 +257,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
         Assert.True(created.Target!.Connected);
         Assert.Equal(5, created.Target.UpdateRateHz);
-        Assert.True(File.Exists(Path.Combine(storage.LogsRoot, "runtime.tcode")));
+        var outputPath = Path.Combine(storage.LogsRoot, "runtime.tcode");
+        Assert.True(File.Exists(outputPath));
 
         var duplicate = await registry.CreateAsync(new OutputTargetDefinition(
             "file-1", "Duplicate", "file", "duplicate.tcode"));
@@ -270,6 +273,15 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(OutputTargetOperationStatus.Success,
             (await registry.ConnectAsync("file-1")).Status);
         Assert.Equal(1, Assert.Single(registry.List()).Reconnects);
+
+        var parsed = FunscriptReader.Default.FromText("runtime.funscript", "test",
+            "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}");
+        Assert.True(parsed.IsSuccess);
+        engine.Load(parsed.Resource, "L0");
+        engine.Play();
+        engine.Tick(TimeSpan.FromMilliseconds(500));
+        Assert.Contains("L0500", await File.ReadAllTextAsync(outputPath), StringComparison.Ordinal);
+
         await registry.DisconnectAsync("file-1");
         await registry.StopAsync(CancellationToken.None);
 
