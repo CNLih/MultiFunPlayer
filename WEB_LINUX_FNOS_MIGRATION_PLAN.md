@@ -669,7 +669,7 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  40/40, including The Handy and TCP/UDP/WebSocket registry integrations,
+  42/42, including The Handy, TCP/UDP/WebSocket, and VLC/MPC registry integrations,
   device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
   explicit key-root reuse across independent host instances, and rejection of
