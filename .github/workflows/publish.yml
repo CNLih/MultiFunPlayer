@@ -34,7 +34,7 @@ jobs:
     - name: Install Dependencies (locked)
       run: dotnet restore --locked-mode
     - name: Test
-      run: dotnet test --no-restore --configuration Release
+      run: dotnet test --no-restore --configuration Release -- xunit.parallelizeTestCollections=false
     - name: Build Framework Dependent
       run: dotnet publish --no-restore --self-contained false --configuration Release --property:PublishDir=.\bin\Release\win-x64\publish\framework-dependent
     - name: Build Self Contained
