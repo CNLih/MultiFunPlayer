@@ -722,7 +722,7 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 106/106 checks passed for the
+- The packaging contract validator reports 111/111 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
   roots, health check, secret interpolation, the structural fnOS manifest, and
   the canonical `fnpack` project. The fnOS Compose service now carries the
@@ -737,6 +737,10 @@ Validated in the current Linux environment:
   It no longer copies Alpine's musl-linked `busybox` into the Debian ASP.NET
   image, avoiding an architecture/runtime-loader mismatch that would make a
   built image fail health checks before target acceptance.
+- The Docker build context now excludes Web browser reports, test results,
+  generated SPA/Docs output, and both Web/Docs dependency trees. The packaging
+  contract checks these exclusions so local diagnostics cannot inflate or
+  accidentally enter a runtime build context.
 - `deploy/validate-fpk.sh` now inspects the Compose file inside `app.tgz` and
   rejects packages that lose the read-only, bounded `/tmp`, privilege,
   graceful-stop, or CPU/memory constraints during archive creation. Both
