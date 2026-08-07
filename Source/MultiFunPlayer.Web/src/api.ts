@@ -65,8 +65,9 @@ export class MfpApiClient {
   connectState(path: string, listener: StateListener, onDisconnect: () => void): WebSocket | undefined {
     if (typeof WebSocket === 'undefined') return undefined;
     const base = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const query = this.token() ? `?access_token=${encodeURIComponent(this.token() as string)}` : '';
-    const socket = new WebSocket(`${base}${path}${query}`);
+    const token = this.token();
+    const protocols = token ? [`mfp-auth.${encodeToken(token)}`] : undefined;
+    const socket = protocols ? new WebSocket(`${base}${path}`, protocols) : new WebSocket(`${base}${path}`);
     socket.addEventListener('message', (event) => {
       try {
         listener(JSON.parse(String(event.data)) as StatusResponse);
@@ -101,4 +102,11 @@ export class MfpApiClient {
     const cleanUrl = `${window.location.pathname}${window.location.hash}`;
     window.history.replaceState({}, '', cleanUrl);
   }
+}
+
+function encodeToken(token: string): string {
+  const bytes = new TextEncoder().encode(token);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

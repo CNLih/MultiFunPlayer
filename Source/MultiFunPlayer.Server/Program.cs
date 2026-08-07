@@ -189,7 +189,7 @@ public static class ServerProgram
         }
 
         using (subscription)
-        using (var socket = await context.WebSockets.AcceptWebSocketAsync())
+        using (var socket = await context.WebSockets.AcceptWebSocketAsync(ReadAuthProtocol(context.Request)))
         {
             var engine = context.RequestServices.GetRequiredService<HeadlessPlayerEngine>();
             subscription.SetInitial(engine.Current);
@@ -246,14 +246,28 @@ public static class ServerProgram
         var authorization = request.Headers.Authorization.FirstOrDefault();
         if (authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
             return authorization[7..].Trim();
-        // Browsers cannot set headers during a WebSocket upgrade. This query
-        // token is accepted only for the upgrade path and is never logged by
-        // the application.
-        return request.HttpContext.WebSockets.IsWebSocketRequest
-            && request.Query.TryGetValue("access_token", out var queryToken)
-            ? queryToken.FirstOrDefault()
-            : null;
+        if (!request.HttpContext.WebSockets.IsWebSocketRequest)
+            return null;
+        var protocol = ReadAuthProtocol(request);
+        if (protocol is null)
+            return null;
+
+        try
+        {
+            var encoded = protocol["mfp-auth.".Length..].Replace('-', '+').Replace('_', '/');
+            encoded = encoded.PadRight(encoded.Length + (4 - encoded.Length % 4) % 4, '=');
+            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
+
+    private static string? ReadAuthProtocol(HttpRequest request)
+        => request.Headers["Sec-WebSocket-Protocol"].SelectMany(value => value?.Split(',') ?? [])
+            .Select(value => value.Trim())
+            .FirstOrDefault(value => value.StartsWith("mfp-auth.", StringComparison.Ordinal));
 
     private static bool CryptographicEquals(string left, string right)
     {

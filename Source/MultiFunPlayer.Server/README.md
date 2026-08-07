@@ -28,6 +28,7 @@ framework's ephemeral key repository.
 `/api/v1/status`. Each subscriber has a one-item latest-value queue, so a slow
 browser cannot retain unbounded snapshots or stop the player.
 
-The contract is available at /openapi/v1.json. Browser WebSocket clients may
-use ?access_token=<token> for the upgrade because browser APIs cannot attach a
-custom header; query tokens are accepted only on WebSocket upgrades.
+The contract is available at /openapi/v1.json. Browser WebSocket clients use
+the `mfp-auth.<base64url-token>` subprotocol because browser APIs cannot attach
+a custom header. The token is not placed in the WebSocket URL, avoiding the
+usual request-URL access-log leak.
