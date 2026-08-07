@@ -996,9 +996,9 @@ Validated in the current Linux environment:
   checks with 0 failures and covered .NET/Web/Docs high-severity dependency
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
   soak smoke with explicit p95 and coalescing budgets. The report now records
-  its top-level `repositoryRevision`; the current run is bound to
-  `082209206ff35d8df744f38b965cf4c8ce30ed47`, while four target-environment
-  gates remain pending. The
+  its top-level `repositoryRevision`, `endedAtUtc`, and `durationSeconds`; the
+  current run is bound to `bdb0769c9dc899de2ed85af48e2ece2fe85b71b1` and took
+  56.298 seconds, while four target-environment gates remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
