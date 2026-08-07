@@ -1,10 +1,9 @@
-﻿using MultiFunPlayer.Common;
+﻿using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
@@ -13,8 +12,9 @@ using System.Text;
 namespace MultiFunPlayer.OutputTarget.ViewModels;
 
 [DisplayName("TCP")]
-internal sealed class TcpOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : ThreadAbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal sealed class TcpOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : ThreadAbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     public override ConnectionStatus Status { get; protected set; }
     public bool IsConnected => Status == ConnectionStatus.Connected;
@@ -79,7 +79,7 @@ internal sealed class TcpOutputTarget(int instanceIndex, IEventAggregator eventA
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0} at \"{1}\"", Name, Endpoint?.ToUriString());
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -89,7 +89,7 @@ internal sealed class TcpOutputTarget(int instanceIndex, IEventAggregator eventA
 
         try
         {
-            EventAggregator.Publish(new SyncRequestMessage());
+            MessageBus.Publish(new SyncRequestCommand());
 
             var buffer = new byte[256];
             var stream = client.GetStream();
@@ -151,7 +151,7 @@ internal sealed class TcpOutputTarget(int instanceIndex, IEventAggregator eventA
         catch (Exception e)
         {
             Logger.Error(e, $"{Identifier} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Identifier} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
     }
 

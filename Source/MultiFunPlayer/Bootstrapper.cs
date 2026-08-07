@@ -1,11 +1,13 @@
 ﻿using MaterialDesignThemes.Wpf;
 using Microsoft.Win32;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Input;
 using MultiFunPlayer.Input.RawInput;
 using MultiFunPlayer.Input.TCode;
 using MultiFunPlayer.Input.XInput;
 using MultiFunPlayer.MediaSource;
+using MultiFunPlayer.Desktop;
 using MultiFunPlayer.MotionProvider;
 using MultiFunPlayer.OutputTarget;
 using MultiFunPlayer.Plugin;
@@ -56,6 +58,9 @@ internal sealed class Bootstrapper : Bootstrapper<RootViewModel>
     protected override void ConfigureIoC(IStyletIoCBuilder builder)
     {
         builder.Bind<ISnackbarMessageQueue>().To<SnackbarMessageQueue>().InSingletonScope();
+        builder.Bind<IApplicationMessageBus>().To<StyletApplicationMessageBus>().InSingletonScope();
+        builder.Bind<IOperationErrorSink>().To<DialogApplicationErrorSink>().InSingletonScope();
+        builder.Bind<IApplicationPrompt>().To<DialogApplicationPrompt>().InSingletonScope();
 
         builder.Bind<JsonConverter>().ToAllImplementations();
 

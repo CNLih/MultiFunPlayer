@@ -1,18 +1,18 @@
 ﻿using Microsoft.Win32;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Script;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.IO;
 
 namespace MultiFunPlayer.OutputTarget.ViewModels;
 
 [DisplayName("File")]
-internal sealed class FileOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : ThreadAbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal sealed class FileOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : ThreadAbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     public override ConnectionStatus Status { get; protected set; }
     public bool IsConnected => Status == ConnectionStatus.Connected;
@@ -67,7 +67,7 @@ internal sealed class FileOutputTarget(int instanceIndex, IEventAggregator event
         catch (Exception e)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
 
@@ -96,7 +96,7 @@ internal sealed class FileOutputTarget(int instanceIndex, IEventAggregator event
         catch (Exception e)
         {
             Logger.Error(e, $"{Identifier} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Identifier} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         foreach (var (_, writer) in writers)

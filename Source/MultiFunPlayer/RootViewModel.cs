@@ -63,7 +63,7 @@ internal sealed class RootViewModel : Conductor<IScreen>.Collection.AllActive, I
 
     protected override void OnViewLoaded()
     {
-        var window = Application.Current.MainWindow;
+        var window = global::System.Windows.Application.Current.MainWindow;
         if (window == null)
             return;
 

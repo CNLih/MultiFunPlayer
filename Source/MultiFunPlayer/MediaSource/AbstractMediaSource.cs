@@ -1,7 +1,7 @@
-﻿using MultiFunPlayer.Common;
+﻿using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json.Linq;
 using NLog;
 using PropertyChanged;
@@ -12,12 +12,15 @@ using System.Threading.Channels;
 
 namespace MultiFunPlayer.MediaSource;
 
-internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMediaSourceControlMessage>
+internal abstract class AbstractMediaSource : Screen, IMediaSource
 {
     protected Logger Logger { get; }
 
     private readonly Channel<IMediaSourceControlMessage> _messageChannel;
-    private readonly IEventAggregator _eventAggregator;
+    private readonly IApplicationMessageBus _messageBus;
+    private readonly IOperationErrorSink _errorSink;
+    protected IApplicationPrompt Prompt { get; }
+    private readonly IDisposable[] _commandSubscriptions;
     private CancellationTokenSource _cancellationSource;
     private Task _task;
 
@@ -27,7 +30,9 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMed
 
     protected bool IsDisposing { get; private set; }
 
-    protected AbstractMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager, IEventAggregator eventAggregator)
+    protected AbstractMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager,
+        IApplicationMessageBus messageBus, IOperationErrorSink errorSink,
+        IApplicationPrompt prompt)
     {
         _messageChannel = Channel.CreateUnbounded<IMediaSourceControlMessage>(new UnboundedChannelOptions()
         {
@@ -35,8 +40,20 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMed
             SingleWriter = true,
         });
 
-        _eventAggregator = eventAggregator;
-        _eventAggregator.Subscribe(this);
+        _messageBus = messageBus ?? throw new ArgumentNullException(nameof(messageBus));
+        _errorSink = errorSink ?? throw new ArgumentNullException(nameof(errorSink));
+        Prompt = prompt ?? throw new ArgumentNullException(nameof(prompt));
+        _commandSubscriptions =
+        [
+            _messageBus.Subscribe<MediaSeekCommand>(command =>
+                HandleCommand(new MediaSeekMessage(command.Position))),
+            _messageBus.Subscribe<MediaPlayPauseCommand>(command =>
+                HandleCommand(new MediaPlayPauseMessage(command.ShouldBePlaying))),
+            _messageBus.Subscribe<MediaChangePathCommand>(command =>
+                HandleCommand(new MediaChangePathMessage(command.Path))),
+            _messageBus.Subscribe<MediaChangeSpeedCommand>(command =>
+                HandleCommand(new MediaChangeSpeedMessage(command.Speed)))
+        ];
 
         Name = GetType().GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName;
         Logger = LogManager.GetLogger(GetType().FullName);
@@ -48,7 +65,41 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMed
     protected void PublishMessage(object message)
     {
         Logger.Trace("Publishing message \"{0}\"", message);
-        _eventAggregator.Publish(message);
+        switch (message)
+        {
+            case MediaSpeedChangedMessage changed:
+                _messageBus.Publish(new MediaSpeedChangedEvent(changed.Speed));
+                break;
+            case MediaPositionChangedMessage changed:
+                _messageBus.Publish(new MediaPositionChangedEvent(changed.Position, changed.ForceSeek));
+                break;
+            case MediaPlayingChangedMessage changed:
+                _messageBus.Publish(new MediaPlayingChangedEvent(changed.IsPlaying));
+                break;
+            case MediaPathChangedMessage changed:
+                _messageBus.Publish(new MediaPathChangedEvent(changed.Path, changed.ReloadScripts, changed.Context));
+                break;
+            case MediaDurationChangedMessage changed:
+                _messageBus.Publish(new MediaDurationChangedEvent(changed.Duration));
+                break;
+            case MediaResetMessage:
+                _messageBus.Publish(new MediaResetEvent());
+                break;
+            case ChangeScriptMessage changed:
+                _messageBus.Publish(new ChangeScriptEvent(changed.Scripts));
+                break;
+            default:
+                Logger.Debug("Ignoring unsupported application message {0}", message.GetType().FullName);
+                break;
+        }
+    }
+
+    protected void ReportError(Exception exception, string operation,
+        string code = null, bool isTransient = false)
+    {
+        code ??= $"media.{operation}.failed";
+        _errorSink.Report(ApplicationError.FromException(code, operation, Name,
+            exception, isTransient));
     }
 
     public async virtual Task ConnectAsync(ConnectionType connectionType)
@@ -71,7 +122,7 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMed
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect", "media.connect.failed");
         }
         catch { }
 
@@ -185,14 +236,24 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource, IHandle<IMed
     protected void WriteMessage(IMediaSourceControlMessage message)
         => _messageChannel.Writer.TryWrite(message);
 
-    public void Handle(IMediaSourceControlMessage message)
+    private void HandleCommand(IMediaSourceControlMessage message)
     {
         if (Status == ConnectionStatus.Connected)
-            _messageChannel.Writer.TryWrite(message);
+            WriteMessage(message);
     }
 
     protected virtual void Dispose(bool disposing)
-        => OnDisconnectingAsync().Preserve().GetAwaiter().GetResult();
+    {
+        try
+        {
+            OnDisconnectingAsync().Preserve().GetAwaiter().GetResult();
+        }
+        finally
+        {
+            foreach (var subscription in _commandSubscriptions)
+                subscription.Dispose();
+        }
+    }
 
     public void Dispose()
     {

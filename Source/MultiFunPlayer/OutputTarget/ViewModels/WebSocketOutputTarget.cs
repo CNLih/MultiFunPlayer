@@ -1,10 +1,9 @@
-﻿using MultiFunPlayer.Common;
+﻿using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.Net.WebSockets;
 using System.Text;
@@ -12,8 +11,9 @@ using System.Text;
 namespace MultiFunPlayer.OutputTarget.ViewModels;
 
 [DisplayName("WebSocket")]
-internal sealed class WebSocketOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : AsyncAbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal sealed class WebSocketOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : AsyncAbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     public override ConnectionStatus Status { get; protected set; }
     public bool IsConnected => Status == ConnectionStatus.Connected;
@@ -61,7 +61,7 @@ internal sealed class WebSocketOutputTarget(int instanceIndex, IEventAggregator 
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0} at \"{1}\"", Name, Uri);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -71,7 +71,7 @@ internal sealed class WebSocketOutputTarget(int instanceIndex, IEventAggregator 
 
         try
         {
-            EventAggregator.Publish(new SyncRequestMessage());
+            MessageBus.Publish(new SyncRequestCommand());
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(token);
             var task = await Task.WhenAny(WriteAsync(client, cancellationSource.Token), ReadAsync(client, cancellationSource.Token));
@@ -83,7 +83,7 @@ internal sealed class WebSocketOutputTarget(int instanceIndex, IEventAggregator 
         catch (Exception e)
         {
             Logger.Error(e, $"{Identifier} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Identifier} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         try { await client.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }

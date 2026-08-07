@@ -1,8 +1,8 @@
-﻿using MultiFunPlayer.Common;
+﻿using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Input;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json.Linq;
 using NLog;
 using PropertyChanged;
@@ -31,16 +31,16 @@ internal abstract class AbstractOutputTarget : Screen, IOutputTarget
     public Dictionary<DeviceAxisUpdateType, IUpdateContext> UpdateContexts { get; }
     public IReadOnlyCollection<DeviceAxisUpdateType> AvailableUpdateTypes => UpdateContexts.Keys;
 
-    protected IEventAggregator EventAggregator { get; }
+    protected IApplicationMessageBus MessageBus { get; }
+    private readonly IOperationErrorSink _errorSink;
 
-    protected AbstractOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
+    protected AbstractOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+        IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
     {
         InstanceIndex = instanceIndex;
-        EventAggregator = eventAggregator;
+        MessageBus = messageBus ?? throw new ArgumentNullException(nameof(messageBus));
+        _errorSink = errorSink ?? throw new ArgumentNullException(nameof(errorSink));
         _valueProvider = valueProvider;
-
-        if (this is IHandle handler)
-            eventAggregator.Subscribe(handler);
 
         Name = GetType().GetCustomAttribute<DisplayNameAttribute>(inherit: false).DisplayName;
         Logger = LogManager.GetLogger(GetType().FullName);
@@ -74,7 +74,7 @@ internal abstract class AbstractOutputTarget : Screen, IOutputTarget
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect", "output.connect.failed");
         }
         catch { }
 
@@ -138,6 +138,14 @@ internal abstract class AbstractOutputTarget : Screen, IOutputTarget
             var settings = AxisSettings[axis];
             values[axis] = MathUtils.Lerp(settings.Minimum, settings.Maximum, value);
         }
+    }
+
+    protected void ReportError(Exception exception, string operation,
+        string code = null, bool isTransient = false)
+    {
+        code ??= $"output.{operation}.failed";
+        _errorSink.Report(ApplicationError.FromException(code, operation, Identifier,
+            exception, isTransient));
     }
 
     protected void BeginEventPolling()
@@ -381,8 +389,9 @@ internal abstract class AbstractOutputTarget : Screen, IOutputTarget
     }
 }
 
-internal abstract class ThreadAbstractOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : AbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal abstract class ThreadAbstractOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : AbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     private CancellationTokenSource _cancellationSource;
     private Thread _thread;
@@ -519,8 +528,9 @@ internal abstract class ThreadAbstractOutputTarget(int instanceIndex, IEventAggr
     }
 }
 
-internal abstract class AsyncAbstractOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : AbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal abstract class AsyncAbstractOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : AbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     private CancellationTokenSource _cancellationSource;
     private Task _task;

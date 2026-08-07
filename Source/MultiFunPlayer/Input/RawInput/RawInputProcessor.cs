@@ -203,7 +203,7 @@ internal sealed class RawInputProcessor : AbstractInputProcessor, IHandle<Window
     }
 
     public void Handle(WindowCreatedMessage message)
-        => RegisterWindow(PresentationSource.FromVisual(Application.Current.MainWindow) as HwndSource);
+        => RegisterWindow(PresentationSource.FromVisual(global::System.Windows.Application.Current.MainWindow) as HwndSource);
 
     protected override void Dispose(bool disposing)
     {

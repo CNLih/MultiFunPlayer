@@ -1,11 +1,10 @@
-﻿using MultiFunPlayer.Common;
+﻿using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -15,8 +14,9 @@ using System.Text;
 namespace MultiFunPlayer.OutputTarget.ViewModels;
 
 [DisplayName("The Handy")]
-internal sealed class TheHandyOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-    : AsyncAbstractOutputTarget(instanceIndex, eventAggregator, valueProvider)
+internal sealed class TheHandyOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+    IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+    : AsyncAbstractOutputTarget(instanceIndex, messageBus, errorSink, valueProvider)
 {
     public string ConnectionKey { get; set; } = null;
     public DeviceAxis SourceAxis { get; set; } = null;
@@ -38,7 +38,7 @@ internal sealed class TheHandyOutputTarget(int instanceIndex, IEventAggregator e
         if (Status != ConnectionStatus.Connected || SourceAxis == null)
             return;
 
-        EventAggregator.Publish(new SyncRequestMessage(SourceAxis));
+        MessageBus.Publish(new SyncRequestCommand([SourceAxis]));
     }
 
     protected override ValueTask<bool> OnConnectingAsync(ConnectionType connectionType)
@@ -84,7 +84,7 @@ internal sealed class TheHandyOutputTarget(int instanceIndex, IEventAggregator e
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -114,7 +114,7 @@ internal sealed class TheHandyOutputTarget(int instanceIndex, IEventAggregator e
             Logger.Info("Calculated RTD: {0}", averageRtd);
 
             Status = ConnectionStatus.Connected;
-            EventAggregator.Publish(new SyncRequestMessage());
+            MessageBus.Publish(new SyncRequestCommand());
 
             await PolledUpdateAsync(SourceAxis, () => !token.IsCancellationRequested, async (_, axisEvent, elapsed) =>
             {
@@ -136,7 +136,7 @@ internal sealed class TheHandyOutputTarget(int instanceIndex, IEventAggregator e
         catch (Exception e)
         {
             Logger.Error(e, $"{Identifier} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Identifier} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
     }
 

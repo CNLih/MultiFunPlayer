@@ -1,5 +1,6 @@
 ﻿using Microsoft.Win32;
 using MultiFunPlayer.Common;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
 using MultiFunPlayer.UI;
@@ -16,8 +17,9 @@ using System.Windows.Interop;
 namespace MultiFunPlayer.MediaSource.ViewModels;
 
 [DisplayName("PotPlayer")]
-internal sealed class PotPlayerMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager, IEventAggregator eventAggregator)
-    : AbstractMediaSource(shortcutManager, propertyManager, eventAggregator)
+internal sealed class PotPlayerMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager,
+    IApplicationMessageBus messageBus, IOperationErrorSink errorSink, IApplicationPrompt prompt)
+    : AbstractMediaSource(shortcutManager, propertyManager, messageBus, errorSink, prompt)
 {
     public override ConnectionStatus Status { get; protected set; }
     public bool IsConnected => Status == ConnectionStatus.Connected;
@@ -65,7 +67,7 @@ internal sealed class PotPlayerMediaSource(IShortcutManager shortcutManager, IPr
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -85,7 +87,7 @@ internal sealed class PotPlayerMediaSource(IShortcutManager shortcutManager, IPr
         catch (Exception e)
         {
             Logger.Error(e, $"{Name} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Name} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         if (IsDisposing)
@@ -101,7 +103,7 @@ internal sealed class PotPlayerMediaSource(IShortcutManager shortcutManager, IPr
             var playerState = default(PlayerState);
 
             var hwndSource = default(HwndSource);
-            await Execute.OnUIThreadAsync(() => hwndSource = PresentationSource.FromVisual(Application.Current.MainWindow) as HwndSource);
+            await Execute.OnUIThreadAsync(() => hwndSource = PresentationSource.FromVisual(global::System.Windows.Application.Current.MainWindow) as HwndSource);
 
             var window = process.MainWindowHandle;
 

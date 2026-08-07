@@ -1,4 +1,5 @@
 ﻿using MultiFunPlayer.Common;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Script;
 using MultiFunPlayer.Script.Repository;
@@ -17,8 +18,10 @@ using System.Windows;
 namespace MultiFunPlayer.MediaSource.ViewModels;
 
 [DisplayName("Internal")]
-internal sealed class InternalMediaSource(ILocalScriptRepository localRepository, IShortcutManager shortcutManager, IPropertyManager propertyManager, IEventAggregator eventAggregator)
-    : AbstractMediaSource(shortcutManager, propertyManager, eventAggregator)
+internal sealed class InternalMediaSource(ILocalScriptRepository localRepository, IShortcutManager shortcutManager,
+    IPropertyManager propertyManager, IApplicationMessageBus messageBus, IOperationErrorSink errorSink,
+    IApplicationPrompt prompt)
+    : AbstractMediaSource(shortcutManager, propertyManager, messageBus, errorSink, prompt)
 {
     private readonly Lock _playlistLock = new();
 
@@ -63,7 +66,7 @@ internal sealed class InternalMediaSource(ILocalScriptRepository localRepository
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -149,7 +152,7 @@ internal sealed class InternalMediaSource(ILocalScriptRepository localRepository
         catch (Exception e)
         {
             Logger.Error(e, $"{Name} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Name} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         if (IsDisposing)

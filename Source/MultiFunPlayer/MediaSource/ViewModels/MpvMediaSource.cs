@@ -1,25 +1,23 @@
 ﻿using Microsoft.Win32;
 using MultiFunPlayer.Common;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
-using MultiFunPlayer.UI.Dialogs.ViewModels;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.IO.Pipes;
-using System.Windows;
 
 namespace MultiFunPlayer.MediaSource.ViewModels;
 
 [DisplayName("MPV")]
-internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager, IEventAggregator eventAggregator)
-    : AbstractMediaSource(shortcutManager, propertyManager, eventAggregator)
+internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager,
+    IApplicationMessageBus messageBus, IOperationErrorSink errorSink, IApplicationPrompt prompt)
+    : AbstractMediaSource(shortcutManager, propertyManager, messageBus, errorSink, prompt)
 {
     private static string PipeName { get; } = "multifunplayer-mpv";
 
@@ -60,8 +58,10 @@ internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IProperty
             }
             else
             {
-                var result = await DialogHelper.ShowAsync<MessageBoxResult>(new MessageBoxDialog("Mpv executable not found!\nWould you like to download it now?", MessageBoxButton.YesNo), "RootDialog");
-                if (result != MessageBoxResult.Yes)
+                var shouldDownload = await Prompt.ConfirmAsync(
+                    "media.executable.download", "Download MPV",
+                    "Mpv executable not found!\nWould you like to download it now?");
+                if (!shouldDownload)
                     throw new MediaSourceException("Could not find mpv executable! Set path to mpv.exe manually or download latest release from settings.");
 
                 _ = Task.Run(OnDownloadExecutable);
@@ -108,7 +108,7 @@ internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IProperty
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0}", Name);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -138,7 +138,7 @@ internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IProperty
         catch (Exception e)
         {
             Logger.Error(e, $"{Name} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Name} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         if (IsDisposing)
@@ -337,7 +337,7 @@ internal sealed class MpvMediaSource(IShortcutManager shortcutManager, IProperty
         catch (Exception e)
         {
             Logger.Error(e, $"{Name} executable download failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Name} executable download failed with exception", "RootDialog");
+            ReportError(e, "download", "media.executable.download.failed");
         }
 
         IsDownloading = false;

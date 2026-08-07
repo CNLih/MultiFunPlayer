@@ -46,7 +46,7 @@ internal sealed class GeneralSettingsViewModel : Screen, IHandle<SettingsMessage
 
     public void OnAlwaysOnTopChanged()
     {
-        var window = Application.Current.MainWindow;
+        var window = global::System.Windows.Application.Current.MainWindow;
         if (window == null)
             return;
 
@@ -58,7 +58,7 @@ internal sealed class GeneralSettingsViewModel : Screen, IHandle<SettingsMessage
 
     public void OnAllowWindowResizeChanged()
     {
-        var window = Application.Current.MainWindow;
+        var window = global::System.Windows.Application.Current.MainWindow;
         if (window == null)
             return;
 
@@ -76,7 +76,7 @@ internal sealed class GeneralSettingsViewModel : Screen, IHandle<SettingsMessage
 
     public void OnAppOrientationChanged()
     {
-        var window = Application.Current.MainWindow;
+        var window = global::System.Windows.Application.Current.MainWindow;
         if (window == null)
             return;
 

@@ -302,8 +302,8 @@ Tasks:
 - [x] P2-02 Split `ScriptViewModel` into a headless `ScriptEngine`, playback state, axis state, settings, and UI projection.
 - [x] P2-03 Introduce clock/timer abstractions only where needed for deterministic tests and shutdown.
 - [x] P2-04 Create application interfaces for media sources, output targets, configuration, secrets, files, and serial discovery.
-- [ ] P2-05 Replace direct WPF dialog calls in shared flows with structured errors and operation results.
-- [ ] P2-06 Replace Stylet event dependencies in shared code with an application-owned event/command contract.
+- [x] P2-05 Replace direct WPF dialog calls in shared flows with structured errors and operation results.
+- [x] P2-06 Replace Stylet event dependencies in shared code with an application-owned event/command contract.
 - [x] P2-07 Keep the WPF host operational by adapting existing view models to the extracted services.
 - [x] P2-08 Separate persisted configuration DTOs from WPF view models while maintaining a migration reader.
 - [x] P2-09 Move output update contexts and TCode formatting into testable platform-neutral services.
@@ -552,7 +552,7 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 29/29;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 29/29;
   Server tests: 24/24.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
@@ -608,7 +608,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 28/28). Registry
+  simulator tests cover all three sources (Infrastructure 29/29). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -616,6 +616,11 @@ Validated in the current Linux environment:
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be
   replaced without changing Core timing or script evaluation.
+- Shared desktop media/output flows now consume an application-owned typed
+  message bus, structured operation-error sink, and host-neutral confirmation
+  prompt. The WPF host binds Stylet/Dialog adapters at the composition root;
+  Core/Application remain free of WPF and Stylet references, and the contract
+  tests pass 10/10.
 - The SPA now loads media/output registries and device-axis policies from the
   server, provides persisted create/connect/disconnect/delete workflows, and
   renders planned/blocked capability errors. Script upload remains available

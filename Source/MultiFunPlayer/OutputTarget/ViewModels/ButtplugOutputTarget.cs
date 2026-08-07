@@ -1,9 +1,9 @@
 ﻿using Buttplug;
 using Buttplug.NewtonsoftJson;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Shortcut;
-using MultiFunPlayer.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
@@ -57,8 +57,9 @@ internal sealed class ButtplugOutputTarget : AsyncAbstractOutputTarget
 
     public ObservableConcurrentCollection<ButtplugDeviceSettings> DeviceSettings { get; }
 
-    public ButtplugOutputTarget(int instanceIndex, IEventAggregator eventAggregator, IDeviceAxisValueProvider valueProvider)
-        : base(instanceIndex, eventAggregator, valueProvider)
+    public ButtplugOutputTarget(int instanceIndex, IApplicationMessageBus messageBus,
+        IOperationErrorSink errorSink, IDeviceAxisValueProvider valueProvider)
+        : base(instanceIndex, messageBus, errorSink, valueProvider)
     {
         AvailableDevices = [];
         DeviceSettings = [];
@@ -110,7 +111,7 @@ internal sealed class ButtplugOutputTarget : AsyncAbstractOutputTarget
             var syncAxes = GetSettingsForDevice(device)
                                 .GroupBy(s => s.SourceAxis)
                                 .Select(g => g.Key);
-            EventAggregator.Publish(new SyncRequestMessage(syncAxes));
+            MessageBus.Publish(new SyncRequestCommand(syncAxes.ToArray()));
         }
 
         var converter = new ButtplugNewtonsoftJsonConverter();
@@ -132,7 +133,7 @@ internal sealed class ButtplugOutputTarget : AsyncAbstractOutputTarget
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0} at \"{1}\"", Name, Endpoint?.ToUriString());
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -142,7 +143,7 @@ internal sealed class ButtplugOutputTarget : AsyncAbstractOutputTarget
 
         try
         {
-            EventAggregator.Publish(new SyncRequestMessage());
+            MessageBus.Publish(new SyncRequestCommand());
             if (_scanSemaphore.CurrentCount == 0)
                 _scanSemaphore.Release();
 
@@ -156,7 +157,7 @@ internal sealed class ButtplugOutputTarget : AsyncAbstractOutputTarget
         catch (Exception e)
         {
             Logger.Error(e, $"{Identifier} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Identifier} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         AvailableDevices.Clear();

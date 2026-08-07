@@ -1,4 +1,5 @@
 ﻿using MultiFunPlayer.Common;
+using MultiFunPlayer.Application;
 using MultiFunPlayer.Property;
 using MultiFunPlayer.Script;
 using MultiFunPlayer.Shortcut;
@@ -6,7 +7,6 @@ using MultiFunPlayer.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
-using Stylet;
 using System.ComponentModel;
 using System.IO;
 using System.Net.WebSockets;
@@ -15,8 +15,9 @@ using System.Text;
 namespace MultiFunPlayer.MediaSource.ViewModels;
 
 [DisplayName("OFS")]
-internal sealed class OfsMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager, IEventAggregator eventAggregator)
-    : AbstractMediaSource(shortcutManager, propertyManager, eventAggregator)
+internal sealed class OfsMediaSource(IShortcutManager shortcutManager, IPropertyManager propertyManager,
+    IApplicationMessageBus messageBus, IOperationErrorSink errorSink, IApplicationPrompt prompt)
+    : AbstractMediaSource(shortcutManager, propertyManager, messageBus, errorSink, prompt)
 {
     public override ConnectionStatus Status { get; protected set; }
     public bool IsConnected => Status == ConnectionStatus.Connected;
@@ -55,7 +56,7 @@ internal sealed class OfsMediaSource(IShortcutManager shortcutManager, IProperty
         catch (Exception e) when (connectionType != ConnectionType.AutoConnect)
         {
             Logger.Error(e, "Error when connecting to {0} at \"{1}\"", Name, Uri);
-            _ = DialogHelper.ShowErrorAsync(e, $"Error when connecting to {Name}", "RootDialog");
+            ReportError(e, "connect");
             return;
         }
         catch
@@ -75,7 +76,7 @@ internal sealed class OfsMediaSource(IShortcutManager shortcutManager, IProperty
         catch (Exception e)
         {
             Logger.Error(e, $"{Name} failed with exception");
-            _ = DialogHelper.ShowErrorAsync(e, $"{Name} failed with exception", "RootDialog");
+            ReportError(e, "run");
         }
 
         try { await client.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); }

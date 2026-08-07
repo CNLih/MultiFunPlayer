@@ -179,7 +179,7 @@ internal static class DialogHelper
 
     private static Task ExecuteOnUIThreadAsync(Func<Task> taskFactory)
     {
-        var dispatcher = Application.Current.Dispatcher;
+        var dispatcher = global::System.Windows.Application.Current.Dispatcher;
         if (!dispatcher.CheckAccess())
         {
             var tcs = new TaskCompletionSource();
@@ -194,7 +194,7 @@ internal static class DialogHelper
 
     private static Task<TResult> ExecuteOnUIThreadAsync<TResult>(Func<Task<TResult>> taskFactory)
     {
-        var dispatcher = Application.Current.Dispatcher;
+        var dispatcher = global::System.Windows.Application.Current.Dispatcher;
         if (!dispatcher.CheckAccess())
         {
             var tcs = new TaskCompletionSource<TResult>();

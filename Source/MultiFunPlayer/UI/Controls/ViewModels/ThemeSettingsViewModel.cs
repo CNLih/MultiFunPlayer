@@ -75,7 +75,7 @@ internal sealed class ThemeSettingsViewModel : Screen, IHandle<SettingsMessage>
         theme.SetSecondaryColor(PrimaryColor);
 
         _paletteHelper.SetTheme(theme);
-        Application.Current.Resources.SetMahApps(theme, IsDarkTheme ? BaseTheme.Dark : BaseTheme.Light);
+        global::System.Windows.Application.Current.Resources.SetMahApps(theme, IsDarkTheme ? BaseTheme.Dark : BaseTheme.Light);
 
         var customThemeSource = $"pack://application:,,,/UI/Themes/Color.{(IsDarkTheme ? "Dark" : "Light")}.xaml";
         var customThemeResource = new ResourceDictionary { Source = new Uri(customThemeSource) };
@@ -115,7 +115,7 @@ internal sealed class ThemeSettingsViewModel : Screen, IHandle<SettingsMessage>
         {
             var brush = new SolidColorBrush(color);
             brush.Freeze();
-            Application.Current.Resources[brushName] = brush;
+            global::System.Windows.Application.Current.Resources[brushName] = brush;
         }
     }
 

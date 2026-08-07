@@ -25,6 +25,7 @@
     
   <ItemGroup>
     <ProjectReference Include="..\MultiFunPlayer.Core\MultiFunPlayer.Core.csproj" />
+    <ProjectReference Include="..\MultiFunPlayer.Application\MultiFunPlayer.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>
