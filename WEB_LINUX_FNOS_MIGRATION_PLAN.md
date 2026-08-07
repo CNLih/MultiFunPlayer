@@ -597,6 +597,9 @@ Validated in the current Linux environment:
   build, portable, packaging, and container jobs inherit read-only repository
   access. This keeps the workflow security boundary least-privilege while
   preserving GitHub Pages deployment.
+- Docs builds and audits still run on pull requests, but the Pages deployment
+  step is now restricted to push and explicit workflow-dispatch events; a PR
+  cannot publish the documentation environment.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
