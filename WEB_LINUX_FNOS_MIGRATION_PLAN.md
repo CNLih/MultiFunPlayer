@@ -1010,8 +1010,8 @@ Validated in the current Linux environment:
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
   soak smoke with explicit p95 and coalescing budgets. The report now records
   its top-level `repositoryRevision`, `endedAtUtc`, and `durationSeconds`; the
-  current run is bound to `bdb0769c9dc899de2ed85af48e2ece2fe85b71b1` and took
-  56.298 seconds, while four target-environment gates remain pending. The
+  current run is bound to `13508a007ac4e499b2dde38d045c217d0f529884` and took
+  68.344 seconds, while four target-environment gates remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
@@ -1043,7 +1043,7 @@ Validated in the current Linux environment:
   with `deviceId` retention and `secretRef` redaction, multi-axis script
   upload/load, seek/play/stop, and bounded redacted logs; it is local evidence
   only, not a Docker, fnOS, or physical-device acceptance.
-- The supporting Python validation/tooling suite passes 38/38, including
+- The supporting Python validation/tooling suite passes 41/41, including
   target-harness media CRUD/redaction, browser-host dependency classification,
   and explicit soak coalescing-budget evidence tests.
 
