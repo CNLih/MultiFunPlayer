@@ -160,6 +160,28 @@ test.describe('control room demo journey', () => {
         contentType: 'video',
       },
     };
+    const legacyOutputTarget = {
+      id: 'legacy-output',
+      name: 'Legacy output',
+      protocol: 'tcp',
+      endpoint: '127.0.0.1:8123',
+      sourceAxis: 'L0',
+      updateRateHz: 20,
+      enabled: true,
+      autoConnect: false,
+      connected: true,
+      lastError: null,
+      sentFrames: 120,
+      droppedFrames: 12,
+      failedFrames: 0,
+      reconnects: 0,
+      lastSentAtUtc: '2026-08-07T00:00:00Z',
+      deviceName: null,
+      deviceIndex: null,
+      actuatorType: 'Vibrate',
+      actuatorIndex: 0,
+      durationMilliseconds: 50,
+    };
 
     await page.addInitScript(() => {
       class MockWebSocket extends EventTarget {
@@ -225,7 +247,7 @@ test.describe('control room demo journey', () => {
         return json(mediaSource);
       }
       if (url.pathname === '/api/v1/media-sources') return json([mediaSource]);
-      if (url.pathname === '/api/v1/output-targets') return json([]);
+      if (url.pathname === '/api/v1/output-targets') return json([legacyOutputTarget]);
       return json({ title: 'Not found' }, 404);
     });
 
@@ -258,6 +280,10 @@ test.describe('control room demo journey', () => {
     expect(disconnectResult?.closed).toBeTruthy();
     await page.getByRole('button', { name: 'Runtime' }).click();
     await expect(page.getByLabel('Health', { exact: true }).getByText('State stream disconnected; reconnect required', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Output targets' }).click();
+    await expect(page.getByRole('heading', { name: 'Output targets' })).toBeVisible();
+    await expect(page.getByText('120 sent / 12 coalesced', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();
