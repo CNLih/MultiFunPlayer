@@ -23,7 +23,13 @@ Set `MFP_SCRIPTS_PATH` (or `MFP_SCRIPTS_ROOT`) to a directory containing
 anonymous. The token is never included in logs or response bodies.
 Set `MFP_KEYS_PATH` (or `MFP_KEYS_ROOT`) to enable persistent ASP.NET Data
 Protection keys in a mounted volume; without it, local development uses the
-framework's ephemeral key repository.
+framework's ephemeral key repository. Persistent keys use ASP.NET Core's
+automatic key rotation with a 90-day default lifetime. Set
+`MFP_DATA_PROTECTION_KEY_LIFETIME_DAYS` (or
+`MultiFunPlayer:DataProtectionKeyLifetimeDays`) between 7 and 3650 days to
+adjust future key generation. Keep older key files in the mounted `/keys` root
+for decryption of existing protected data; do not delete them as part of
+rotation.
 
 For first-run pairing, set `MFP_PAIRING_TOKEN` and leave `MFP_AUTH_TOKEN` unset.
 POST a JSON body containing `pairingToken` and a new `authToken` (at least 16

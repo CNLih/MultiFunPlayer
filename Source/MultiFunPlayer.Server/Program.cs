@@ -67,6 +67,8 @@ public static class ServerProgram
             Directory.CreateDirectory(storage.KeysRoot);
             builder.Services.AddDataProtection()
                 .PersistKeysToFileSystem(new DirectoryInfo(storage.KeysRoot))
+                .SetDefaultKeyLifetime(TimeSpan.FromDays(
+                    ServerOptions.ResolveDataProtectionKeyLifetimeDays(builder.Configuration)))
                 .SetApplicationName("MultiFunPlayer");
         }
         catch (IOException) { }

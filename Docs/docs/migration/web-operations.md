@@ -35,6 +35,12 @@ Data Protection keys, scripts, and diagnostics consistent:
 /logs     bounded JSONL runtime diagnostics and file-output artifacts
 ```
 
+When `/keys` is explicitly mounted, ASP.NET Core rotates Data Protection keys
+automatically every 90 days by default. Set
+`MFP_DATA_PROTECTION_KEY_LIFETIME_DAYS` between 7 and 3650 days when policy
+requires another lifetime. Rotation adds new key files; retain older keys in
+the backup and never delete them during routine rotation.
+
 Stop the service before taking a filesystem snapshot. For a running container,
 create an archive from the volume mount points, excluding temporary files. A
 restore is a replacement of all four roots from the same snapshot; never copy

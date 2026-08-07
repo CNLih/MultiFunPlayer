@@ -775,6 +775,10 @@ Validated in the current Linux environment:
 - `tools/check-portable-boundary.py` now scans Core/Application source and
   project files for WPF, Stylet, Win32/WMI, registry, and DPAPI references; the
   current scan passes and is enforced in the portable CI job.
+- Persistent Data Protection now uses an explicit 90-day automatic key
+  lifetime, bounded by `MFP_DATA_PROTECTION_KEY_LIFETIME_DAYS` (7-3650 days),
+  with tests and operations documentation requiring old key files to remain
+  available during rotation.
 
 Still open and intentionally not advertised as complete:
 
@@ -782,7 +786,8 @@ Still open and intentionally not advertised as complete:
   Emby/Jellyfin/Plex network media adapters are directly wired and
   capability-reported. The remaining CRUD/registry entries clearly report
   planned or blocked capabilities. Initial pairing is implemented, but
-  Docker/fnOS upgrade/rollback rehearsal and key rotation policy remain open.
+  Docker/fnOS upgrade/rollback rehearsal remains open; key rotation policy is
+  implemented and documented for the persistent Data Protection root.
   Serial discovery and open/write are
   implemented, but physical reconnect and permission validation remain
   external gates. Data

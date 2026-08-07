@@ -22,12 +22,19 @@ public sealed class ServerOptions
     public static int ResolveLogCapacity(IConfiguration configuration)
         => ResolveBoundedInt(configuration, "MFP_LOG_CAPACITY", "MultiFunPlayer:LogCapacity", 500, 50, 10_000);
 
+    public static int ResolveDataProtectionKeyLifetimeDays(IConfiguration configuration)
+        => ResolveBoundedInt(configuration, "MFP_DATA_PROTECTION_KEY_LIFETIME_DAYS",
+            "MultiFunPlayer:DataProtectionKeyLifetimeDays", 90, 7, 3_650);
+
     private static int ResolveBoundedInt(IConfiguration configuration, string environmentKey,
         string configurationKey, int fallback, int minimum, int maximum)
     {
         var raw = Environment.GetEnvironmentVariable(environmentKey);
         if (int.TryParse(raw, out var environmentValue))
             return Math.Clamp(environmentValue, minimum, maximum);
-        return Math.Clamp(configuration.GetValue(configurationKey, fallback), minimum, maximum);
+        var configured = configuration[configurationKey];
+        return int.TryParse(configured, out var configuredValue)
+            ? Math.Clamp(configuredValue, minimum, maximum)
+            : fallback;
     }
 }
