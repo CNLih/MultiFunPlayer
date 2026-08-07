@@ -878,9 +878,11 @@ Validated in the current Linux environment:
   desktop and 393x727 mobile Chromium journeys, viewport overflow assertions,
   service-worker API bypass coverage, and CI screenshot artifacts. The five
   tests are enumerated for both projects; the latest local run passed 10/10
-  executions after adding user-local Chromium runtime libraries. The base
-  host remains missing `libnspr4.so`, while CI installs browser and host
-  dependencies before running them.
+  executions after adding user-local Chromium runtime libraries. The
+  authenticated hydration journey also serves a legacy output response without
+  `coalescedFrames` and verifies the UI falls back to `droppedFrames` on both
+  desktop and mobile projects. The base host remains missing `libnspr4.so`,
+  while CI installs browser and host dependencies before running them.
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
