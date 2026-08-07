@@ -444,7 +444,7 @@ Tasks:
 - [x] P5-03 Build media source list, configuration forms, connection controls, and capability messages.
 - [x] P5-04 Build script browser/load controls, time/offset/sync controls, and axis value visualization.
 - [x] P5-05 Build output target creation, configuration, connection, update-rate, and diagnostics screens.
-- [ ] P5-06 Build device axis, range, inversion, interpolation, and limit settings.
+- [x] P5-06 Build device axis, range, inversion, interpolation, and limit settings.
 - [x] P5-07 Build repository, general, security, log, and diagnostic settings.
 - [x] P5-08 Add responsive layouts for desktop, tablet, and phone without changing backend state ownership.
 - [x] P5-09 Add accessible keyboard navigation, labels, focus states, validation, loading, empty, error, and reconnect states.
@@ -553,8 +553,8 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 22/22;
-  Server tests: 22/22.
+- Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 25/25;
+  Server tests: 24/24.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully; only the existing
   Browserslist database freshness warning is reported.
@@ -596,8 +596,8 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  22/22, including The Handy registry integration and redacted JSONL log
-  persistence/download.
+  24/24, including The Handy registry integration, device-axis persistence,
+  network media registry behavior, and redacted JSONL log persistence/download.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
   Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
@@ -617,10 +617,10 @@ Validated in the current Linux environment:
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be
   replaced without changing Core timing or script evaluation.
-- The SPA now loads media/output registries from the server, provides persisted
-  create/connect/disconnect/delete workflows, and renders planned/blocked
-  capability errors. Script upload remains available in both demo and remote
-  modes; browser screenshot automation and full settings surfaces remain open.
+- The SPA now loads media/output registries and device-axis policies from the
+  server, provides persisted create/connect/disconnect/delete workflows, and
+  renders planned/blocked capability errors. Script upload remains available
+  in both demo and remote modes; browser screenshot automation remains open.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -636,12 +636,14 @@ Validated in the current Linux environment:
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
-  serial, and log state with a real refresh action. Axis editing remains open.
+  serial, and log state with a real refresh action. Device-axis editing covers
+  range, inversion, interpolation, and optional limits with persisted REST
+  settings and Application-level evaluation tests.
 
 Still open and intentionally not advertised as complete:
 
-- Functional media-source network adapters and Buttplug output remain open;
-  The Handy HTTP adapter is now directly wired and capability-reported. The
+- Buttplug output remains open; The Handy HTTP adapter and Emby/Jellyfin/Plex
+  network media adapters are directly wired and capability-reported. The
   CRUD/registry contracts now exist and clearly report planned or blocked
   capabilities. Initial pairing is implemented, but
   upgrade/backup rehearsal and

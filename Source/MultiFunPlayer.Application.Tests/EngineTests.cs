@@ -74,6 +74,33 @@ public sealed class EngineTests
         Assert.Equal(3, recording.Frames.Count);
     }
 
+    [Fact]
+    public void AxisConfigurationIsAppliedToEvaluatedOutput()
+    {
+        using var engine = new HeadlessPlayerEngine(new FakeClock());
+        engine.Load(new AxisScript("L0", Resource("stroke", [new(0, 0.25), new(1, 0.75)])));
+        engine.SetAxisConfiguration(new AxisConfiguration("L0",
+            Minimum: 0.2, Maximum: 0.6, Inverted: true,
+            Interpolation: InterpolationType.Step, LimitEnabled: true,
+            LimitMinimum: 0.3, LimitMaximum: 0.8));
+        engine.Play();
+
+        var snapshot = engine.Tick(TimeSpan.FromMilliseconds(750));
+
+        // Step keeps 0.25, inversion makes 0.75, and range maps it to 0.5.
+        Assert.Equal(0.5, snapshot.Values["L0"], precision: 10);
+        Assert.Equal(InterpolationType.Step, engine.AxisConfigurations["L0"].Interpolation);
+    }
+
+    [Fact]
+    public void AxisConfigurationRejectsUnsafeRanges()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AxisConfiguration("L0", Minimum: 0.8, Maximum: 0.2).Normalize());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AxisConfiguration("L0", LimitMinimum: 0.9, LimitMaximum: 0.9).Normalize());
+    }
+
     private static ScriptResource Resource(string name, IEnumerable<Keyframe> keyframes)
         => new(name, name + ".funscript", new KeyframeCollection(keyframes), new ChapterCollection(), new BookmarkCollection());
 

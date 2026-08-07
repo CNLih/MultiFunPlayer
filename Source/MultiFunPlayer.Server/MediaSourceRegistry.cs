@@ -25,12 +25,15 @@ public sealed record MediaSourceDefinition(
     string Kind,
     string Endpoint,
     bool Enabled = true,
-    bool AutoConnect = true);
+    bool AutoConnect = true,
+    string? DeviceId = null,
+    string? SecretRef = null);
 
 /// <summary>
 /// Persists media source configuration without persisting credentials. The
-/// internal source is ready in the headless host; network and Windows-player
-/// entries retain an explicit capability state until their adapter is wired.
+/// internal source and network-native Emby/Jellyfin/Plex/OFS sources are ready
+/// in the headless host. Credentials are resolved from the host environment;
+/// the registry never persists their values.
 /// </summary>
 public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
 {
@@ -39,9 +42,9 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase)
         {
             ["internal"] = ("direct", "ready"),
-            ["emby"] = ("direct", "planned"),
-            ["jellyfin"] = ("direct", "planned"),
-            ["plex"] = ("direct", "planned"),
+            ["emby"] = ("direct", "ready"),
+            ["jellyfin"] = ("direct", "ready"),
+            ["plex"] = ("direct", "ready"),
             ["ofs"] = ("direct", "ready"),
             ["mpv"] = ("external-proxy", "blocked"),
             ["vlc"] = ("external-proxy", "blocked"),
@@ -56,15 +59,21 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     private readonly RootedFileStore? _config;
     private readonly ILogger<MediaSourceRegistry> _logger;
     private readonly IOfsMediaSourceAdapterFactory _ofsFactory;
+    private readonly INetworkMediaSourceAdapterFactory _networkFactory;
+    private readonly Func<MediaSourceDefinition, string?> _secretProvider;
     private bool _started;
     private bool _stopped;
     private int _disposed;
 
     public MediaSourceRegistry(StorageOptions storage, ILogger<MediaSourceRegistry> logger,
-        IOfsMediaSourceAdapterFactory? ofsFactory = null)
+        IOfsMediaSourceAdapterFactory? ofsFactory = null,
+        INetworkMediaSourceAdapterFactory? networkFactory = null,
+        Func<MediaSourceDefinition, string?>? secretProvider = null)
     {
         _logger = logger;
         _ofsFactory = ofsFactory ?? new OfsMediaSourceAdapterFactory();
+        _networkFactory = networkFactory ?? new NetworkMediaSourceAdapterFactory();
+        _secretProvider = secretProvider ?? ResolveSecret;
         try
         {
             _config = new RootedFileStore(storage.ConfigRoot);
@@ -354,6 +363,50 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                     return;
                 }
             }
+            if (TryGetNetworkKind(source.Definition.Kind, out var networkKind))
+            {
+                await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+                NetworkMediaSourceAdapter? adapter = null;
+                try
+                {
+                    var token = _secretProvider(source.Definition);
+                    adapter = _networkFactory.Create(networkKind, new Uri(source.Definition.Endpoint),
+                        token, source.Definition.DeviceId);
+                    source.NetworkAdapter = adapter;
+                    adapter.StateChanged += state => HandleNetworkState(source, state);
+                    adapter.ConnectionStateChanged += state =>
+                    {
+                        if (state is NetworkMediaConnectionState.Disconnected or NetworkMediaConnectionState.Faulted)
+                            source.Connected = false;
+                        if (state == NetworkMediaConnectionState.Faulted)
+                            source.LastError = adapter.LastError;
+                    };
+                    await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    source.Connected = true;
+                    source.LastError = null;
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    source.Connected = false;
+                    source.LastError = exception is NetworkMediaSourceAdapterException network
+                        ? $"{network.Protocol} {network.Operation} failed: {network.InnerException?.Message ?? network.Message}"
+                        : $"{source.Definition.Kind} connection failed: {exception.Message}";
+                    _logger.LogWarning(exception, "{Kind} media source {SourceId} could not connect to {Endpoint}.",
+                        source.Definition.Kind, source.Definition.Id, source.Definition.Endpoint);
+                    source.NetworkAdapter = null;
+                    if (adapter is not null)
+                    {
+                        try { await adapter.DisposeAsync().ConfigureAwait(false); }
+                        catch (Exception disposeException)
+                        {
+                            _logger.LogDebug(disposeException, "Network adapter cleanup failed for {SourceId}.",
+                                source.Definition.Id);
+                        }
+                    }
+                    return;
+                }
+            }
             source.Connected = true;
             source.LastError = null;
             return;
@@ -377,15 +430,28 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         source.LastMediaState = message.State;
     }
 
+    private static void HandleNetworkState(RuntimeSource source, NetworkMediaState state)
+    {
+        source.LastNetworkMediaState = state;
+        source.LastError = null;
+    }
+
     private static async Task DisconnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
     {
         source.Connected = false;
-        var adapter = source.Adapter;
+        var ofsAdapter = source.Adapter;
         source.Adapter = null;
-        if (adapter is not null)
+        if (ofsAdapter is not null)
         {
-            try { await adapter.DisconnectAsync(cancellationToken).ConfigureAwait(false); }
-            finally { await adapter.DisposeAsync().ConfigureAwait(false); }
+            try { await ofsAdapter.DisconnectAsync(cancellationToken).ConfigureAwait(false); }
+            finally { await ofsAdapter.DisposeAsync().ConfigureAwait(false); }
+        }
+        var networkAdapter = source.NetworkAdapter;
+        source.NetworkAdapter = null;
+        if (networkAdapter is not null)
+        {
+            try { await networkAdapter.DisconnectAsync(cancellationToken).ConfigureAwait(false); }
+            finally { await networkAdapter.DisposeAsync().ConfigureAwait(false); }
         }
     }
 
@@ -417,19 +483,69 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             || uri.Scheme is not ("http" or "https" or "ws" or "wss")
             || !string.IsNullOrEmpty(uri.UserInfo))
             return "network endpoint must use http(s) or ws(s) without embedded credentials.";
+        if (TryGetNetworkKind(definition.Kind, out _) && uri.Scheme is not ("http" or "https"))
+            return "Emby, Jellyfin, and Plex endpoints must use http(s).";
+        if (definition.Kind.Equals("ofs", StringComparison.OrdinalIgnoreCase)
+            && uri.Scheme is not ("ws" or "wss"))
+            return "OFS endpoints must use ws(s).";
         if (definition.Endpoint.Contains("token=", StringComparison.OrdinalIgnoreCase)
             || definition.Endpoint.Contains("password=", StringComparison.OrdinalIgnoreCase)
             || definition.Endpoint.Contains("api-key=", StringComparison.OrdinalIgnoreCase))
             return "credentials must not be embedded in the endpoint.";
+        if (definition.DeviceId is { Length: > 256 })
+            return "deviceId must be at most 256 characters.";
+        if (definition.SecretRef is { Length: > 128 }
+            || (definition.SecretRef is not null && !IsEnvironmentVariableName(definition.SecretRef)))
+            return "secretRef must be a valid environment variable name.";
         return null;
     }
+
+    private static bool TryGetNetworkKind(string kind, out NetworkMediaSourceKind networkKind)
+    {
+        networkKind = kind.ToLowerInvariant() switch
+        {
+            "emby" => NetworkMediaSourceKind.Emby,
+            "jellyfin" => NetworkMediaSourceKind.Jellyfin,
+            "plex" => NetworkMediaSourceKind.Plex,
+            _ => default
+        };
+        return kind.Equals("emby", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("jellyfin", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("plex", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveSecret(MediaSourceDefinition definition)
+    {
+        var environmentName = definition.SecretRef;
+        if (string.IsNullOrWhiteSpace(environmentName))
+        {
+            environmentName = definition.Kind.ToLowerInvariant() switch
+            {
+                "emby" => "MFP_EMBY_API_KEY",
+                "jellyfin" => "MFP_JELLYFIN_API_KEY",
+                "plex" => "MFP_PLEX_TOKEN",
+                _ => null
+            };
+        }
+        return environmentName is null ? null : Environment.GetEnvironmentVariable(environmentName);
+    }
+
+    private static bool IsEnvironmentVariableName(string value)
+        => value.Length > 0 && (char.IsLetter(value[0]) || value[0] == '_')
+            && value.Skip(1).All(character => char.IsLetterOrDigit(character) || character == '_');
 
     private static MediaSourceResponse ToResponse(RuntimeSource source)
     {
         var capability = Kinds[source.Definition.Kind];
         return new(source.Definition.Id, source.Definition.Name, source.Definition.Kind,
             source.Definition.Endpoint, source.Definition.Enabled, source.Definition.AutoConnect,
-            capability.Integration, capability.Implementation, source.Connected, source.LastError);
+            capability.Integration, capability.Implementation, source.Connected, source.LastError,
+            source.LastNetworkMediaState is { } network ? new MediaClockResponse(
+                network.SessionId, network.DeviceId, network.MediaId, network.Path,
+                network.Playing, network.Duration.TotalSeconds, network.Position.TotalSeconds,
+                network.PlaybackSpeed, network.ContentType) : source.LastMediaState is { } ofs ? new MediaClockResponse(
+                null, null, null, ofs.Path, ofs.Playing, ofs.Duration.TotalSeconds,
+                ofs.Position.TotalSeconds, ofs.PlaybackSpeed, null) : null);
     }
 
     private sealed class RuntimeSource(MediaSourceDefinition definition)
@@ -439,5 +555,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         public string? LastError { get; set; }
         public OfsWebSocketMediaAdapter? Adapter { get; set; }
         public OfsMediaState? LastMediaState { get; set; }
+        public NetworkMediaSourceAdapter? NetworkAdapter { get; set; }
+        public NetworkMediaState? LastNetworkMediaState { get; set; }
     }
 }

@@ -91,7 +91,19 @@ public sealed record MediaSourceResponse(
     string Integration,
     string ImplementationStatus,
     bool Connected,
-    string? LastError);
+    string? LastError,
+    MediaClockResponse? MediaState = null);
+
+public sealed record MediaClockResponse(
+    string? SessionId,
+    string? DeviceId,
+    string? MediaId,
+    string? Path,
+    bool Playing,
+    double DurationSeconds,
+    double PositionSeconds,
+    double PlaybackSpeed,
+    string? ContentType);
 
 public sealed record MediaSourceRequest(
     string? Id,
@@ -99,7 +111,9 @@ public sealed record MediaSourceRequest(
     string? Kind,
     string? Endpoint,
     bool Enabled = true,
-    bool AutoConnect = true);
+    bool AutoConnect = true,
+    string? DeviceId = null,
+    string? SecretRef = null);
 
 public sealed record SeekRequest(double PositionSeconds);
 

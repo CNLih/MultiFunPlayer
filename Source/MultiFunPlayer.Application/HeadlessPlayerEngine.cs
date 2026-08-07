@@ -14,6 +14,8 @@ public sealed class HeadlessPlayerEngine : IDisposable
     private readonly ScriptEngine _scripts;
     private readonly IMediaClock _clock;
     private readonly List<IOutputSink> _sinks = [];
+    private readonly Dictionary<string, AxisConfiguration> _axisConfigurations =
+        new(StringComparer.OrdinalIgnoreCase);
     private PlayerState _state = PlayerState.Empty;
     private TimeSpan _position;
     private TimeSpan _clockAnchor;
@@ -38,6 +40,63 @@ public sealed class HeadlessPlayerEngine : IDisposable
     public TimeSpan Position => Current.Position;
 
     public TimeSpan Duration => Current.Duration;
+
+    /// <summary>Current policies keyed by the script/device axis name.</summary>
+    public IReadOnlyDictionary<string, AxisConfiguration> AxisConfigurations
+    {
+        get
+        {
+            lock (_gate)
+                return new Dictionary<string, AxisConfiguration>(_axisConfigurations,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public void SetAxisConfiguration(AxisConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var normalized = configuration.Normalize();
+        EngineSnapshot snapshot;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _axisConfigurations[normalized.Axis] = normalized;
+            snapshot = SetSnapshotLocked();
+        }
+        Publish(snapshot);
+    }
+
+    public void SetAxisConfigurations(IEnumerable<AxisConfiguration> configurations)
+    {
+        ArgumentNullException.ThrowIfNull(configurations);
+        var normalized = configurations.Select(configuration => configuration.Normalize()).ToArray();
+        EngineSnapshot snapshot;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            _axisConfigurations.Clear();
+            foreach (var configuration in normalized)
+                _axisConfigurations[configuration.Axis] = configuration;
+            snapshot = SetSnapshotLocked();
+        }
+        Publish(snapshot);
+    }
+
+    public bool RemoveAxisConfiguration(string axis)
+    {
+        if (string.IsNullOrWhiteSpace(axis))
+            return false;
+        EngineSnapshot snapshot;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (!_axisConfigurations.Remove(axis))
+                return false;
+            snapshot = SetSnapshotLocked();
+        }
+        Publish(snapshot);
+        return true;
+    }
 
     public void Load(IScriptResource resource, string axisName = "default", InterpolationType interpolation = InterpolationType.Linear)
     {
@@ -222,7 +281,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
 
     private EngineSnapshot SetSnapshotLocked()
     {
-        var frame = _scripts.Evaluate(_position);
+        var frame = _scripts.Evaluate(_position, _axisConfigurations);
         Current = new EngineSnapshot(_state, _scripts.ScriptName, frame.Position,
             _scripts.Duration, frame.Values, ++_revision);
         return Current;

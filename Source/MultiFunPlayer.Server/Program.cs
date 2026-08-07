@@ -35,6 +35,7 @@ public static class ServerProgram
         builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
         builder.Services.AddSingleton<IOfsMediaSourceAdapterFactory, OfsMediaSourceAdapterFactory>();
+        builder.Services.AddSingleton<INetworkMediaSourceAdapterFactory, NetworkMediaSourceAdapterFactory>();
         builder.Services.AddSingleton<ConfigurationMigrationHostedService>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<ConfigurationMigrationHostedService>());
@@ -44,6 +45,9 @@ public static class ServerProgram
         builder.Services.AddSingleton<MediaSourceRegistry>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<MediaSourceRegistry>());
+        builder.Services.AddSingleton<DeviceAxisRegistry>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<DeviceAxisRegistry>());
         builder.Services.AddSingleton<StateBroadcaster>();
         var runtimeLogStore = new RuntimeLogStore(builder.Configuration, storage.LogsRoot);
         builder.Services.AddSingleton(runtimeLogStore);
@@ -199,6 +203,15 @@ public static class ServerProgram
         });
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
+        app.MapGet("/api/v1/device-axes", (DeviceAxisRegistry registry) => Results.Ok(registry.List()));
+        app.MapPut("/api/v1/device-axes/{axis}", async (string axis, DeviceAxisRequest request,
+            DeviceAxisRegistry registry, CancellationToken cancellationToken) =>
+            MapDeviceAxisOperation(await registry.UpsertAsync(axis, request, cancellationToken)
+                .ConfigureAwait(false)));
+        app.MapDelete("/api/v1/device-axes/{axis}", async (string axis,
+            DeviceAxisRegistry registry, CancellationToken cancellationToken) =>
+            MapDeviceAxisOperation(await registry.DeleteAsync(axis, cancellationToken)
+                .ConfigureAwait(false)));
         app.MapGet("/api/v1/logs", (int? limit, RuntimeLogStore store) =>
         {
             var requested = limit ?? 100;
@@ -303,7 +316,8 @@ public static class ServerProgram
 
     private static MediaSourceDefinition ToDefinition(string? id, MediaSourceRequest request)
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Kind ?? string.Empty,
-            request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect);
+            request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
+            request.DeviceId, request.SecretRef);
 
     private static IResult MapOutputTargetOperation(OutputTargetOperation operation, bool created)
         => operation.Status switch
@@ -341,6 +355,21 @@ public static class ServerProgram
                 "Media source storage unavailable", operation.Error ?? "The media source could not be persisted.", "media_source_unavailable"),
             _ => Problem(StatusCodes.Status502BadGateway,
                 "Media source connection unavailable", operation.Error ?? "The media source adapter is unavailable.", "media_source_failed")
+        };
+
+    private static IResult MapDeviceAxisOperation(DeviceAxisOperation operation)
+        => operation.Status switch
+        {
+            DeviceAxisOperationStatus.Success when operation.Axis is null => Results.NoContent(),
+            DeviceAxisOperationStatus.Success => Results.Ok(operation.Axis),
+            DeviceAxisOperationStatus.Invalid => Problem(StatusCodes.Status400BadRequest,
+                "Invalid device axis", operation.Error ?? "The device axis setting is invalid.", "invalid_device_axis"),
+            DeviceAxisOperationStatus.NotFound => Problem(StatusCodes.Status404NotFound,
+                "Device axis setting not found", operation.Error ?? "The device axis setting does not exist.", "device_axis_not_found"),
+            DeviceAxisOperationStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                "Device axis storage unavailable", operation.Error ?? "The device axis setting could not be persisted.", "device_axis_unavailable"),
+            _ => Problem(StatusCodes.Status400BadRequest, "Device axis operation failed",
+                operation.Error ?? "The device axis operation failed.", "device_axis_failed")
         };
 
     private static async Task HandleWebSocket(HttpContext context)
@@ -484,6 +513,8 @@ internal static class OpenApiDocument
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/logs/file"] = new { get = Operation("Download redacted persisted runtime logs") },
+            ["/api/v1/device-axes"] = new { get = Operation("List device axis settings") },
+            ["/api/v1/device-axes/{axis}"] = new { put = Operation("Update device axis settings"), delete = Operation("Delete device axis settings") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
             ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
             ["/api/v1/player/play"] = new { post = Operation("Play") },

@@ -67,7 +67,8 @@ public sealed class ScriptEngine
         Load(resources.Select(x => new AxisScript(x.Key.Name, x.Value, interpolation)));
     }
 
-    public OutputFrame Evaluate(TimeSpan position)
+    public OutputFrame Evaluate(TimeSpan position,
+        IReadOnlyDictionary<string, AxisConfiguration>? axisConfigurations = null)
     {
         var seconds = position.TotalSeconds;
         if (!double.IsFinite(seconds))
@@ -78,7 +79,12 @@ public sealed class ScriptEngine
 
         var values = new Dictionary<string, double>(_tracks.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var (axis, track) in _tracks)
-            values[axis] = Evaluate(track.Resource.Keyframes, seconds, track.Interpolation);
+        {
+            var configuration = axisConfigurations?.GetValueOrDefault(axis);
+            var interpolation = configuration?.Interpolation ?? track.Interpolation;
+            var value = Evaluate(track.Resource.Keyframes, seconds, interpolation);
+            values[axis] = configuration?.Apply(value) ?? MathUtils.Clamp01(value);
+        }
 
         return new OutputFrame(TimeSpan.FromSeconds(seconds),
             new ReadOnlyDictionary<string, double>(values));

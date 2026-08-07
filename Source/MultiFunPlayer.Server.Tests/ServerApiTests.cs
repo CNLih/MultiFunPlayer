@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using MultiFunPlayer.Infrastructure.Media;
 using MultiFunPlayer.Infrastructure.Storage;
 
 namespace MultiFunPlayer.Server.Tests;
@@ -71,6 +72,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("ready", adapters["output.the-handy"].GetProperty("implementationStatus").GetString());
         Assert.Equal("unsupported", adapters["output.pipe"].GetProperty("implementationStatus").GetString());
         Assert.Equal("blocked", adapters["media.mpv"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.emby"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.jellyfin"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.plex"].GetProperty("implementationStatus").GetString());
         Assert.Equal("ready", adapters["media.ofs"].GetProperty("implementationStatus").GetString());
     }
 
@@ -342,7 +346,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
-    public async Task Media_source_registry_persists_direct_and_planned_capabilities()
+    public async Task Media_source_registry_persists_direct_network_capabilities()
     {
         using var temp = new TemporaryDirectory();
         var storage = new StorageOptions { ConfigRoot = Path.Combine(temp.Path, "config") };
@@ -360,8 +364,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             "jellyfin", "Jellyfin", "jellyfin", "https://media.example.local"));
         Assert.Equal(MediaSourceOperationStatus.Success, remote.Status);
         Assert.False(remote.Source!.Connected);
-        Assert.Equal("planned", remote.Source.ImplementationStatus);
-        Assert.Contains("not wired", remote.Source.LastError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("ready", remote.Source.ImplementationStatus);
+        Assert.Contains("API key", remote.Source.LastError, StringComparison.OrdinalIgnoreCase);
 
         var credentials = await registry.CreateAsync(new MediaSourceDefinition(
             "unsafe", "Unsafe", "emby", "https://media.example.local/?token=secret"));
@@ -375,6 +379,39 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(new[] { "jellyfin", "timeline" },
             restarted.List().Select(source => source.Id).OrderBy(id => id).ToArray());
         Assert.True(restarted.List().Single(source => source.Id == "timeline").Connected);
+    }
+
+    [Fact]
+    public async Task Media_source_registry_connects_jellyfin_adapter_without_persisting_token()
+    {
+        var previous = Environment.GetEnvironmentVariable("MFP_TEST_MEDIA_TOKEN");
+        Environment.SetEnvironmentVariable("MFP_TEST_MEDIA_TOKEN", "token-not-persisted");
+        using var temp = new TemporaryDirectory();
+        try
+        {
+            var storage = new StorageOptions { ConfigRoot = Path.Combine(temp.Path, "config") };
+            await using var registry = new MediaSourceRegistry(storage,
+                NullLogger<MediaSourceRegistry>.Instance,
+                networkFactory: new StubNetworkFactory());
+            await registry.StartAsync(CancellationToken.None);
+
+            var result = await registry.CreateAsync(new MediaSourceDefinition(
+                "jellyfin", "Jellyfin", "jellyfin", "https://media.example.local",
+                DeviceId: "browser-1", SecretRef: "MFP_TEST_MEDIA_TOKEN"));
+
+            Assert.Equal(MediaSourceOperationStatus.Success, result.Status);
+            Assert.True(result.Source!.Connected);
+            Assert.Equal("ready", result.Source.ImplementationStatus);
+            Assert.Equal("/media/remote.mp4", result.Source.MediaState!.Path);
+            Assert.Equal(2.5, result.Source.MediaState.PositionSeconds);
+            var persisted = await File.ReadAllTextAsync(Path.Combine(storage.ConfigRoot, "media-sources.json"));
+            Assert.Contains("MFP_TEST_MEDIA_TOKEN", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain("token-not-persisted", persisted, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_TEST_MEDIA_TOKEN", previous);
+        }
     }
 
     [Fact]
@@ -397,9 +434,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
             var created = await create.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal("planned", created.GetProperty("implementationStatus").GetString());
+            Assert.Equal("ready", created.GetProperty("implementationStatus").GetString());
             Assert.False(created.GetProperty("connected").GetBoolean());
-            Assert.Contains("not wired", created.GetProperty("lastError").GetString(),
+            Assert.Contains("API key", created.GetProperty("lastError").GetString(),
                 StringComparison.OrdinalIgnoreCase);
 
             var connect = await client.PostAsync("/api/v1/media-sources/remote-jellyfin/connect", null);
@@ -531,6 +568,56 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Device_axis_settings_are_persisted_and_change_script_output()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        var previousScripts = Environment.GetEnvironmentVariable("MFP_SCRIPTS_ROOT");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+        Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", Path.Combine(temp.Path, "scripts"));
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var update = await client.PutAsJsonAsync("/api/v1/device-axes/L0", new
+            {
+                axis = "L0",
+                minimum = 0.2,
+                maximum = 0.6,
+                inverted = true,
+                interpolation = "Linear",
+                limitEnabled = true,
+                limitMinimum = 0.3,
+                limitMaximum = 0.8
+            });
+            Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+            var configured = await update.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("L0", configured.GetProperty("axis").GetString());
+            Assert.Equal(0.2, configured.GetProperty("minimum").GetDouble(), precision: 10);
+            Assert.True(configured.GetProperty("inverted").GetBoolean());
+
+            var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/device-axes");
+            Assert.Contains(list.EnumerateArray(), item => item.GetProperty("axis").GetString() == "L0");
+            Assert.True(File.Exists(Path.Combine(temp.Path, "config", "device-axis-settings.json")));
+
+            var load = await client.PostAsync("/api/v1/scripts/load", new StringContent(
+                "{\"name\":\"axis.funscript\",\"axis\":\"L0\",\"content\":{\"actions\":[{\"at\":0,\"pos\":25},{\"at\":1000,\"pos\":75}]}}",
+                Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.OK, load.StatusCode);
+            var status = await load.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(0.5, status.GetProperty("axes").GetProperty("L0").GetDouble(), precision: 10);
+
+            var delete = await client.DeleteAsync("/api/v1/device-axes/L0");
+            Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+            Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", previousScripts);
+        }
+    }
+
+    [Fact]
     public async Task Token_auth_keeps_health_public_and_protects_api()
     {
         var previous = Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN");
@@ -648,6 +735,37 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 "mode" => "{\"result\":0}",
                 "servertime" => "{\"serverTime\":1}",
                 _ => "{\"result\":0}"
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class StubNetworkFactory : INetworkMediaSourceAdapterFactory
+    {
+        public NetworkMediaSourceAdapter Create(NetworkMediaSourceKind kind, Uri endpoint,
+            string? token, string? deviceId = null, HttpMessageHandler? handler = null)
+            => new(kind, endpoint, token, deviceId, new StubNetworkHandler(),
+                new NetworkMediaSourceAdapterOptions
+                {
+                    PollInterval = TimeSpan.FromMilliseconds(100),
+                    ConnectTimeout = TimeSpan.FromSeconds(1),
+                    RequestTimeout = TimeSpan.FromSeconds(1)
+                });
+    }
+
+    private sealed class StubNetworkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var body = request.RequestUri?.AbsolutePath switch
+            {
+                "/System/Ping" => "{}",
+                "/Sessions" => "[{\"Id\":\"session-1\",\"DeviceId\":\"browser-1\",\"PlayState\":{\"PositionTicks\":25000000,\"IsPaused\":false},\"NowPlayingItem\":{\"Id\":\"item-1\",\"Path\":\"/media/remote.mp4\",\"RunTimeTicks\":120000000}}]",
+                _ => "{}"
             };
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

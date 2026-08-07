@@ -66,6 +66,28 @@ export interface ApiSerialDevice {
   linkTarget: string | null;
 }
 
+export interface ApiDeviceAxis {
+  axis: string;
+  minimum: number;
+  maximum: number;
+  inverted: boolean;
+  interpolation: string;
+  limitEnabled: boolean;
+  limitMinimum: number;
+  limitMaximum: number;
+}
+
+export interface ApiDeviceAxisRequest {
+  axis: string;
+  minimum: number;
+  maximum: number;
+  inverted: boolean;
+  interpolation: string;
+  limitEnabled: boolean;
+  limitMinimum: number;
+  limitMaximum: number;
+}
+
 export interface ApiRuntimeLogEntry {
   timestampUtc: string;
   level: string;
@@ -171,6 +193,21 @@ export class MfpApiClient {
 
   async listSerialDevices(): Promise<ApiSerialDevice[]> {
     return this.request<ApiSerialDevice[]>('/devices/serial');
+  }
+
+  async listDeviceAxes(): Promise<ApiDeviceAxis[]> {
+    return this.request<ApiDeviceAxis[]>('/device-axes');
+  }
+
+  async updateDeviceAxis(axis: string, request: ApiDeviceAxisRequest): Promise<ApiDeviceAxis> {
+    return this.request<ApiDeviceAxis>(`/device-axes/${encodeURIComponent(axis)}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteDeviceAxis(axis: string): Promise<void> {
+    await this.request<unknown>(`/device-axes/${encodeURIComponent(axis)}`, { method: 'DELETE' });
   }
 
   async getLogs(limit = 30): Promise<ApiLogsResponse> {

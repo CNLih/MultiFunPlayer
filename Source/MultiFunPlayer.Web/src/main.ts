@@ -1,4 +1,4 @@
-import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type MediaSourceInput, type OutputTargetInput, type Route, type Status, type SyncMode } from './store';
+import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type Status, type SyncMode } from './store';
 import { MfpApiClient } from './api';
 import './styles.css';
 
@@ -20,6 +20,7 @@ const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
   { id: 'scripts', label: 'Scripts', hint: 'Library and axis values' },
   { id: 'outputs', label: 'Output targets', hint: 'Connections and rates' },
+  { id: 'settings', label: 'Device settings', hint: 'Axis range and limits' },
   { id: 'logs', label: 'Logs and health', hint: 'Events and diagnostics' },
 ];
 
@@ -71,6 +72,7 @@ function renderRoute(state: AppState): string {
     case 'media': return renderMedia(state);
     case 'scripts': return renderScripts(state);
     case 'outputs': return renderOutputs(state);
+    case 'settings': return renderDeviceSettings(state);
     case 'logs': return renderLogs(state);
     case 'runtime': return renderRuntime(state);
   }
@@ -154,6 +156,17 @@ function renderOutputs(state: AppState): string {
 
 function renderOutputForm(): string {
   return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label>Name<input name="name" required placeholder="Studio bridge" /></label><label>Protocol<select name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option><option value="the-handy">The Handy</option></select></label><label>Endpoint<input name="endpoint" required placeholder="127.0.0.1:8000" /></label><label>Source axis<input name="sourceAxis" required pattern="[a-zA-Z0-9_-]+" value="L0" placeholder="L0" /></label><label>Update rate<input name="rate" type="number" min="1" max="20" step="1" value="20" required /> Hz</label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
+}
+
+function renderDeviceSettings(state: AppState): string {
+  return `${pageHeading('Devices', 'Axis settings', 'Tune the normalized values sent to every configured output.', '<button class="button button-primary" data-action="focus-axis-form">Add axis policy</button>')}
+    <div class="notice notice-info"><strong>Backend-owned policy.</strong><span>Changes are persisted by the server and take effect on the next engine snapshot.</span></div>
+    ${renderDeviceAxisForm()}
+    <section class="panel table-panel" aria-labelledby="device-axis-title"><div class="panel-heading"><div><p class="eyebrow">Persisted policies</p><h2 id="device-axis-title">Configured axes</h2></div><span class="result-count">${state.deviceAxes.length} axes</span></div><div class="responsive-table"><table><thead><tr><th>Axis</th><th>Range</th><th>Interpolation</th><th>Inversion</th><th>Limit</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.deviceAxes.length === 0 ? '<tr><td colspan="6">No axis policies configured; engine defaults are active.</td></tr>' : state.deviceAxes.map((axis) => `<tr><td><strong>${escapeHtml(axis.axis)}</strong></td><td>${axis.minimum.toFixed(2)} - ${axis.maximum.toFixed(2)}</td><td>${escapeHtml(axis.interpolation)}</td><td>${axis.inverted ? 'Inverted' : 'Normal'}</td><td>${axis.limitEnabled ? `${axis.limitMinimum.toFixed(2)} - ${axis.limitMaximum.toFixed(2)}` : 'Disabled'}</td><td><div class="resource-actions"><button class="button button-secondary" data-axis-edit="${escapeHtml(axis.axis)}">Edit</button><button class="button button-danger" data-axis-delete="${escapeHtml(axis.axis)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
+function renderDeviceAxisForm(): string {
+  return `<form class="resource-form panel" data-resource-form="axis"><div class="panel-heading"><div><p class="eyebrow">Axis policy</p><h2>Set device axis behavior</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Axis<input name="axis" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="L0" /></label><label>Minimum<input name="minimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label>Maximum<input name="maximum" type="number" min="0" max="1" step="0.01" value="1" required /></label><label>Interpolation<select name="interpolation"><option>Linear</option><option>Pchip</option><option>Makima</option><option>Step</option></select></label><label>Limit minimum<input name="limitMinimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label>Limit maximum<input name="limitMaximum" type="number" min="0" max="1" step="0.01" value="1" required /></label></div><div class="resource-form-options"><label><input type="checkbox" name="inverted" /> Invert value</label><label><input type="checkbox" name="limitEnabled" /> Enable limit</label><button class="button button-primary" type="submit">Save axis policy</button><button class="button button-secondary" type="button" data-resource-cancel="axis">Clear</button></div></form>`;
 }
 
 function renderLogs(state: AppState): string {
@@ -250,6 +263,9 @@ function handleClick(event: MouseEvent) {
   if (action === 'focus-output-form') {
     document.querySelector<HTMLInputElement>('[data-resource-form="output"] input[name="id"]')?.focus();
   }
+  if (action === 'focus-axis-form') {
+    document.querySelector<HTMLInputElement>('[data-resource-form="axis"] input[name="axis"]')?.focus();
+  }
   const mediaEditId = target.closest<HTMLElement>('[data-media-edit]')?.dataset.mediaEdit;
   if (mediaEditId) {
     const source = store.getState().media.find((item) => item.id === mediaEditId);
@@ -290,15 +306,32 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('name') as HTMLInputElement).focus();
     }
   }
+  const axisEditId = target.closest<HTMLElement>('[data-axis-edit]')?.dataset.axisEdit;
+  if (axisEditId) {
+    const axis = store.getState().deviceAxes.find((item) => item.axis.toLowerCase() === axisEditId.toLowerCase());
+    const form = document.querySelector<HTMLFormElement>('[data-resource-form="axis"]');
+    if (axis && form) {
+      (form.elements.namedItem('axis') as HTMLInputElement).value = axis.axis;
+      (form.elements.namedItem('minimum') as HTMLInputElement).value = String(axis.minimum);
+      (form.elements.namedItem('maximum') as HTMLInputElement).value = String(axis.maximum);
+      (form.elements.namedItem('interpolation') as HTMLSelectElement).value = axis.interpolation;
+      (form.elements.namedItem('limitMinimum') as HTMLInputElement).value = String(axis.limitMinimum);
+      (form.elements.namedItem('limitMaximum') as HTMLInputElement).value = String(axis.limitMaximum);
+      (form.elements.namedItem('inverted') as HTMLInputElement).checked = axis.inverted;
+      (form.elements.namedItem('limitEnabled') as HTMLInputElement).checked = axis.limitEnabled;
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
   const cancelKind = target.closest<HTMLElement>('[data-resource-cancel]')?.dataset.resourceCancel;
   if (cancelKind) {
     const form = document.querySelector<HTMLFormElement>(`[data-resource-form="${cancelKind}"]`);
     if (form) {
       delete form.dataset.editingId;
       form.reset();
-      (form.elements.namedItem('id') as HTMLInputElement).readOnly = false;
+      const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
+      if (idInput) idInput.readOnly = false;
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-      if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : 'Create target';
+      if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : cancelKind === 'output' ? 'Create target' : 'Save axis policy';
     }
   }
   if (action === 'import-script') importInput.click();
@@ -347,6 +380,12 @@ function handleClick(event: MouseEvent) {
       .then(() => showToast('Output target deleted'))
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target deletion failed.', 'error'));
   }
+  const axisDeleteId = target.closest<HTMLElement>('[data-axis-delete]')?.dataset.axisDelete;
+  if (axisDeleteId) {
+    void store.deleteDeviceAxis(axisDeleteId)
+      .then(() => showToast('Axis policy deleted'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Axis policy deletion failed.', 'error'));
+  }
   const scriptId = target.closest<HTMLElement>('[data-load-script]')?.dataset.loadScript;
   if (scriptId) {
     const script = store.getState().scripts.find((item) => item.id === scriptId);
@@ -357,7 +396,7 @@ function handleClick(event: MouseEvent) {
 async function handleSubmit(event: SubmitEvent) {
   const form = event.target as HTMLFormElement;
   const kind = form.dataset.resourceForm;
-  if (kind !== 'media' && kind !== 'output') return;
+  if (kind !== 'media' && kind !== 'output' && kind !== 'axis') return;
   event.preventDefault();
   const values = new FormData(form);
   const value = (name: string): string => String(values.get(name) ?? '').trim();
@@ -373,7 +412,7 @@ async function handleSubmit(event: SubmitEvent) {
         await store.createMediaSource(input);
         showToast('Media source created');
       }
-    } else {
+    } else if (kind === 'output') {
       const input: OutputTargetInput = { id: value('id'), name: value('name'), protocol: value('protocol'), endpoint: value('endpoint'), sourceAxis: value('sourceAxis') || 'L0', rate: Number(value('rate')) || 20, enabled: checked('enabled'), autoConnect: checked('autoConnect') };
       const editingId = form.dataset.editingId;
       if (editingId) {
@@ -383,12 +422,32 @@ async function handleSubmit(event: SubmitEvent) {
         await store.createOutputTarget(input);
         showToast('Output target created');
       }
+    } else {
+      const input: DeviceAxisSetting = {
+        axis: value('axis'),
+        minimum: Number(value('minimum')),
+        maximum: Number(value('maximum')),
+        inverted: checked('inverted'),
+        interpolation: value('interpolation'),
+        limitEnabled: checked('limitEnabled'),
+        limitMinimum: Number(value('limitMinimum')),
+        limitMaximum: Number(value('limitMaximum')),
+      };
+      if (!input.axis || !Number.isFinite(input.minimum) || !Number.isFinite(input.maximum)
+        || input.minimum >= input.maximum || input.minimum < 0 || input.maximum > 1)
+        throw new Error('Axis range must satisfy 0 <= minimum < maximum <= 1.');
+      if (!Number.isFinite(input.limitMinimum) || !Number.isFinite(input.limitMaximum)
+        || input.limitMinimum >= input.limitMaximum || input.limitMinimum < 0 || input.limitMaximum > 1)
+        throw new Error('Axis limit must satisfy 0 <= limit minimum < limit maximum <= 1.');
+      await store.updateDeviceAxis(input);
+      showToast('Axis policy saved');
     }
     delete form.dataset.editingId;
     form.reset();
-    (form.elements.namedItem('id') as HTMLInputElement).readOnly = false;
+    const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
+    if (idInput) idInput.readOnly = false;
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-    if (submit) submit.textContent = kind === 'media' ? 'Create source' : 'Create target';
+    if (submit) submit.textContent = kind === 'media' ? 'Create source' : kind === 'output' ? 'Create target' : 'Save axis policy';
   } catch (error) {
     showToast(error instanceof Error ? error.message : 'Resource creation failed.', 'error');
   }
