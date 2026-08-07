@@ -404,6 +404,10 @@ jobs:
         MFP_PAIRING_TOKEN: ci-pairing-token-1234567890
       run: |
         set -euo pipefail
+        report_dir="artifacts/container"
+        report_file="${report_dir}/persistent-${{ matrix.arch }}.json"
+        mkdir -p "$report_dir"
+        printf '{"architecture":"%s","status":"started"}\n' '${{ matrix.arch }}' > "$report_file"
         volume_prefix="mfp-ci-persist-${{ matrix.arch }}"
         config_volume="${volume_prefix}-config"
         keys_volume="${volume_prefix}-keys"
@@ -471,3 +475,11 @@ jobs:
           -H "Authorization: Bearer $MFP_TEST_TOKEN" \
           http://127.0.0.1:18081/api/v1/scripts | grep -Eq 'ci-persistent\.funscript'
         docker exec "$CONTAINER_NAME" sh -c 'test "$(cat /keys/ci-key-marker)" = marker && test "$(cat /logs/ci-log-marker)" = marker'
+        printf '{"architecture":"%s","status":"pass","pairingPersisted":true,"axisPolicyPersisted":true,"scriptPersisted":true,"keysVolumePersisted":true,"logsVolumePersisted":true,"plaintextTokenRejected":true}\n' '${{ matrix.arch }}' > "$report_file"
+    - name: Upload ${{ matrix.arch }} container persistence evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: container-persistence-${{ matrix.arch }}
+        path: artifacts/container/persistent-${{ matrix.arch }}.json
+        if-no-files-found: ignore
