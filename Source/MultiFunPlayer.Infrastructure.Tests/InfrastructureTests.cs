@@ -739,6 +739,93 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task NetworkMediaAdapter_reads_vlc_status_and_playlist_and_sends_commands()
+    {
+        var handler = new RecordingHttpHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/requests/status.json" when request.RequestUri.Query.Length == 0
+                => JsonResponse("{\"apiversion\":4,\"state\":\"playing\",\"currentplid\":7,\"length\":12,\"time\":2.5,\"rate\":1}"),
+            "/requests/playlist.json"
+                => JsonResponse("{\"children\":[{\"type\":\"leaf\",\"current\":\"current\",\"uri\":\"file:///media/vlc-demo.mp4\"}]}"),
+            "/requests/status.json" when request.RequestUri.Query.Contains("command=", StringComparison.Ordinal)
+                => JsonResponse("{}"),
+            _ => NotFoundResponse()
+        });
+
+        await using var adapter = new NetworkMediaSourceAdapter(NetworkMediaSourceKind.Vlc,
+            new Uri("http://media.test/"), "vlc-password", "vlc-client", handler,
+            new NetworkMediaSourceAdapterOptions
+            {
+                PollInterval = TimeSpan.FromMilliseconds(100),
+                ConnectTimeout = TimeSpan.FromSeconds(2),
+                RequestTimeout = TimeSpan.FromSeconds(2)
+            });
+        await adapter.ConnectAsync();
+
+        Assert.True(adapter.IsConnected);
+        Assert.Equal("/media/vlc-demo.mp4", adapter.Current.Path);
+        Assert.True(adapter.Current.Playing);
+        Assert.Equal(TimeSpan.FromSeconds(2.5), adapter.Current.Position);
+        Assert.Equal(TimeSpan.FromSeconds(12), adapter.Current.Duration);
+        Assert.Equal("7", adapter.Current.MediaId);
+        Assert.Contains(handler.Requests, request => request.Headers.Authorization?.Scheme == "Basic");
+
+        await adapter.SendPlayAsync(false);
+        await adapter.SendSeekAsync(TimeSpan.FromSeconds(3));
+        Assert.Contains(handler.Requests, request => request.RequestUri!.Query.Contains("command=pl_forcepause", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, request => request.RequestUri!.Query.Contains("command=seek", StringComparison.Ordinal)
+            && request.RequestUri.Query.Contains("val=3", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NetworkMediaAdapter_reads_mpc_variables_and_sends_commands()
+    {
+        var handler = new RecordingHttpHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html>MPC-HC</html>", Encoding.UTF8, "text/html")
+            },
+            "/variables.html" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "<html><p id=\"state\">2</p><p id=\"filepath\">/media/mpc-demo.mp4</p><p id=\"duration\">12000</p><p id=\"position\">2500</p><p id=\"playbackrate\">1</p></html>",
+                    Encoding.UTF8, "text/html")
+            },
+            "/command.html" => new HttpResponseMessage(HttpStatusCode.OK),
+            _ => NotFoundResponse()
+        });
+
+        await using var adapter = new NetworkMediaSourceAdapter(NetworkMediaSourceKind.Mpc,
+            new Uri("http://media.test/"), null, "mpc-client", handler,
+            new NetworkMediaSourceAdapterOptions
+            {
+                PollInterval = TimeSpan.FromMilliseconds(100),
+                ConnectTimeout = TimeSpan.FromSeconds(2),
+                RequestTimeout = TimeSpan.FromSeconds(2)
+            });
+        await adapter.ConnectAsync();
+
+        Assert.True(adapter.IsConnected);
+        Assert.Equal("/media/mpc-demo.mp4", adapter.Current.Path);
+        Assert.True(adapter.Current.Playing);
+        Assert.Equal(TimeSpan.FromSeconds(2.5), adapter.Current.Position);
+        Assert.Equal(TimeSpan.FromSeconds(12), adapter.Current.Duration);
+
+        await adapter.SendPlayAsync(false);
+        await adapter.SendSeekAsync(TimeSpan.FromSeconds(4));
+        Assert.Contains(handler.Requests, request => request.RequestUri!.Query.Contains("wm_command=888", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, request => request.RequestUri!.Query.Contains("wm_command=-1", StringComparison.Ordinal)
+            && request.RequestUri.Query.Contains("position=00%3A00%3A04", StringComparison.Ordinal));
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+        => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+    private static HttpResponseMessage NotFoundResponse()
+        => new(HttpStatusCode.NotFound);
+
+    [Fact]
     public void ConfigurationMigrationExtractsPortableFieldsAndDropsSecrets()
     {
         var result = new ConfigurationMigrationService().Read(
@@ -793,6 +880,19 @@ public sealed class InfrastructureTests
     }
 
     private sealed record SampleSettings(string Name, int Count);
+
+    private sealed class RecordingHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
+        : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(responder(request));
+        }
+    }
 
     private sealed class RecordingSink : IOutputSink
     {

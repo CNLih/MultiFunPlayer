@@ -87,6 +87,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("ready", adapters["media.emby"].GetProperty("implementationStatus").GetString());
         Assert.Equal("ready", adapters["media.jellyfin"].GetProperty("implementationStatus").GetString());
         Assert.Equal("ready", adapters["media.plex"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.vlc"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.mpc"].GetProperty("implementationStatus").GetString());
         Assert.Equal("ready", adapters["media.ofs"].GetProperty("implementationStatus").GetString());
     }
 

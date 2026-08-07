@@ -1,17 +1,20 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using MultiFunPlayer.Application;
 
 namespace MultiFunPlayer.Infrastructure.Media;
 
-/// <summary>Network-native media server protocols supported by the headless host.</summary>
+/// <summary>Network-native media protocols supported by the headless host.</summary>
 public enum NetworkMediaSourceKind
 {
     Emby,
     Jellyfin,
-    Plex
+    Plex,
+    Vlc,
+    Mpc
 }
 
 public enum NetworkMediaConnectionState
@@ -80,7 +83,7 @@ public sealed class NetworkMediaSourceAdapterFactory(NetworkMediaSourceAdapterOp
 }
 
 /// <summary>
-/// Portable HTTP adapter for Emby, Jellyfin, and Plex.
+/// Portable HTTP adapter for Emby, Jellyfin, Plex, VLC, and MPC-HC/BE.
 ///
 /// Connection validates the protocol's session/timeline endpoint and then
 /// starts bounded polling. It does not claim a media clock merely because a
@@ -96,6 +99,11 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
         CommentHandling = JsonCommentHandling.Disallow,
         MaxDepth = 64
     };
+    private static readonly Regex MpcVariableRegex = new(
+        @"<p\s+id=['""](?<name>[^'""]{1,64})['""]\s*>(?<value>.*?)</p>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline |
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+        TimeSpan.FromSeconds(1));
     private readonly object _stateGate = new();
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly NetworkMediaSourceKind _kind;
@@ -114,6 +122,9 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
     private TimeSpan _plexDuration;
     private string? _plexType;
     private long _plexCommandId;
+    private long _vlcPlaylistId = long.MinValue;
+    private string? _vlcPath;
+    private int _vlcApiVersion;
     private int _disposed;
 
     public NetworkMediaSourceAdapter(NetworkMediaSourceKind kind, Uri endpoint,
@@ -171,6 +182,9 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
             _plexPath = null;
             _plexDuration = TimeSpan.Zero;
             _plexType = null;
+            _vlcPlaylistId = long.MinValue;
+            _vlcPath = null;
+            _vlcApiVersion = 0;
             var state = await PollOnceAsync(cancellationToken, includeHandshake: true).ConfigureAwait(false);
             SetCurrent(state);
             _pollCancellation = new CancellationTokenSource();
@@ -252,6 +266,14 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
             {
                 ["offset"] = ((long)position.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture)
             }, cancellationToken),
+            NetworkMediaSourceKind.Vlc => SendVlcCommandAsync("seek", new Dictionary<string, string>
+            {
+                ["val"] = ((long)position.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            }, cancellationToken),
+            NetworkMediaSourceKind.Mpc => SendMpcCommandAsync(-1, new Dictionary<string, string>
+            {
+                ["position"] = position.ToString(@"hh\:mm\:ss", System.Globalization.CultureInfo.InvariantCulture)
+            }, cancellationToken),
             _ => throw new InvalidOperationException("Unsupported media source kind.")
         };
     }
@@ -263,6 +285,10 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
                 => SendJsonSessionCommandAsync(playing ? "Unpause" : "Pause", null, cancellationToken),
             NetworkMediaSourceKind.Plex
                 => SendPlexCommandAsync(playing ? "play" : "pause", null, cancellationToken),
+            NetworkMediaSourceKind.Vlc
+                => SendVlcCommandAsync(playing ? "pl_forceresume" : "pl_forcepause", null, cancellationToken),
+            NetworkMediaSourceKind.Mpc
+                => SendMpcCommandAsync(playing ? 887 : 888, null, cancellationToken),
             _ => throw new InvalidOperationException("Unsupported media source kind.")
         };
 
@@ -299,6 +325,35 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
         using var response = await SendCheckedAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task SendVlcCommandAsync(string command, IReadOnlyDictionary<string, string>? query,
+        CancellationToken cancellationToken)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["command"] = command };
+        if (query is not null)
+            foreach (var pair in query)
+                values[pair.Key] = pair.Value;
+        var path = "/requests/status.json?" + string.Join("&",
+            values.Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+        using var request = CreateRequest(HttpMethod.Get, path);
+        using var response = await SendCheckedAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SendMpcCommandAsync(int command, IReadOnlyDictionary<string, string>? query,
+        CancellationToken cancellationToken)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["wm_command"] = command.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        if (query is not null)
+            foreach (var pair in query)
+                values[pair.Key] = pair.Value;
+        var path = "/command.html?" + string.Join("&",
+            values.Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+        using var request = CreateRequest(HttpMethod.Get, path);
+        using var response = await SendCheckedAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task PollLoopAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(_options.PollInterval);
@@ -324,6 +379,8 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
             NetworkMediaSourceKind.Emby or NetworkMediaSourceKind.Jellyfin
                 => await PollJsonServerAsync(cancellationToken, includeHandshake).ConfigureAwait(false),
             NetworkMediaSourceKind.Plex => await PollPlexAsync(cancellationToken).ConfigureAwait(false),
+            NetworkMediaSourceKind.Vlc => await PollVlcAsync(cancellationToken, includeHandshake).ConfigureAwait(false),
+            NetworkMediaSourceKind.Mpc => await PollMpcAsync(cancellationToken, includeHandshake).ConfigureAwait(false),
             _ => throw new InvalidOperationException("Unsupported media source kind.")
         };
 
@@ -429,6 +486,153 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
         return (path, duration);
     }
 
+    private async Task<NetworkMediaState> PollVlcAsync(CancellationToken cancellationToken,
+        bool includeHandshake)
+    {
+        using var request = CreateRequest(HttpMethod.Get, "/requests/status.json");
+        using var response = await SendCheckedAsync(request,
+            includeHandshake ? _options.ConnectTimeout : _options.RequestTimeout,
+            cancellationToken).ConfigureAwait(false);
+        var bytes = await ReadBoundedAsync(response, cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(bytes, JsonOptions);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("The VLC status response was not a JSON object.");
+
+        var root = document.RootElement;
+        var apiVersion = GetInt64(root, "apiversion");
+        if (includeHandshake)
+        {
+            if (apiVersion is not (3 or 4))
+                throw new InvalidDataException($"Unsupported VLC API version '{apiVersion}'.");
+            _vlcApiVersion = (int)apiVersion;
+        }
+        else if (_vlcApiVersion is not (3 or 4))
+        {
+            throw new InvalidDataException("The VLC API version was not established.");
+        }
+
+        var playlistId = GetInt64(root, "currentplid");
+        var state = GetString(root, "state");
+        if (playlistId < 0 || string.Equals(state, "stopped", StringComparison.OrdinalIgnoreCase))
+        {
+            ResetVlcState();
+            return NetworkMediaState.Empty;
+        }
+
+        if (playlistId != _vlcPlaylistId || string.IsNullOrWhiteSpace(_vlcPath))
+        {
+            using var playlistRequest = CreateRequest(HttpMethod.Get, "/requests/playlist.json");
+            using var playlistResponse = await SendCheckedAsync(playlistRequest,
+                _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+            var playlistBytes = await ReadBoundedAsync(playlistResponse, cancellationToken).ConfigureAwait(false);
+            using var playlist = JsonDocument.Parse(playlistBytes, JsonOptions);
+            var path = FindVlcCurrentPath(playlist.RootElement);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                ResetVlcState();
+                return NetworkMediaState.Empty;
+            }
+            _vlcPlaylistId = playlistId;
+            _vlcPath = path;
+        }
+
+        var duration = SecondsToTime(GetDouble(root, "length", 0d));
+        var position = _vlcApiVersion == 3
+            ? SecondsToTime(GetDouble(root, "position", 0d) * duration.TotalSeconds)
+            : SecondsToTime(GetDouble(root, "time", 0d));
+        var speed = GetDouble(root, "rate", 1d);
+        return new(playlistId.ToString(System.Globalization.CultureInfo.InvariantCulture), _deviceId,
+            playlistId.ToString(System.Globalization.CultureInfo.InvariantCulture), _vlcPath,
+            string.Equals(state, "playing", StringComparison.OrdinalIgnoreCase), duration, position,
+            speed > 0 && double.IsFinite(speed) ? speed : 1d);
+    }
+
+    private async Task<NetworkMediaState> PollMpcAsync(CancellationToken cancellationToken,
+        bool includeHandshake)
+    {
+        if (includeHandshake)
+        {
+            using var handshake = CreateRequest(HttpMethod.Get, "/");
+            using var handshakeResponse = await SendCheckedAsync(handshake, _options.ConnectTimeout,
+                cancellationToken).ConfigureAwait(false);
+            _ = await ReadBoundedAsync(handshakeResponse, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var request = CreateRequest(HttpMethod.Get, "/variables.html");
+        using var response = await SendCheckedAsync(request, _options.RequestTimeout,
+            cancellationToken).ConfigureAwait(false);
+        var bytes = await ReadBoundedAsync(response, cancellationToken).ConfigureAwait(false);
+        var html = StrictUtf8.GetString(bytes);
+        var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in MpcVariableRegex.Matches(html))
+        {
+            var name = match.Groups["name"].Value;
+            var value = System.Net.WebUtility.HtmlDecode(match.Groups["value"].Value).Trim();
+            if (name.Length <= 64 && value.Length <= 4096)
+                variables[name] = value;
+        }
+
+        variables.TryGetValue("filepath", out var path);
+        if (string.IsNullOrWhiteSpace(path))
+            return NetworkMediaState.Empty;
+        var playing = variables.TryGetValue("state", out var state)
+            && int.TryParse(state, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var stateValue)
+            && stateValue == 2;
+        var duration = variables.TryGetValue("duration", out var durationText)
+            ? ParseMilliseconds(durationText) : TimeSpan.Zero;
+        var position = variables.TryGetValue("position", out var positionText)
+            ? ParseMilliseconds(positionText) : TimeSpan.Zero;
+        var speed = variables.TryGetValue("playbackrate", out var speedText)
+            ? ParseDouble(speedText, 1d) : 1d;
+        return new(null, _deviceId, path, path, playing, duration, position,
+            speed > 0 && double.IsFinite(speed) ? speed : 1d);
+    }
+
+    private static string? FindVlcCurrentPath(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var isCurrentLeaf = GetString(element, "type") is { } type
+                && string.Equals(type, "leaf", StringComparison.OrdinalIgnoreCase)
+                && GetString(element, "current") is { } current
+                && string.Equals(current, "current", StringComparison.OrdinalIgnoreCase);
+            if (isCurrentLeaf && GetString(element, "uri") is { } uri)
+                return NormalizeVlcPath(uri);
+            foreach (var property in element.EnumerateObject())
+            {
+                var found = FindVlcCurrentPath(property.Value);
+                if (found is not null)
+                    return found;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                var found = FindVlcCurrentPath(item);
+                if (found is not null)
+                    return found;
+            }
+        }
+        return null;
+    }
+
+    private static string? NormalizeVlcPath(string value)
+    {
+        if (value.Length == 0 || value.Length > 4096)
+            return null;
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return uri.IsFile ? uri.LocalPath : uri.ToString();
+        return Uri.UnescapeDataString(value);
+    }
+
+    private void ResetVlcState()
+    {
+        _vlcPlaylistId = long.MinValue;
+        _vlcPath = null;
+    }
+
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, new Uri(_endpoint, path));
@@ -449,6 +653,10 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
                 request.Headers.TryAddWithoutValidation("X-Plex-Provides", "controller");
                 if (_deviceId is not null)
                     request.Headers.TryAddWithoutValidation("X-Plex-Target-Client-Identifier", _deviceId);
+                break;
+            case NetworkMediaSourceKind.Vlc when _token is not null:
+                request.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+                    Convert.ToBase64String(Encoding.UTF8.GetBytes(":" + _token)));
                 break;
         }
         return request;
@@ -613,6 +821,11 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
     private static double ParseDouble(string? value, double fallback)
         => double.TryParse(value, System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : fallback;
+
+    private static TimeSpan SecondsToTime(double seconds)
+        => double.IsFinite(seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(Math.Min(seconds, TimeSpan.MaxValue.TotalSeconds))
+            : TimeSpan.Zero;
 
     private void ThrowIfDisposed()
     {

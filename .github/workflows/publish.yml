@@ -22,7 +22,9 @@ jobs:
         python-version: '3.x'
     - name: Verify release evidence
       run: |
-        test -f deploy/release-evidence.json
+        if (-not (Test-Path -LiteralPath 'deploy/release-evidence.json' -PathType Leaf)) {
+          throw 'deploy/release-evidence.json is required for a tag release.'
+        }
         python tools/validate-release-evidence.py deploy/release-evidence.json --require-complete
     - name: Setup .NET 9 SDK
       uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4

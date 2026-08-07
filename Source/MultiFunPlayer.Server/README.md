@@ -141,8 +141,14 @@ exposes both fields; it returns the non-secret `deviceId` for editing but never
 returns `secretRef`. When an update omits `secretRef`, the existing reference
 is retained so editing a name or endpoint cannot silently clear credentials.
 
-MPV, VLC, MPC, Whirligig, DeoVR, and HereSphere remain `blocked`
-external-proxy capabilities until a remote adapter or companion process is
-provided. Source endpoints accept only `http(s)` for Emby/Jellyfin/Plex and
-`ws(s)` for OFS, never accept embedded credentials, and expose connection
-failures instead of pretending to be connected.
+VLC uses the documented `/requests/status.json` and `/requests/playlist.json`
+HTTP endpoints and accepts the optional `MFP_VLC_PASSWORD` secret for Basic
+authentication. MPC-HC/BE uses `/variables.html` plus `command.html` HTTP
+commands and does not require a secret. Both adapters expose a normalized
+media clock and play/pause/seek controls; the player web interfaces must be
+bound to a reachable address and protected by the deployment network. MPV,
+Whirligig, DeoVR, and HereSphere remain `blocked` external-proxy capabilities
+until a documented remote adapter or companion process is provided. Source
+endpoints accept only `http(s)` for network media and `ws(s)` for OFS, never
+accept embedded credentials, and expose connection failures instead of
+pretending to be connected.

@@ -47,7 +47,7 @@ Media sources:
 - Emby, Jellyfin, and Plex.
 - MPC and VLC HTTP interfaces.
 - OFS WebSocket.
-- DeoVR, HereSphere, and Whirligig when their remote endpoints are reachable from the NAS. Local process detection must not be required.
+- DeoVR, HereSphere, and Whirligig remain deferred until a documented remote control contract is implemented. Local process detection must not be required.
 
 Output targets:
 
@@ -410,7 +410,7 @@ MVP media compatibility matrix:
 | Emby/Jellyfin/Plex | Direct network adapter |
 | VLC/MPC | Direct HTTP adapter; document remote binding/firewall |
 | OFS | Direct WebSocket adapter |
-| DeoVR/HereSphere/Whirligig | Conditional network adapter; no NAS-side process check |
+| DeoVR/HereSphere/Whirligig | Deferred until a documented remote adapter exists; no NAS-side process check |
 | MPV | Deferred unless a documented remote TCP/Unix-socket mode is added |
 | PotPlayer | Deferred to Windows agent |
 
@@ -578,7 +578,7 @@ Validated in the current Linux environment:
   short smoke interval, requests a graceful close, and verifies exit code zero.
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 38/38;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 40/40;
   Server tests: 40/40, including the Data Protection service wiring test.
   A Linux cross-target solution build with `EnableWindowsTargeting=true` also
   completed with 0 errors; its 58 existing nullable/analyzer warnings do not
@@ -595,6 +595,10 @@ Validated in the current Linux environment:
   their matrix expressions, conditionals, and embedded shell blocks. This is
   workflow-syntax evidence only; the WindowsDesktop jobs still need a real
   runner result.
+- The tag publishing workflow now uses the Windows runner's native
+  PowerShell `Test-Path` for the release-evidence existence check before the
+  Python completeness validator; the previous POSIX `test -f` form could fail
+  before validation on Windows.
 - The change-detection job now reruns the pinned actionlint binary (SHA-256
   verified) before fan-out, so future workflow edits cannot bypass this syntax
   check.
@@ -677,20 +681,22 @@ Validated in the current Linux environment:
   from being reported as output loss. The boundary behavior is covered by an
   Infrastructure test; transport failures remain counted separately.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
-  Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
+  Jellyfin, Plex, VLC, and MPC-HC/BE wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
   `NowPlayingItem` responses, then expose Pause/Unpause/Seek commands. Plex
   parses `/player/timeline/poll` XML and the referenced metadata `Part`, then
   exposes the documented playback commands. The adapter polls a real session
   or timeline response before reporting connected; health checks alone do not
   claim a media clock. `secretRef` stores only an environment variable name
-  (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
-  while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
-  XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 38/38). Registry
-  integration verifies normalized `mediaState` and that token values never
-  reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
-  remain blocked.
+  (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, `MFP_PLEX_TOKEN`, or the optional
+  `MFP_VLC_PASSWORD` by default), while `deviceId` selects the remote
+  session/client. VLC validates API v3/v4 status and playlist JSON, while
+  MPC-HC/BE parses bounded `/variables.html` fields and sends the documented
+  HTTP commands. Bounded JSON/XML/HTML parsing, XML DTD rejection, malformed
+  response handling, cancellation, and protocol simulator tests cover all five
+  sources. Registry integration verifies normalized `mediaState` and that
+  token values never reach `media-sources.json`; MPV/VR players and other
+  process/proxy-bound sources remain blocked.
 - `MultiFunPlayer.Application` now exposes platform-neutral ports for media
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be

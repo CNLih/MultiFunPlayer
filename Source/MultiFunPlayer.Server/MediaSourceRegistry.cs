@@ -31,7 +31,7 @@ public sealed record MediaSourceDefinition(
 
 /// <summary>
 /// Persists media source configuration without persisting credentials. The
-/// internal source and network-native Emby/Jellyfin/Plex/OFS sources are ready
+/// internal source and network-native Emby/Jellyfin/Plex/VLC/MPC/OFS sources are ready
 /// in the headless host. Credentials are resolved from the host environment;
 /// the registry never persists their values.
 /// </summary>
@@ -45,10 +45,10 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             ["emby"] = ("direct", "ready"),
             ["jellyfin"] = ("direct", "ready"),
             ["plex"] = ("direct", "ready"),
+            ["vlc"] = ("direct", "ready"),
+            ["mpc"] = ("direct", "ready"),
             ["ofs"] = ("direct", "ready"),
             ["mpv"] = ("external-proxy", "blocked"),
-            ["vlc"] = ("external-proxy", "blocked"),
-            ["mpc"] = ("external-proxy", "blocked"),
             ["potplayer"] = ("unsupported", "unsupported"),
             ["whirligig"] = ("external-proxy", "blocked"),
             ["deovr"] = ("external-proxy", "blocked"),
@@ -568,7 +568,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             || !string.IsNullOrEmpty(uri.UserInfo))
             return "network endpoint must use http(s) or ws(s) without embedded credentials.";
         if (TryGetNetworkKind(definition.Kind, out _) && uri.Scheme is not ("http" or "https"))
-            return "Emby, Jellyfin, and Plex endpoints must use http(s).";
+            return "Network media endpoints must use http(s).";
         if (definition.Kind.Equals("ofs", StringComparison.OrdinalIgnoreCase)
             && uri.Scheme is not ("ws" or "wss"))
             return "OFS endpoints must use ws(s).";
@@ -591,11 +591,15 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             "emby" => NetworkMediaSourceKind.Emby,
             "jellyfin" => NetworkMediaSourceKind.Jellyfin,
             "plex" => NetworkMediaSourceKind.Plex,
+            "vlc" => NetworkMediaSourceKind.Vlc,
+            "mpc" => NetworkMediaSourceKind.Mpc,
             _ => default
         };
         return kind.Equals("emby", StringComparison.OrdinalIgnoreCase)
             || kind.Equals("jellyfin", StringComparison.OrdinalIgnoreCase)
-            || kind.Equals("plex", StringComparison.OrdinalIgnoreCase);
+            || kind.Equals("plex", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("vlc", StringComparison.OrdinalIgnoreCase)
+            || kind.Equals("mpc", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ResolveSecret(MediaSourceDefinition definition)
@@ -608,6 +612,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 "emby" => "MFP_EMBY_API_KEY",
                 "jellyfin" => "MFP_JELLYFIN_API_KEY",
                 "plex" => "MFP_PLEX_TOKEN",
+                "vlc" => "MFP_VLC_PASSWORD",
                 _ => null
             };
         }

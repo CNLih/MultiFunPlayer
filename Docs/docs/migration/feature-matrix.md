@@ -24,7 +24,7 @@ This matrix is the Phase 0 baseline for the headless Web/Linux/fnOS migration. `
 | Emby, Jellyfin, and Plex | Baseline | MVP | Network endpoint must be reachable from the service; API keys/tokens are supplied through server environment variables. |
 | VLC and MPC HTTP | Baseline | MVP | Enable the player's remote HTTP interface and firewall access. |
 | OFS WebSocket | Baseline | MVP | Configure the remote WebSocket endpoint. |
-| DeoVR, HereSphere, and Whirligig | Baseline | MVP (conditional) | Remote control/server mode must be enabled; no local process detection. |
+| DeoVR, HereSphere, and Whirligig | Baseline | Deferred | A documented remote adapter is still required; no local process detection is permitted. |
 | MPV local integration | Baseline | Deferred | Requires a documented remote TCP/Unix-socket mode or Windows agent. |
 | PotPlayer Win32 integration | Baseline | Deferred | Requires a Windows companion agent. |
 
