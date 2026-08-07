@@ -824,7 +824,8 @@ Validated in the current Linux environment:
   Buttplug device removal, and persistent-volume process restart. The report
   keeps Docker/Buildx, fnOS, physical output, and container restart checks
   explicitly pending, and the Ubuntu CI job uploads the same artifact for each
-  run.
+  run. Command output is decoded as UTF-8 with replacement for malformed bytes,
+  so a localized or binary diagnostic cannot abort evidence collection.
 
 Still open and intentionally not advertised as complete:
 
