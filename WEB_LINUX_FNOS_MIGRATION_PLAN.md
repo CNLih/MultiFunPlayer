@@ -552,7 +552,7 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 34/34;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 35/35;
   Server tests: 32/32.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
@@ -599,8 +599,8 @@ Validated in the current Linux environment:
   formatting transport output. Connection failures are represented in the
   target state. Simulator tests cover handshake, malformed/timeout responses,
   caller cancellation, send failure, explicit reconnect, and rate-limit/seek
-  behavior; a TCP loopback test also closes and reopens the peer socket to
-  simulate a player restart before sending the next frame.
+  behavior; TCP and WebSocket loopback tests close/reopen the peer to simulate
+  a player restart before sending the next frame.
 - Linux serial discovery is verified against stable `/dev/serial/by-id`
   identities and re-enumerates cleanly after a device link is removed; actual
   serial open/write permissions and hardware reconnect behavior remain
@@ -628,7 +628,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 34/34). Registry
+  simulator tests cover all three sources (Infrastructure 35/35). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -694,9 +694,10 @@ Validated in the current Linux environment:
   falling back to the integrity-pinned npm package manifests and unambiguous
   license files for legacy metadata. The current workspace contains 1,396
   deduplicated components and the generated inventory reports zero components
-  without a license declaration. The exact runtime image/FPK SBOM and license
-  review remain open until those artifacts can be built in their target
-  environments.
+  without a license declaration. The container matrix now requests a separate
+  CycloneDX SBOM for each loaded runtime image and uploads it beside the Trivy
+  report; the exact runtime/FPK SBOM and license review remain open until a
+  runner produces and reviews those artifacts.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
   desktop and mobile Chromium journeys, viewport overflow assertions, and CI
   screenshot artifacts. The four tests pass locally against the production
@@ -727,7 +728,7 @@ Validated in the current Linux environment:
   by multi-axis load, legacy configuration migration, the Core/Application
   desktop-reference scan, backend playback/output after browser disconnect,
   including a state-WebSocket connect/close followed by continued file-output
-  frames, TCP peer restart/reconnect simulation, and the published
+  frames, TCP and WebSocket peer restart/reconnect simulations, and the published
   operations/security documentation.
 - Configuration migration acceptance now rejects non-object JSON roots,
   preserves the source byte-for-byte, rejects missing/oversized/reparse-point

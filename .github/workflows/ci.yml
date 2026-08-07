@@ -268,6 +268,18 @@ jobs:
       uses: docker/setup-buildx-action@v3
     - name: Build ${{ matrix.arch }} image
       run: docker buildx build --platform linux/${{ matrix.arch }} --tag multifunplayer:ci-${{ matrix.arch }} --load .
+    - name: Generate ${{ matrix.arch }} runtime CycloneDX SBOM
+      uses: anchore/sbom-action@4a30bbadbe35d73a1729ee95a9196544192d905e
+      with:
+        image: multifunplayer:ci-${{ matrix.arch }}
+        format: cyclonedx-json
+        output-file: runtime-sbom-${{ matrix.arch }}.cyclonedx.json
+        upload-artifact: false
+    - name: Upload ${{ matrix.arch }} runtime SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: runtime-sbom-${{ matrix.arch }}
+        path: runtime-sbom-${{ matrix.arch }}.cyclonedx.json
     - name: Scan ${{ matrix.arch }} image for high and critical vulnerabilities
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
       with:

@@ -282,6 +282,70 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task WebSocketTransport_reconnects_after_peer_restart()
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var firstReceived = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstClosed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondReceived = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connectionNumber = 0;
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.UseWebSockets();
+        app.Run(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var buffer = new byte[1024];
+            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            var payload = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            if (Interlocked.Increment(ref connectionNumber) == 1)
+            {
+                firstReceived.TrySetResult(payload);
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "player-restart", CancellationToken.None);
+                firstClosed.TrySetResult(true);
+            }
+            else
+            {
+                secondReceived.TrySetResult(payload);
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
+            }
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var transport = new WebSocketOutputTransport(
+                "websocket-player-restart", new Uri($"ws://127.0.0.1:{port}/output"));
+            await transport.ConnectAsync();
+            await transport.SendAsync(Encoding.UTF8.GetBytes("first\n"));
+            Assert.Equal("first\n", await firstReceived.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+            await firstClosed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await transport.DisconnectAsync();
+            await transport.ConnectAsync();
+            await transport.SendAsync(Encoding.UTF8.GetBytes("second\n"));
+
+            Assert.Equal("second\n", await secondReceived.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public void LinuxSerialEnumeratorUsesStableByIdNames()
     {
         using var temp = new TemporaryDirectory();
