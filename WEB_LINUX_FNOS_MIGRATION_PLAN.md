@@ -853,6 +853,9 @@ Validated in the current Linux environment:
   with `deviceId` retention and `secretRef` redaction, multi-axis script
   upload/load, seek/play/stop, and bounded redacted logs; it is local evidence
   only, not a Docker, fnOS, or physical-device acceptance.
+- The supporting Python validation/tooling suite passes 30/30, including
+  target-harness media CRUD/redaction and browser-host dependency classification
+  tests.
 
 Still open and intentionally not advertised as complete:
 
