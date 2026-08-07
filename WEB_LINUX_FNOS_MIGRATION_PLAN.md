@@ -556,11 +556,12 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 35/35;
-  Server tests: 33/33.
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 36/36;
+  Server tests: 39/39, including the Data Protection service wiring test.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
-  3.10.2 toolchain and no build warnings.
+  3.10.2 toolchain and no build warnings. The Playwright desktop/mobile
+  journeys pass 4/4 when the host browser libraries are available.
 - GitHub Actions now includes an Ubuntu portable job that performs locked
   restore, Core/Application/Infrastructure/Server tests, solution build, and
   SPA type/static/production checks. Windows runner execution remains required
@@ -617,7 +618,7 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  33/33, including The Handy and TCP/UDP/WebSocket registry integrations,
+  39/39, including The Handy and TCP/UDP/WebSocket registry integrations,
   device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
   explicit key-root reuse across independent host instances, and rejection of
@@ -636,7 +637,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 35/35). Registry
+  simulator tests cover all three sources (Infrastructure 36/36). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
