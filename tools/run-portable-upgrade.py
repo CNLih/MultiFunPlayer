@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Rehearse a portable host upgrade across two independent server processes.
+"""Rehearse a portable host upgrade across independent server processes.
 
-The harness shares the four configured roots between a first and second server
-instance, then verifies that scripts, device settings, and persisted logs remain
-available. It is useful in Linux CI and local development, but does not claim a
-Docker image, fnOS package, filesystem snapshot, or target-device upgrade.
+The harness shares the four configured roots between independent server
+instances, verifies both graceful and interrupted process restarts, then checks
+that scripts, device settings, and persisted logs remain available. It is useful
+in Linux CI and local development, but does not claim a Docker image, fnOS
+package, filesystem snapshot, or target-device upgrade.
 """
 
 from __future__ import annotations
@@ -74,6 +75,20 @@ def stop_server(process: subprocess.Popen[Any], log: Any) -> bool:
         log.close()
 
 
+def interrupt_server(process: subprocess.Popen[Any], log: Any) -> bool:
+    """Stop without an application shutdown signal to simulate a restart."""
+    try:
+        if process.poll() is not None:
+            return False
+        process.kill()
+        process.wait(timeout=10)
+        return process.returncode != 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    finally:
+        log.close()
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     server = Path(args.server).resolve()
     if not server.is_file():
@@ -119,6 +134,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
             process, log = launch_server(server, args.dotnet, port, root, log_path)
             wait_for_live(base_url, args.startup_timeout_seconds)
+            interrupted_stop = interrupt_server(process, log)
+            process = None
+            log = None
+            report["phases"].append({
+                "name": "simulated-process-interruption",
+                "forcedStop": interrupted_stop,
+            })
+
+            process, log = launch_server(server, args.dotnet, port, root, log_path)
+            wait_for_live(base_url, args.startup_timeout_seconds)
             scripts = request_json(base_url, "/api/v1/scripts", TOKEN)
             axes = request_json(base_url, "/api/v1/device-axes", TOKEN)
             script_restored = any(
@@ -146,7 +171,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "volumeRootsPresent": volume_roots,
             })
             report["result"] = "pass" if all((
-                first_stop, second_stop, script_restored, axis_restored,
+                first_stop, interrupted_stop, second_stop,
+                script_restored, axis_restored,
                 log_restored, *volume_roots.values(),
             )) else "fail"
         except Exception as error:

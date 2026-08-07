@@ -75,6 +75,8 @@ python3 tools/run-portable-upgrade.py \
   --output artifacts/upgrade/portable-upgrade.json
 ```
 
-This starts two independent server instances and verifies scripts, device
-settings, logs, and all persistent root directories after the second start.
-It does not replace Docker volume migration or fnOS upgrade/rollback testing.
+This starts independent server instances, performs a graceful stop and a
+forced process interruption, then verifies scripts, device settings, logs, and
+all persistent root directories after restart. It is process-level evidence
+only; it does not replace Docker volume migration or fnOS upgrade/rollback
+testing.
