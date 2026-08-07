@@ -115,6 +115,7 @@ export interface ApiMediaSource {
   implementationStatus: string;
   connected: boolean;
   lastError: string | null;
+  deviceId?: string | null;
 }
 
 export interface ApiMediaSourceRequest {
@@ -124,6 +125,9 @@ export interface ApiMediaSourceRequest {
   endpoint: string;
   enabled: boolean;
   autoConnect: boolean;
+  deviceId?: string | null;
+  /** Environment variable name only; the secret value never crosses the API. */
+  secretRef?: string | null;
 }
 
 export interface ApiOutputTarget {

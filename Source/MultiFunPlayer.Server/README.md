@@ -128,7 +128,10 @@ normalized `mediaState` when available. Set `secretRef` to an environment
 variable name, or use the defaults `MFP_EMBY_API_KEY`,
 `MFP_JELLYFIN_API_KEY`, and `MFP_PLEX_TOKEN`; secret values are never stored
 in `media-sources.json` or returned by the API. `deviceId` selects an Emby or
-Jellyfin session and is used as the Plex target-client identifier.
+Jellyfin session and is used as the Plex target-client identifier. The Web UI
+exposes both fields; it returns the non-secret `deviceId` for editing but never
+returns `secretRef`. When an update omits `secretRef`, the existing reference
+is retained so editing a name or endpoint cannot silently clear credentials.
 
 MPV, VLC, MPC, Whirligig, DeoVR, and HereSphere remain `blocked`
 external-proxy capabilities until a remote adapter or companion process is

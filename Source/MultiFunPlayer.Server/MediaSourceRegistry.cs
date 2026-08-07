@@ -215,6 +215,11 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
             if (_config is null)
                 return new(MediaSourceOperationStatus.Unavailable, Error: "The configured root is not writable.");
+            // SecretRef is intentionally absent from API responses. Preserve
+            // it when a normal edit omits the optional environment variable
+            // name, so editing another field cannot clear credentials.
+            if (definition.SecretRef is null && _sources[id].Definition.SecretRef is not null)
+                definition = definition with { SecretRef = _sources[id].Definition.SecretRef };
             await DisconnectLockedAsync(_sources[id], cancellationToken).ConfigureAwait(false);
             var source = new RuntimeSource(definition);
             _sources[id] = source;
@@ -545,7 +550,8 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 network.Playing, network.Duration.TotalSeconds, network.Position.TotalSeconds,
                 network.PlaybackSpeed, network.ContentType) : source.LastMediaState is { } ofs ? new MediaClockResponse(
                 null, null, null, ofs.Path, ofs.Playing, ofs.Duration.TotalSeconds,
-                ofs.Position.TotalSeconds, ofs.PlaybackSpeed, null) : null);
+                ofs.Position.TotalSeconds, ofs.PlaybackSpeed, null) : null,
+            source.Definition.DeviceId);
     }
 
     private sealed class RuntimeSource(MediaSourceDefinition definition)

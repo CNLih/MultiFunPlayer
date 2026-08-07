@@ -673,8 +673,12 @@ Validated in the current Linux environment:
 - The SPA now loads media/output registries and device-axis policies from the
   server, provides persisted create/connect/disconnect/delete workflows, and
   renders planned/blocked capability errors. Script upload remains available
-  in both demo and remote modes; the broader browser/device matrix remains
-  open while the focused desktop/mobile screenshot harness is validated.
+  in both demo and remote modes. Media configuration now exposes the
+  non-secret remote `deviceId` and environment-variable-only `secretRef`;
+  API responses never return the secret reference, and ordinary updates retain
+  it when omitted. A six-case desktop/mobile Playwright journey now exercises
+  media, output, axis, and diagnostics CRUD paths; the focused harness is
+  source-validated here and requires the CI browser image for execution.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

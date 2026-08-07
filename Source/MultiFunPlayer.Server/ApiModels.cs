@@ -102,7 +102,8 @@ public sealed record MediaSourceResponse(
     string ImplementationStatus,
     bool Connected,
     string? LastError,
-    MediaClockResponse? MediaState = null);
+    MediaClockResponse? MediaState = null,
+    string? DeviceId = null);
 
 public sealed record MediaClockResponse(
     string? SessionId,

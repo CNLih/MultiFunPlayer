@@ -968,8 +968,13 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Equal(MediaSourceOperationStatus.Success, result.Status);
             Assert.True(result.Source!.Connected);
             Assert.Equal("ready", result.Source.ImplementationStatus);
+            Assert.Equal("browser-1", result.Source.DeviceId);
             Assert.Equal("/media/remote.mp4", result.Source.MediaState!.Path);
             Assert.Equal(2.5, result.Source.MediaState.PositionSeconds);
+            var updated = await registry.UpdateAsync("jellyfin", new MediaSourceDefinition(
+                "jellyfin", "Renamed Jellyfin", "jellyfin", "https://media.example.local",
+                DeviceId: "browser-1"));
+            Assert.Equal(MediaSourceOperationStatus.Success, updated.Status);
             var persisted = await File.ReadAllTextAsync(Path.Combine(storage.ConfigRoot, "media-sources.json"));
             Assert.Contains("MFP_TEST_MEDIA_TOKEN", persisted, StringComparison.Ordinal);
             Assert.DoesNotContain("token-not-persisted", persisted, StringComparison.Ordinal);
@@ -996,12 +1001,16 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 name = "Remote Jellyfin",
                 kind = "jellyfin",
                 endpoint = "https://media.example.local",
-                autoConnect = true
+                autoConnect = true,
+                deviceId = "browser-session-1",
+                secretRef = "MFP_TEST_MEDIA_TOKEN"
             });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
             var created = await create.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("ready", created.GetProperty("implementationStatus").GetString());
             Assert.False(created.GetProperty("connected").GetBoolean());
+            Assert.Equal("browser-session-1", created.GetProperty("deviceId").GetString());
+            Assert.DoesNotContain("secretRef", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
             Assert.Contains("API key", created.GetProperty("lastError").GetString(),
                 StringComparison.OrdinalIgnoreCase);
 

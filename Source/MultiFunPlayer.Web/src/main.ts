@@ -134,7 +134,7 @@ function renderMedia(state: AppState): string {
 }
 
 function renderMediaForm(): string {
-  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label>Name<input name="name" required placeholder="Main media library" /></label><label>Kind<select name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label>Endpoint<input name="endpoint" placeholder="https://media.example/api" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label>Name<input name="name" required placeholder="Main media library" /></label><label>Kind<select name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label>Endpoint<input name="endpoint" placeholder="https://media.example/api" /></label><label>Remote device id<input name="deviceId" maxlength="256" placeholder="Optional session or client id" /></label><label>Secret environment variable<input name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="MFP_EMBY_API_KEY" /></label></div><p class="form-hint">Only the environment variable name is stored. The secret value stays on the server; leave this blank while editing to retain the current reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
 }
 
 function renderScripts(state: AppState): string {
@@ -277,6 +277,8 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('name') as HTMLInputElement).value = source.name;
       (form.elements.namedItem('kind') as HTMLSelectElement).value = source.kind.toLowerCase();
       (form.elements.namedItem('endpoint') as HTMLInputElement).value = source.endpoint === '(internal)' ? '' : source.endpoint;
+      (form.elements.namedItem('deviceId') as HTMLInputElement).value = source.deviceId ?? '';
+      (form.elements.namedItem('secretRef') as HTMLInputElement).value = '';
       (form.elements.namedItem('enabled') as HTMLInputElement).checked = source.enabled ?? true;
       (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
@@ -408,7 +410,7 @@ async function handleSubmit(event: SubmitEvent) {
   const checked = (name: string): boolean => values.get(name) === 'on';
   try {
     if (kind === 'media') {
-      const input: MediaSourceInput = { id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'), enabled: checked('enabled'), autoConnect: checked('autoConnect') };
+      const input: MediaSourceInput = { id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'), enabled: checked('enabled'), autoConnect: checked('autoConnect'), deviceId: value('deviceId') || null, secretRef: value('secretRef') || null };
       const editingId = form.dataset.editingId;
       if (editingId) {
         await store.updateMediaSource(editingId, input);

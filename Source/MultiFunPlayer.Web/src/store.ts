@@ -15,6 +15,7 @@ export interface MediaSource {
   error?: string;
   enabled?: boolean;
   autoConnect?: boolean;
+  deviceId?: string | null;
 }
 
 export interface ScriptResource {
@@ -59,6 +60,8 @@ export interface MediaSourceInput {
   endpoint: string;
   enabled: boolean;
   autoConnect: boolean;
+  deviceId?: string | null;
+  secretRef?: string | null;
 }
 
 export interface OutputTargetInput {
@@ -497,6 +500,7 @@ export function createRemoteStore(client: MfpApiClient) {
     error: source.lastError ?? undefined,
     enabled: source.enabled,
     autoConnect: source.autoConnect,
+    deviceId: source.deviceId,
   });
   const outputFromResponse = (target: ApiOutputTarget): OutputTarget => ({
     id: target.id,
@@ -663,7 +667,7 @@ export function createRemoteStore(client: MfpApiClient) {
       notify();
     },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
-      await client.createMediaSource(input);
+      await client.createMediaSource({ ...input, secretRef: input.secretRef || null });
       await refreshResourcesAfter();
       const source = state.media.find((item) => item.id === input.id);
       if (!source) throw new Error('The server did not return the created media source.');
@@ -672,7 +676,7 @@ export function createRemoteStore(client: MfpApiClient) {
       return source;
     },
     async updateMediaSource(id: string, input: MediaSourceInput): Promise<MediaSource> {
-      await client.updateMediaSource(id, input);
+      await client.updateMediaSource(id, { ...input, secretRef: input.secretRef || null });
       await refreshResourcesAfter();
       const source = state.media.find((item) => item.id === input.id);
       if (!source) throw new Error('The server did not return the updated media source.');
