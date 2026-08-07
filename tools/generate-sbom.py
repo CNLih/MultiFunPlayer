@@ -64,13 +64,15 @@ def add_component(components: dict[str, dict], name: str, version: str,
             item["licenses"] = [entry]
 
 
-def collect_nuget(root: Path, components: dict[str, dict]) -> None:
+def collect_nuget(root: Path, components: dict[str, dict]) -> int:
     package_root = Path(os.environ.get("NUGET_PACKAGES", Path.home() / ".nuget/packages"))
+    assets_count = 0
     for assets in sorted(root.glob("Source/**/obj/project.assets.json")):
         try:
             document = json.loads(assets.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        assets_count += 1
         for key, metadata in document.get("libraries", {}).items():
             if metadata.get("type") != "package" or "/" not in key:
                 continue
@@ -82,14 +84,17 @@ def collect_nuget(root: Path, components: dict[str, dict]) -> None:
                 f"pkg:nuget/{quote(package_id, safe='.-_')}@{quote(version, safe='.-_+')}",
                 nuget_license(package_root, package_id, version),
             )
+    return assets_count
 
 
-def collect_npm(root: Path, components: dict[str, dict]) -> None:
+def collect_npm(root: Path, components: dict[str, dict]) -> int:
+    lockfile_count = 0
     for lockfile in sorted(root.glob("**/package-lock.json")):
         try:
             document = json.loads(lockfile.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        lockfile_count += 1
         for path, metadata in document.get("packages", {}).items():
             if not path.startswith("node_modules/") or not metadata.get("version"):
                 continue
@@ -106,6 +111,7 @@ def collect_npm(root: Path, components: dict[str, dict]) -> None:
                 f"pkg:npm/{quote(name, safe='@._-/')}@{quote(version, safe='.-_+')}",
                 metadata.get("license"),
             )
+    return lockfile_count
 
 
 def main() -> int:
@@ -115,8 +121,12 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     components: dict[str, dict] = {}
-    collect_nuget(root, components)
-    collect_npm(root, components)
+    assets_count = collect_nuget(root, components)
+    lockfile_count = collect_npm(root, components)
+    if assets_count == 0 or lockfile_count == 0:
+        raise SystemExit(
+            "SBOM input is incomplete: restore .NET projects and keep committed npm lockfiles present."
+        )
     ordered = [components[key] for key in sorted(components)]
     digest = hashlib.sha256(
         json.dumps(ordered, sort_keys=True, separators=(",", ":")).encode("utf-8")
