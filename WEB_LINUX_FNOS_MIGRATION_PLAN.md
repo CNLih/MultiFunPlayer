@@ -686,6 +686,10 @@ Validated in the current Linux environment:
   The adapter has no WPF, Stylet, or Buttplug SDK dependency, and its simulator
   tests pass alongside the existing TCP/UDP/WebSocket, The Handy, file, and
   serial coverage.
+- Acceptance evidence now includes pairing/authentication tests, simulated
+  Jellyfin/Emby/Plex configuration and connection, scripts-root upload followed
+  by multi-axis load, legacy configuration migration, the Core/Application
+  desktop-reference scan, and the published operations/security documentation.
 
 Still open and intentionally not advertised as complete:
 
@@ -794,17 +798,17 @@ The community MVP is complete only when all of the following are true:
 
 - [ ] A clean Linux host can start the documented Docker deployment without a desktop environment.
 - [ ] fnOS can install the FPK and open the application from its Web entry.
-- [ ] First-run authentication/pairing is enabled and documented.
-- [ ] A user can configure at least one supported remote media source.
-- [ ] A user can load a local-volume Funscript and observe correct multi-axis state.
+- [x] First-run authentication/pairing is enabled and documented.
+- [x] A user can configure at least one supported remote media source.
+- [x] A user can load a local-volume Funscript and observe correct multi-axis state.
 - [ ] Serial and at least TCP, UDP, and WebSocket outputs pass integration tests.
 - [ ] Backend playback/output continues when all browsers disconnect.
 - [ ] Configuration and keys survive restart and upgrade.
-- [ ] Existing supported desktop configuration has a tested migration or a documented safe re-entry path.
-- [ ] No Core/Application project references Windows desktop assemblies.
+- [x] Existing supported desktop configuration has a tested migration or a documented safe re-entry path.
+- [x] No Core/Application project references Windows desktop assemblies.
 - [ ] amd64 is physically validated; arm64 is only advertised after physical validation.
 - [ ] Tier 1-4 evidence is complete for the published compatibility matrix.
-- [ ] Installation, backup, restore, upgrade, rollback, security, and troubleshooting documents are published.
+- [x] Installation, backup, restore, upgrade, rollback, security, and troubleshooting documents are published.
 - [ ] Existing WPF release remains available as rollback during the beta period.
 
 ## 14. First Execution Slice

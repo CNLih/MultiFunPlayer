@@ -204,6 +204,53 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task WebSocketTransport_round_trips_a_payload()
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.UseWebSockets();
+        app.Run(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var buffer = new byte[1024];
+            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            received.TrySetResult(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var transport = new WebSocketOutputTransport(
+                "websocket-loopback", new Uri($"ws://127.0.0.1:{port}/output"));
+            await transport.ConnectAsync();
+            await transport.SendAsync(Encoding.UTF8.GetBytes("L0500\n"));
+
+            Assert.Equal("L0500\n", await received.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+            await transport.DisconnectAsync();
+            Assert.False(transport.IsConnected);
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public void LinuxSerialEnumeratorUsesStableByIdNames()
     {
         using var temp = new TemporaryDirectory();

@@ -205,6 +205,22 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 content = "{\"actions\":[]}"
             });
             Assert.Equal(HttpStatusCode.BadRequest, traversal.StatusCode);
+
+            var multiAxis = await client.PostAsJsonAsync("/api/v1/scripts", new
+            {
+                id = "multi-axis.funscript",
+                content = "{\"actions\":[{\"at\":0,\"pos\":25}],\"axes\":[{\"id\":\"R2\",\"actions\":[{\"at\":1000,\"pos\":75}]}]}"
+            });
+            Assert.Equal(HttpStatusCode.Created, multiAxis.StatusCode);
+
+            var loaded = await client.PostAsJsonAsync("/api/v1/scripts/load", new
+            {
+                id = "multi-axis.funscript"
+            });
+            Assert.Equal(HttpStatusCode.OK, loaded.StatusCode);
+            var status = await loaded.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.True(status.GetProperty("axes").TryGetProperty("L0", out _));
+            Assert.True(status.GetProperty("axes").TryGetProperty("R2", out _));
         }
         finally
         {
