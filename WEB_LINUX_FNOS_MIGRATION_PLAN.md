@@ -390,7 +390,7 @@ Tasks:
 - [ ] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
 - [x] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
 - [ ] P4-05 Keep serial open/write behavior behind an adapter and preserve TCode timing semantics.
-- [ ] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
+- [x] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
 - [x] P4-07 Restrict filesystem browsing to administrator-configured roots and prevent path traversal/symlink escape.
 - [x] P4-08 Define Linux and Windows path normalization rules for existing settings.
 - [ ] P4-09 Replace UI file dialogs with server-side directory selection, upload, or repository operations.

@@ -85,6 +85,17 @@ public sealed class InfrastructureTests
         Assert.Equal(device, port.LinkTarget);
     }
 
+    [Fact]
+    public void StorageOptionsReadsPersistentKeyRootAliases()
+    {
+        var options = StorageOptions.FromEnvironment(new Dictionary<string, string?>
+        {
+            ["MFP_KEYS_PATH"] = "/var/lib/mfp/keys",
+        });
+
+        Assert.Equal("/var/lib/mfp/keys", options.KeysRoot);
+    }
+
     private sealed record SampleSettings(string Name, int Count);
 
     private sealed class RecordingTransport(string id) : BoundedOutputTransport(id)

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Json;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
@@ -22,14 +23,34 @@ public static class ServerProgram
     public static void Configure(WebApplicationBuilder builder)
     {
         DeviceAxis.InitializeDefaults();
+        var storage = StorageOptions.FromEnvironment();
         builder.Services.AddProblemDetails();
         builder.Services.Configure<JsonOptions>(options =>
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         builder.Services.AddSingleton<HeadlessPlayerEngine>();
-        builder.Services.AddSingleton(StorageOptions.FromEnvironment());
+        builder.Services.AddSingleton(storage);
+        ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<ScriptCatalog>();
         builder.Services.AddSingleton<StateBroadcaster>();
         builder.Services.AddHostedService<EngineTicker>();
+    }
+
+    private static void ConfigureKeyPersistence(WebApplicationBuilder builder, StorageOptions storage)
+    {
+        var explicitlyConfigured = Environment.GetEnvironmentVariable("MFP_KEYS_ROOT") is not null
+            || Environment.GetEnvironmentVariable("MFP_KEYS_PATH") is not null;
+        if (!explicitlyConfigured)
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(storage.KeysRoot);
+            builder.Services.AddDataProtection()
+                .PersistKeysToFileSystem(new DirectoryInfo(storage.KeysRoot))
+                .SetApplicationName("MultiFunPlayer");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     public static void Map(WebApplication app)
