@@ -222,7 +222,8 @@ public sealed class OfsWebSocketMediaAdapter : IAsyncDisposable
             _lastError = null;
         }
 
-        receiveCancellation?.Cancel();
+        try { receiveCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
         if (socket is { State: WebSocketState.Open or WebSocketState.CloseReceived })
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -245,7 +246,8 @@ public sealed class OfsWebSocketMediaAdapter : IAsyncDisposable
         }
 
         socket?.Dispose();
-        receiveCancellation?.Dispose();
+        try { receiveCancellation?.Dispose(); }
+        catch (ObjectDisposedException) { }
         RaiseConnectionState(OfsConnectionState.Disconnected);
     }
 
@@ -516,6 +518,7 @@ public sealed class OfsWebSocketMediaAdapter : IAsyncDisposable
         }
         if (changed)
             RaiseConnectionState(next);
+        socket.Dispose();
         await Task.CompletedTask.ConfigureAwait(false);
     }
 

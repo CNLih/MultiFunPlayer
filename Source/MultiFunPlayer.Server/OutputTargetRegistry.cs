@@ -36,7 +36,8 @@ public sealed record OutputTargetDefinition(
     int DataBits = 8,
     string StopBits = "One",
     bool DtrEnable = false,
-    bool RtsEnable = false);
+    bool RtsEnable = false,
+    string SourceAxis = "L0");
 
 /// <summary>
 /// Owns configured output transports and their engine sink registrations.
@@ -47,23 +48,29 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 {
     private const string StoreFile = "output-targets.json";
     private static readonly HashSet<string> SupportedProtocols =
-        new(StringComparer.OrdinalIgnoreCase) { "tcp", "udp", "websocket", "file", "serial" };
+        new(StringComparer.OrdinalIgnoreCase) { "tcp", "udp", "websocket", "file", "serial", "the-handy" };
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, RuntimeTarget> _targets = new(StringComparer.OrdinalIgnoreCase);
     private readonly StorageOptions _storage;
     private readonly HeadlessPlayerEngine _engine;
     private readonly ILogger<OutputTargetRegistry> _logger;
+    private readonly Func<string?> _theHandyConnectionKeyProvider;
+    private readonly Func<HttpMessageHandler?>? _theHandyHandlerFactory;
     private readonly RootedFileStore? _config;
     private bool _started;
     private bool _stopped;
     private int _disposed;
 
     public OutputTargetRegistry(StorageOptions storage, HeadlessPlayerEngine engine,
-        ILogger<OutputTargetRegistry> logger)
+        ILogger<OutputTargetRegistry> logger, Func<string?>? theHandyConnectionKeyProvider = null,
+        Func<HttpMessageHandler?>? theHandyHandlerFactory = null)
     {
         _storage = storage;
         _engine = engine;
         _logger = logger;
+        _theHandyConnectionKeyProvider = theHandyConnectionKeyProvider
+            ?? (() => Environment.GetEnvironmentVariable("MFP_THE_HANDY_CONNECTION_KEY"));
+        _theHandyHandlerFactory = theHandyHandlerFactory;
         try
         {
             _config = new RootedFileStore(storage.ConfigRoot);
@@ -300,21 +307,41 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     private async Task<bool> ConnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
     {
-        if (target.Transport?.IsConnected == true)
+        if (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true)
         {
             target.LastError = null;
             return true;
         }
 
         IOutputTransport? transport = null;
+        IOutputTargetAdapter? adapter = null;
         try
         {
-            transport = CreateTransport(target.Definition);
-            await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
-            var sink = new TCodeOutputSink(transport);
-            target.Registration = _engine.AddSink(sink);
-            target.Transport = transport;
-            target.Sink = sink;
+            if (string.Equals(target.Definition.Protocol, "the-handy", StringComparison.OrdinalIgnoreCase))
+            {
+                var connectionKey = _theHandyConnectionKeyProvider();
+                if (string.IsNullOrWhiteSpace(connectionKey))
+                    throw new InvalidOperationException(
+                        "MFP_THE_HANDY_CONNECTION_KEY is required for The Handy output.");
+                adapter = new TheHandyOutputAdapter(target.Definition.Id,
+                    ParseTheHandyUri(target.Definition.Endpoint), connectionKey,
+                    target.Definition.SourceAxis, _theHandyHandlerFactory?.Invoke());
+                var result = await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                if (!result.Connected)
+                    throw new InvalidOperationException(result.Error ?? "The Handy connection failed.");
+                target.Registration = _engine.AddSink(adapter);
+                target.Adapter = adapter;
+                target.Sink = adapter;
+            }
+            else
+            {
+                transport = CreateTransport(target.Definition);
+                await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                var sink = new TCodeOutputSink(transport);
+                target.Registration = _engine.AddSink(sink);
+                target.Transport = transport;
+                target.Sink = sink;
+            }
             target.LastError = null;
             return true;
         }
@@ -325,6 +352,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             _logger.LogWarning(exception, "Output target {TargetId} failed to connect.", target.Definition.Id);
             if (transport is not null)
                 await transport.DisposeAsync().ConfigureAwait(false);
+            if (adapter is not null)
+                await adapter.DisposeAsync().ConfigureAwait(false);
             return false;
         }
     }
@@ -334,10 +363,16 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         target.Registration?.Dispose();
         target.Registration = null;
         if (target.Sink is not null)
-            await target.Sink.DisposeAsync().ConfigureAwait(false);
+        {
+            if (target.Sink is IAsyncDisposable asyncSink)
+                await asyncSink.DisposeAsync().ConfigureAwait(false);
+            else if (target.Sink is IDisposable disposableSink)
+                disposableSink.Dispose();
+        }
         else if (target.Transport is not null)
             await target.Transport.DisposeAsync().ConfigureAwait(false);
         target.Sink = null;
+        target.Adapter = null;
         target.Transport = null;
     }
 
@@ -454,6 +489,10 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     ValidateSerialEndpoint(definition.Endpoint);
                     CreateSerialSettings(definition);
                     break;
+                case "the-handy":
+                    ParseTheHandyUri(definition.Endpoint);
+                    ValidateSourceAxis(definition.SourceAxis);
+                    break;
             }
             return null;
         }
@@ -472,9 +511,29 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         if (string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 120)
             return "name is required and must be at most 120 characters.";
         if (!SupportedProtocols.Contains(definition.Protocol))
-            return "protocol must be tcp, udp, websocket, file, or serial.";
+            return "protocol must be tcp, udp, websocket, file, serial, or the-handy.";
         if (string.IsNullOrWhiteSpace(definition.Endpoint) || definition.Endpoint.Length > 2048)
             return "endpoint is required and must be at most 2048 characters.";
+        if (ValidateSourceAxis(definition.SourceAxis) is not null)
+            return "sourceAxis must contain only letters, numbers, '-' or '_', and be at most 64 characters.";
+        return null;
+    }
+
+    private static Uri ParseTheHandyUri(string endpoint)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo)
+            || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            throw new ArgumentException(
+                "The Handy output requires an absolute http(s) endpoint without credentials.", nameof(endpoint));
+        return uri;
+    }
+
+    private static string? ValidateSourceAxis(string sourceAxis)
+    {
+        if (string.IsNullOrWhiteSpace(sourceAxis) || sourceAxis.Length > 64
+            || sourceAxis.Any(character => !char.IsLetterOrDigit(character) && character is not ('_' or '-')))
+            return "invalid source axis";
         return null;
     }
 
@@ -489,14 +548,17 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     private static OutputTargetResponse ToResponse(RuntimeTarget target)
         => new(target.Definition.Id, target.Definition.Name, target.Definition.Protocol,
-            target.Definition.Endpoint, target.Definition.Enabled, target.Definition.AutoConnect,
-            target.Transport?.IsConnected == true, target.LastError);
+            target.Definition.Endpoint, target.Definition.SourceAxis,
+            target.Definition.Enabled, target.Definition.AutoConnect,
+            target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
+            target.Adapter?.LastError ?? target.LastError);
 
     private sealed class RuntimeTarget(OutputTargetDefinition definition)
     {
         public OutputTargetDefinition Definition { get; } = definition;
         public IOutputTransport? Transport { get; set; }
-        public TCodeOutputSink? Sink { get; set; }
+        public IOutputTargetAdapter? Adapter { get; set; }
+        public IOutputSink? Sink { get; set; }
         public IDisposable? Registration { get; set; }
         public string? LastError { get; set; }
     }

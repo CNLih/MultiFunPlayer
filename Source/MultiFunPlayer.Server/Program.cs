@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Infrastructure.Capabilities;
+using MultiFunPlayer.Infrastructure.Media;
 using MultiFunPlayer.Infrastructure.Serial;
 using MultiFunPlayer.Infrastructure.Storage;
 using MultiFunPlayer.Script;
@@ -33,6 +34,7 @@ public static class ServerProgram
         ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
+        builder.Services.AddSingleton<IOfsMediaSourceAdapterFactory, OfsMediaSourceAdapterFactory>();
         builder.Services.AddSingleton<ConfigurationMigrationHostedService>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<ConfigurationMigrationHostedService>());
@@ -297,7 +299,7 @@ public static class ServerProgram
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Protocol ?? string.Empty,
             request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
             request.BaudRate, request.Parity, request.DataBits, request.StopBits,
-            request.DtrEnable, request.RtsEnable);
+            request.DtrEnable, request.RtsEnable, request.SourceAxis);
 
     private static MediaSourceDefinition ToDefinition(string? id, MediaSourceRequest request)
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Kind ?? string.Empty,

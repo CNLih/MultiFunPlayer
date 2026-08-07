@@ -57,18 +57,21 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("1.0", payload.GetProperty("schemaVersion").GetString());
         var transports = payload.GetProperty("transports").EnumerateArray()
             .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
-        foreach (var id in new[] { "tcp", "udp", "websocket", "serial", "file" })
+        foreach (var id in new[] { "tcp", "udp", "websocket", "serial", "file", "the-handy" })
         {
             Assert.True(transports.ContainsKey(id));
             Assert.Equal("direct", transports[id].GetProperty("integration").GetString());
         }
+        Assert.Contains(transports.Keys, id => id.Equals("ofs-websocket", StringComparison.OrdinalIgnoreCase));
 
         var adapters = payload.GetProperty("adapters").EnumerateArray()
             .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
-        Assert.Equal("planned", adapters["output.tcp"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["output.tcp"].GetProperty("implementationStatus").GetString());
         Assert.Equal("external-proxy", adapters["output.buttplug"].GetProperty("integration").GetString());
+        Assert.Equal("ready", adapters["output.the-handy"].GetProperty("implementationStatus").GetString());
         Assert.Equal("unsupported", adapters["output.pipe"].GetProperty("implementationStatus").GetString());
         Assert.Equal("blocked", adapters["media.mpv"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("ready", adapters["media.ofs"].GetProperty("implementationStatus").GetString());
     }
 
     [Fact]
@@ -244,6 +247,40 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(OutputTargetOperationStatus.Success,
             (await restarted.DeleteAsync("file-1")).Status);
         Assert.Empty(restarted.List());
+    }
+
+    [Fact]
+    public async Task Output_target_registry_routes_the_handy_adapter_without_persisting_key()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        var paths = new List<string>();
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var registry = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance, () => "test-secret-key",
+            () => new HandyRegistryHandler(paths));
+        await registry.StartAsync(CancellationToken.None);
+
+        var created = await registry.CreateAsync(new OutputTargetDefinition(
+            "handy-1", "Handy", "the-handy", "https://simulator.invalid/api/handy/v2/",
+            SourceAxis: "L0"));
+        Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
+        Assert.True(created.Target!.Connected);
+        Assert.Equal(new[] { "/connected", "/info", "/mode", "/servertime" }, paths);
+
+        await registry.DisconnectAsync("handy-1");
+        Assert.False(Assert.Single(registry.List()).Connected);
+        Assert.Equal(OutputTargetOperationStatus.Success,
+            (await registry.ConnectAsync("handy-1")).Status);
+        Assert.Equal(8, paths.Count);
+
+        var persisted = await File.ReadAllTextAsync(Path.Combine(storage.ConfigRoot,
+            "output-targets.json"));
+        Assert.DoesNotContain("test-secret-key", persisted, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -575,6 +612,29 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         {
             if (Directory.Exists(Path))
                 Directory.Delete(Path, recursive: true);
+        }
+    }
+
+    private sealed class HandyRegistryHandler(List<string> paths) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath.Split("/api/handy/v2/",
+                StringSplitOptions.None).LastOrDefault() ?? string.Empty;
+            paths.Add("/" + path.Trim('/'));
+            var body = path switch
+            {
+                "connected" => "{\"connected\":true}",
+                "info" => "{\"fwStatus\":0}",
+                "mode" => "{\"result\":0}",
+                "servertime" => "{\"serverTime\":1}",
+                _ => "{\"result\":0}"
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
         }
     }
 }

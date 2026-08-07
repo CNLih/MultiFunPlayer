@@ -53,6 +53,7 @@ public sealed record OutputTargetResponse(
     string Name,
     string Protocol,
     string Endpoint,
+    string SourceAxis,
     bool Enabled,
     bool AutoConnect,
     bool Connected,
@@ -70,7 +71,8 @@ public sealed record OutputTargetRequest(
     int DataBits = 8,
     string StopBits = "One",
     bool DtrEnable = false,
-    bool RtsEnable = false);
+    bool RtsEnable = false,
+    string SourceAxis = "L0");
 
 public sealed record MediaSourceResponse(
     string Id,

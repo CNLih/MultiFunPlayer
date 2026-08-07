@@ -26,9 +26,11 @@ public interface IMediaSourceAdapter
 }
 
 /// <summary>Portable output adapter boundary; timing remains engine-owned.</summary>
-public interface IOutputTargetAdapter : IOutputSink
+public interface IOutputTargetAdapter : IOutputSink, IAsyncDisposable
 {
     string Protocol { get; }
+    bool IsConnected { get; }
+    string? LastError { get; }
 
     ValueTask<MediaConnectionResult> ConnectAsync(CancellationToken cancellationToken = default);
 
