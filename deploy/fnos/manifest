@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "com.multifunplayer.server",
+  "name": "MultiFunPlayer",
+  "version": "0.1.0",
+  "description": "Headless MultiFunPlayer server with a browser control room.",
+  "image": "multifunplayer:local",
+  "architecture": ["amd64", "arm64"],
+  "ports": [{"container": 8080, "protocol": "tcp", "name": "http"}],
+  "volumes": [
+    {"container": "/config", "name": "config"},
+    {"container": "/keys", "name": "keys"},
+    {"container": "/scripts", "name": "scripts"},
+    {"container": "/logs", "name": "logs"}
+  ],
+  "environment": {
+    "MFP_AUTH_TOKEN": {"required": true, "secret": true},
+    "MFP_SCRIPTS_PATH": "/scripts",
+    "MFP_TICK_HZ": "20"
+  },
+  "healthcheck": {"path": "/health/live", "intervalSeconds": 30},
+  "upgrade": {"preserveVolumes": true},
+  "notes": [
+    "This is a structural fnOS Docker-app manifest scaffold.",
+    "Validate field names and package it with the fnOS/fnpack version used by the target NAS.",
+    "Serial USB mappings and ARM runtime support require physical target validation."
+  ]
+}

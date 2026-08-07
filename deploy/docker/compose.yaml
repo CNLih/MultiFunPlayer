@@ -1,0 +1,41 @@
+services:
+  multifunplayer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: multifunplayer:local
+    ports:
+      - "${MFP_HTTP_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      MFP_AUTH_TOKEN: ${MFP_AUTH_TOKEN:?set MFP_AUTH_TOKEN in the environment}
+      MFP_SCRIPTS_PATH: /scripts
+      MFP_CONFIG_PATH: /config
+      MFP_KEYS_PATH: /keys
+      MFP_LOGS_PATH: /logs
+      MFP_TICK_HZ: ${MFP_TICK_HZ:-20}
+    volumes:
+      - mfp-config:/config
+      - mfp-keys:/keys
+      - mfp-scripts:/scripts
+      - mfp-logs:/logs
+    # Map a specific host serial device only when a Linux TCode adapter is enabled.
+    # devices:
+    #   - /dev/serial/by-id/usb-<stable-id>:/dev/ttyUSB0
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mfp-config:
+  mfp-keys:
+  mfp-scripts:
+  mfp-logs:

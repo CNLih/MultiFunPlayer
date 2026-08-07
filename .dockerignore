@@ -1,0 +1,9 @@
+.git
+.agent/logs
+.agent/state
+**/bin
+**/obj
+Source/MultiFunPlayer.Web/node_modules
+Source/MultiFunPlayer.Web/dist
+*.user
+*.suo
