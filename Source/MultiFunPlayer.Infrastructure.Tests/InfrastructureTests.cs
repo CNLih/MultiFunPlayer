@@ -88,6 +88,45 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task BoundedTransportReports_connect_timeout()
+    {
+        await using var transport = new BlockingConnectTransport("connect-timeout",
+            new OutputTransportOptions { ConnectTimeout = TimeSpan.FromMilliseconds(30) });
+
+        var exception = await Assert.ThrowsAsync<OutputTransportException>(() => transport.ConnectAsync());
+
+        Assert.Equal("connect", exception.Operation);
+    }
+
+    [Fact]
+    public async Task BoundedTransportReports_send_timeout()
+    {
+        await using var transport = new BlockingWriteTransport("send-timeout",
+            new OutputTransportOptions { SendTimeout = TimeSpan.FromMilliseconds(30) });
+        await transport.ConnectAsync();
+
+        var exception = await Assert.ThrowsAsync<OutputTransportException>(async () =>
+            await transport.SendAsync(Encoding.UTF8.GetBytes("blocked")));
+
+        Assert.Equal("send", exception.Operation);
+    }
+
+    [Fact]
+    public async Task BoundedTransportCan_disconnect_and_reconnect()
+    {
+        await using var transport = new RecordingTransport("reconnect");
+        await transport.ConnectAsync();
+        await transport.SendAsync(Encoding.UTF8.GetBytes("one"));
+        await transport.DisconnectAsync();
+        Assert.False(transport.IsConnected);
+
+        await transport.ConnectAsync();
+        await transport.SendAsync(Encoding.UTF8.GetBytes("two"));
+
+        Assert.Equal(["one", "two"], transport.Payloads);
+    }
+
+    [Fact]
     public void LinuxSerialEnumeratorUsesStableByIdNames()
     {
         using var temp = new TemporaryDirectory();
@@ -179,6 +218,25 @@ public sealed class InfrastructureTests
             Payloads.Add(Encoding.UTF8.GetString(payload.Span));
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class BlockingConnectTransport(string id, OutputTransportOptions options)
+        : BoundedOutputTransport(id, options)
+    {
+        protected override async Task ConnectCoreAsync(CancellationToken cancellationToken)
+            => await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+
+        protected override ValueTask SendCoreAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingWriteTransport(string id, OutputTransportOptions options)
+        : BoundedOutputTransport(id, options)
+    {
+        protected override Task ConnectCoreAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        protected override async ValueTask SendCoreAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+            => await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
     }
 
     private sealed class TemporaryDirectory : IDisposable
