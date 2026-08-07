@@ -987,7 +987,7 @@ Validated in the current Linux environment:
 - `tools/run-validation-matrix.py` now executes the reproducible local unit,
   integration, contract, Web/browser, boundary, packaging, and release-template
   checks and writes a redacted JSON report. The latest 2026-08-08 Linux rerun
-  with user-local Chromium host libraries on `LD_LIBRARY_PATH` passed 23
+  with user-local Chromium host libraries on `LD_LIBRARY_PATH` passed 24
   checks with 0 failures and covered .NET/Web/Docs high-severity dependency
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
   soak smoke with explicit p95 and coalescing budgets; the report is
