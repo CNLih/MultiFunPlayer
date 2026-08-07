@@ -13,4 +13,17 @@ public interface IOutputSink
     void Publish(OutputFrame frame);
 }
 
+/// <summary>
+/// Optional, thread-safe counters exposed by an output sink for diagnostics.
+/// Sent frames are frames accepted by the wrapped sink; transport adapters may
+/// still complete their physical write asynchronously.
+/// </summary>
+public interface IOutputSinkDiagnostics
+{
+    long SentFrames { get; }
+    long DroppedFrames { get; }
+    long FailedFrames { get; }
+    DateTimeOffset? LastSentAtUtc { get; }
+}
+
 public sealed record OutputSinkError(IOutputSink Sink, OutputFrame Frame, Exception Exception);

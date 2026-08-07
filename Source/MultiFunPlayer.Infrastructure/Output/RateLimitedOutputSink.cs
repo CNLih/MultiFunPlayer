@@ -6,11 +6,15 @@ namespace MultiFunPlayer.Infrastructure.Output;
 /// Samples engine frames for a target without moving timing responsibility into
 /// the engine. The wrapped sink still owns transport backpressure and errors.
 /// </summary>
-public sealed class RateLimitedOutputSink : IOutputSink, IDisposable, IAsyncDisposable
+public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics, IDisposable, IAsyncDisposable
 {
     private readonly IOutputSink _inner;
     private readonly TimeSpan _minimumInterval;
     private TimeSpan? _lastPosition;
+    private long _sentFrames;
+    private long _droppedFrames;
+    private long _failedFrames;
+    private long _lastSentAtUtcTicks;
     private int _disposed;
 
     public RateLimitedOutputSink(IOutputSink inner, int updateRateHz)
@@ -24,6 +28,18 @@ public sealed class RateLimitedOutputSink : IOutputSink, IDisposable, IAsyncDisp
 
     public int UpdateRateHz { get; }
 
+    public long SentFrames => Interlocked.Read(ref _sentFrames);
+    public long DroppedFrames => Interlocked.Read(ref _droppedFrames);
+    public long FailedFrames => Interlocked.Read(ref _failedFrames);
+    public DateTimeOffset? LastSentAtUtc
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _lastSentAtUtcTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
+
     public void Publish(OutputFrame frame)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -31,8 +47,22 @@ public sealed class RateLimitedOutputSink : IOutputSink, IDisposable, IAsyncDisp
         if (_lastPosition is { } previous
             && frame.Position >= previous
             && frame.Position - previous < _minimumInterval)
+        {
+            Interlocked.Increment(ref _droppedFrames);
             return;
-        _inner.Publish(frame);
+        }
+
+        try
+        {
+            _inner.Publish(frame);
+            Interlocked.Increment(ref _sentFrames);
+            Interlocked.Exchange(ref _lastSentAtUtcTicks, DateTimeOffset.UtcNow.Ticks);
+        }
+        catch
+        {
+            Interlocked.Increment(ref _failedFrames);
+            throw;
+        }
         _lastPosition = frame.Position;
     }
 

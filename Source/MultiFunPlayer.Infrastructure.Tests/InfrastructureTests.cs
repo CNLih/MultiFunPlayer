@@ -91,9 +91,28 @@ public sealed class InfrastructureTests
         sink.Publish(FrameAt(0.4));
 
         Assert.Equal(new[] { 0d, 0.5d, 0.4d }, inner.Positions);
+        Assert.Equal(3, sink.SentFrames);
+        Assert.Equal(1, sink.DroppedFrames);
+        Assert.Equal(0, sink.FailedFrames);
+        Assert.NotNull(sink.LastSentAtUtc);
 
         static OutputFrame FrameAt(double seconds)
             => new(TimeSpan.FromSeconds(seconds), new Dictionary<string, double> { ["L0"] = seconds });
+    }
+
+    [Fact]
+    public void RateLimitedSink_counts_forward_failures()
+    {
+        var inner = new ThrowingSink();
+        using var sink = new RateLimitedOutputSink(inner, 20);
+
+        Assert.Throws<InvalidOperationException>(() => sink.Publish(
+            new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 })));
+
+        Assert.Equal(0, sink.SentFrames);
+        Assert.Equal(0, sink.DroppedFrames);
+        Assert.Equal(1, sink.FailedFrames);
+        Assert.Null(sink.LastSentAtUtc);
     }
 
     [Fact]
@@ -414,6 +433,11 @@ public sealed class InfrastructureTests
         public List<double> Positions { get; } = [];
 
         public void Publish(OutputFrame frame) => Positions.Add(frame.Position.TotalSeconds);
+    }
+
+    private sealed class ThrowingSink : IOutputSink
+    {
+        public void Publish(OutputFrame frame) => throw new InvalidOperationException("sink failure");
     }
 
     private sealed class RecordingTransport(string id) : BoundedOutputTransport(id)

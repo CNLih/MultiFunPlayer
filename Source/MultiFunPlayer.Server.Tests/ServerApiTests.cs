@@ -243,6 +243,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         await registry.DisconnectAsync("file-1");
         Assert.False(Assert.Single(registry.List()).Connected);
+        Assert.Equal(0, Assert.Single(registry.List()).SentFrames);
+        Assert.Equal(0, Assert.Single(registry.List()).DroppedFrames);
+        Assert.Equal(0, Assert.Single(registry.List()).FailedFrames);
         await registry.StopAsync(CancellationToken.None);
 
         await using var restarted = new OutputTargetRegistry(storage, engine,
@@ -317,7 +320,12 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/output-targets");
             Assert.Contains(list.EnumerateArray(), item =>
                 item.GetProperty("id").GetString() == "http-file"
-                && item.GetProperty("connected").GetBoolean());
+                && item.GetProperty("connected").GetBoolean()
+                && item.GetProperty("sentFrames").GetInt64() == 0
+                && item.GetProperty("droppedFrames").GetInt64() == 0
+                && item.GetProperty("failedFrames").GetInt64() == 0
+                && item.GetProperty("reconnects").GetInt64() == 0
+                && item.GetProperty("lastSentAtUtc").ValueKind == JsonValueKind.Null);
 
             var delete = await client.DeleteAsync("/api/v1/output-targets/http-file");
             Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);

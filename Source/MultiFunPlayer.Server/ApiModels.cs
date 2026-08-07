@@ -58,7 +58,12 @@ public sealed record OutputTargetResponse(
     bool Enabled,
     bool AutoConnect,
     bool Connected,
-    string? LastError);
+    string? LastError,
+    long SentFrames,
+    long DroppedFrames,
+    long FailedFrames,
+    long Reconnects,
+    DateTimeOffset? LastSentAtUtc);
 
 public sealed record OutputTargetRequest(
     string? Id,

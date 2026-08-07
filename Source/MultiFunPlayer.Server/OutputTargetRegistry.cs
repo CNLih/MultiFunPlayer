@@ -354,6 +354,9 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 target.Transport = transport;
                 target.Sink = sink;
             }
+            if (target.HasConnected)
+                target.Reconnects++;
+            target.HasConnected = true;
             target.LastError = null;
             return true;
         }
@@ -372,6 +375,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     private static async Task DisconnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
     {
+        CaptureDiagnostics(target);
         target.Registration?.Dispose();
         target.Registration = null;
         if (target.Sink is not null)
@@ -561,12 +565,35 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             && File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 
     private static OutputTargetResponse ToResponse(RuntimeTarget target)
-        => new(target.Definition.Id, target.Definition.Name, target.Definition.Protocol,
+    {
+        var diagnostics = target.Sink as IOutputSinkDiagnostics;
+        var sentFrames = target.SentFrames + (diagnostics?.SentFrames ?? 0);
+        var droppedFrames = target.DroppedFrames + (diagnostics?.DroppedFrames ?? 0);
+        var failedFrames = target.FailedFrames + (diagnostics?.FailedFrames ?? 0);
+        var lastSentAtUtc = diagnostics?.LastSentAtUtc is { } activeLastSent
+            && (target.LastSentAtUtc is null || activeLastSent > target.LastSentAtUtc.Value)
+            ? activeLastSent
+            : target.LastSentAtUtc;
+        return new(target.Definition.Id, target.Definition.Name, target.Definition.Protocol,
             target.Definition.Endpoint, target.Definition.SourceAxis,
             target.Definition.UpdateRateHz,
             target.Definition.Enabled, target.Definition.AutoConnect,
             target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
-            target.Adapter?.LastError ?? target.LastError);
+            target.Adapter?.LastError ?? target.LastError,
+            sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc);
+    }
+
+    private static void CaptureDiagnostics(RuntimeTarget target)
+    {
+        if (target.Sink is not IOutputSinkDiagnostics diagnostics)
+            return;
+        target.SentFrames += diagnostics.SentFrames;
+        target.DroppedFrames += diagnostics.DroppedFrames;
+        target.FailedFrames += diagnostics.FailedFrames;
+        if (diagnostics.LastSentAtUtc is { } lastSent
+            && (target.LastSentAtUtc is null || lastSent > target.LastSentAtUtc.Value))
+            target.LastSentAtUtc = lastSent;
+    }
 
     private sealed class RuntimeTarget(OutputTargetDefinition definition)
     {
@@ -576,5 +603,11 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         public IOutputSink? Sink { get; set; }
         public IDisposable? Registration { get; set; }
         public string? LastError { get; set; }
+        public bool HasConnected { get; set; }
+        public long Reconnects { get; set; }
+        public long SentFrames { get; set; }
+        public long DroppedFrames { get; set; }
+        public long FailedFrames { get; set; }
+        public DateTimeOffset? LastSentAtUtc { get; set; }
     }
 }
