@@ -27,12 +27,14 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     MFP_KEYS_PATH=/keys \
     MFP_LOGS_PATH=/logs
 COPY --from=server-build /app/publish ./
-COPY --from=web-build /bin/busybox /usr/local/bin/mfp-busybox
-RUN mkdir -p /config /keys /scripts /logs \
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes busybox-static \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /config /keys /scripts /logs \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin mfp \
     && chown -R mfp:mfp /app /config /keys /scripts /logs
 USER mfp
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD /usr/local/bin/mfp-busybox wget --quiet -O /dev/null http://127.0.0.1:8080/health/live || exit 1
+    CMD /bin/busybox wget --quiet -O /dev/null http://127.0.0.1:8080/health/live || exit 1
 ENTRYPOINT ["dotnet", "MultiFunPlayer.Server.dll"]

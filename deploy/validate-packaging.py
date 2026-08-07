@@ -205,6 +205,11 @@ class Validator:
                        "runtime image declares the mfp user")
             self.check("docker:healthcheck", "HEALTHCHECK" in dockerfile and "/health/live" in dockerfile,
                        "runtime health check targets /health/live")
+            self.check("docker:healthcheck-static-tool",
+                       "busybox-static" in dockerfile
+                       and "/bin/busybox wget" in dockerfile
+                       and "COPY --from=web-build /bin/busybox" not in dockerfile,
+                       "runtime health check uses a static binary native to the runtime image")
             self.check("docker:ports", re.search(r"(?m)^EXPOSE\s+8080\s*$", dockerfile) is not None,
                        "container exposes the documented HTTP port")
             for root_name in ("/config", "/keys", "/scripts", "/logs"):
