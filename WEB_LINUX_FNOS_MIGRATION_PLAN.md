@@ -804,9 +804,10 @@ Validated in the current Linux environment:
   produces both build, scan, and smoke results.
 - Each container matrix leg now also mounts independent `/config`, `/keys`,
   `/scripts`, and `/logs` volumes, pairs once to persist an authentication hash,
-  writes an axis policy and script, restarts the same image, and verifies the
-  authenticated state, resources, volume markers, and all four mount points
-  after restart. It also rejects plaintext bearer-token storage in `/config`.
+  writes an axis policy and script, gracefully stops and replaces the container,
+  and verifies the authenticated state, resources, volume markers, and all four
+  mount points after replacement. It also rejects plaintext bearer-token storage
+  in `/config`.
   Each leg uploads a non-sensitive JSON summary; local Docker-volume and fnOS
   upgrade/rollback evidence remains external.
 - The Windows build matrix now uses the same non-parallel xUnit collection

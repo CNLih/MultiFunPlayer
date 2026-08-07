@@ -429,7 +429,7 @@ jobs:
         name: container-target-acceptance-${{ matrix.arch }}
         path: artifacts/target/container-${{ matrix.arch }}.json
         if-no-files-found: ignore
-    - name: Restart ${{ matrix.arch }} image with persistent volumes
+    - name: Replace ${{ matrix.arch }} container with persistent volumes
       env:
         IMAGE_TAG: multifunplayer:ci-${{ matrix.arch }}
         CONTAINER_NAME: mfp-persist-${{ matrix.arch }}
@@ -455,16 +455,19 @@ jobs:
         docker volume create "$keys_volume" >/dev/null
         docker volume create "$scripts_volume" >/dev/null
         docker volume create "$logs_volume" >/dev/null
-        docker run --detach --name "$CONTAINER_NAME" \
-          --publish 18081:8080 \
-          --read-only \
-          --tmpfs /tmp:rw,noexec,nosuid,size=32m \
-          --volume "$config_volume:/config" \
-          --volume "$keys_volume:/keys" \
-          --volume "$scripts_volume:/scripts" \
-          --volume "$logs_volume:/logs" \
-          --env MFP_PAIRING_TOKEN="$MFP_PAIRING_TOKEN" \
-          "$IMAGE_TAG"
+        run_container() {
+          docker run --detach --name "$CONTAINER_NAME" \
+            --publish 18081:8080 \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --volume "$config_volume:/config" \
+            --volume "$keys_volume:/keys" \
+            --volume "$scripts_volume:/scripts" \
+            --volume "$logs_volume:/logs" \
+            --env MFP_PAIRING_TOKEN="$MFP_PAIRING_TOKEN" \
+            "$IMAGE_TAG"
+        }
+        run_container
         wait_ready() {
           for attempt in $(seq 1 60); do
             if curl --fail --silent --show-error http://127.0.0.1:18081/health/live >/dev/null; then
@@ -499,7 +502,11 @@ jobs:
           echo 'The bearer token was written in plaintext to /config.' >&2
           exit 1
         fi
-        docker restart "$CONTAINER_NAME" >/dev/null
+        # Recreate the container to exercise volume continuity across an image
+        # replacement; the named roots are deliberately left untouched.
+        docker stop --time 30 "$CONTAINER_NAME" >/dev/null
+        docker rm "$CONTAINER_NAME" >/dev/null
+        run_container
         wait_ready
         curl --fail --silent --show-error \
           -H "Authorization: Bearer $MFP_TEST_TOKEN" \
@@ -508,7 +515,7 @@ jobs:
           -H "Authorization: Bearer $MFP_TEST_TOKEN" \
           http://127.0.0.1:18081/api/v1/scripts | grep -Eq 'ci-persistent\.funscript'
         docker exec "$CONTAINER_NAME" sh -c 'test "$(cat /keys/ci-key-marker)" = marker && test "$(cat /logs/ci-log-marker)" = marker'
-        printf '{"architecture":"%s","status":"pass","pairingPersisted":true,"axisPolicyPersisted":true,"scriptPersisted":true,"keysVolumePersisted":true,"logsVolumePersisted":true,"plaintextTokenRejected":true}\n' '${{ matrix.arch }}' > "$report_file"
+        printf '{"architecture":"%s","status":"pass","containerRecreated":true,"pairingPersisted":true,"axisPolicyPersisted":true,"scriptPersisted":true,"keysVolumePersisted":true,"logsVolumePersisted":true,"plaintextTokenRejected":true}\n' '${{ matrix.arch }}' > "$report_file"
     - name: Upload ${{ matrix.arch }} container persistence evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
