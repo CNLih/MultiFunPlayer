@@ -28,7 +28,14 @@ framework's ephemeral key repository.
 `/api/v1/status`. Each subscriber has a one-item latest-value queue, so a slow
 browser cannot retain unbounded snapshots or stop the player.
 
-The contract is available at /openapi/v1.json. Browser WebSocket clients use
+The contract is available at `/openapi/v1.json`. Browser WebSocket clients use
 the `mfp-auth.<base64url-token>` subprotocol because browser APIs cannot attach
 a custom header. The token is not placed in the WebSocket URL, avoiding the
 usual request-URL access-log leak.
+
+`GET /api/v1/logs?limit=100` returns structured runtime diagnostics. The
+in-memory ring is bounded by `MultiFunPlayer:LogCapacity` (default 500); once
+full, oldest entries are discarded and the response marks `truncated: true`.
+Message fields and structured properties matching token, secret, password,
+authorization, cookie, API key, or credential names are replaced with
+`[REDACTED]` before retention.

@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace MultiFunPlayer.Server.Tests;
 
@@ -104,5 +106,28 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         {
             Environment.SetEnvironmentVariable("MFP_AUTH_TOKEN", previous);
         }
+    }
+
+    [Fact]
+    public async Task Logs_are_bounded_structured_and_redacted()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<MultiFunPlayer.Server.RuntimeLogStore>();
+        store.Add(LogLevel.Warning, "test.component", new EventId(42, "Test"),
+            "request token=plain-secret Bearer bearer-secret", new Dictionary<string, object?>
+            {
+                ["Authorization"] = "Bearer property-secret",
+                ["port"] = 1234
+            });
+
+        using var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/logs?limit=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("plain-secret", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("bearer-secret", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("property-secret", json, StringComparison.Ordinal);
+        Assert.Contains("test.component", json, StringComparison.Ordinal);
+        Assert.Contains("42", json, StringComparison.Ordinal);
     }
 }

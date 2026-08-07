@@ -32,6 +32,9 @@ public static class ServerProgram
         ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<ScriptCatalog>();
         builder.Services.AddSingleton<StateBroadcaster>();
+        var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
+        builder.Services.AddSingleton(runtimeLogStore);
+        builder.Logging.AddProvider(new RuntimeLogProvider(runtimeLogStore));
         builder.Services.AddHostedService<EngineTicker>();
     }
 
@@ -101,6 +104,13 @@ public static class ServerProgram
         });
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
+        app.MapGet("/api/v1/logs", (int? limit, RuntimeLogStore store) =>
+        {
+            var requested = limit ?? 100;
+            if (requested is < 1 or > 1000)
+                return Problem(StatusCodes.Status400BadRequest, "Invalid log limit", "limit must be between 1 and 1000.", "invalid_limit");
+            return Results.Ok(new RuntimeLogsResponse(store.Read(requested), store.DroppedCount > 0, store.Capacity));
+        });
 
         app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
         app.MapGet("/api/v1/scripts/{id}", (string id, ScriptCatalog catalog) =>
