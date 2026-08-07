@@ -38,7 +38,7 @@ services:
       - mfp
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      test: ["CMD", "/bin/busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
       interval: 30s
       timeout: 5s
       retries: 3

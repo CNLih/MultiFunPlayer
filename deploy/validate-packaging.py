@@ -146,6 +146,9 @@ class Validator:
                        "fnOS main service declares CPU and memory limits")
             self.check("fnpack:compose:healthcheck", "/health/live" in fnpack_compose,
                        "fnOS Compose project has a liveness health check")
+            self.check("fnpack:compose:healthcheck-static-tool",
+                       '["CMD", "/bin/busybox", "wget"' in fnpack_compose,
+                       "fnOS Compose health check uses the runtime-native busybox path")
             self.check("fnpack:compose:volume-count", fnpack_compose.count("TRIM_PKGVAR") == 4,
                        "exactly four persistent roots are mounted")
 
@@ -247,6 +250,9 @@ class Validator:
                        "main service disables privilege escalation")
             self.check("compose:healthcheck", "/health/live" in compose,
                        "main service health check targets /health/live")
+            self.check("compose:healthcheck-static-tool",
+                       '["CMD", "/bin/busybox", "wget"' in compose,
+                       "Compose health check uses the runtime-native busybox path")
             self.check("compose:secret-interpolation", all(
                 re.search(rf"^\s+MFP_{name}: \$\{{MFP_{name}:-\}}$", compose, re.MULTILINE)
                 for name in ("AUTH_TOKEN", "PAIRING_TOKEN")

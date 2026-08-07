@@ -754,7 +754,7 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 112/112 checks passed for the
+- The packaging contract validator reports 114/114 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
   roots, health check, secret interpolation, the structural fnOS manifest, and
   the canonical `fnpack` project. The fnOS Compose service now carries the
@@ -775,7 +775,9 @@ Validated in the current Linux environment:
 - The runtime Docker health check uses Debian's native `busybox-static` package.
   It no longer copies Alpine's musl-linked `busybox` into the Debian ASP.NET
   image, avoiding an architecture/runtime-loader mismatch that would make a
-  built image fail health checks before target acceptance.
+  built image fail health checks before target acceptance. Both the root
+  Compose example and the fnOS Compose project now invoke the same
+  `/bin/busybox` path, and the packaging validator guards that invariant.
 - The Docker build context now excludes Web browser reports, test results,
   generated SPA/Docs output, and both Web/Docs dependency trees. The packaging
   contract checks these exclusions so local diagnostics cannot inflate or
