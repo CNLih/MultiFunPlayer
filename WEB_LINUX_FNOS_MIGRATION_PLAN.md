@@ -741,6 +741,10 @@ Validated in the current Linux environment:
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
   all pass. WebSocket snapshots use camelCase to match REST.
+- The checked-in OpenAPI document now links `GET /api/v1/output-targets` to an
+  `OutputTargetList` array schema and an `OutputTarget` example containing both
+  canonical `coalescedFrames` and historical `droppedFrames`; Server contract
+  tests validate the references and serialized component names.
 - Local HTTP smoke on Release Server also passed SPA fallback, media-source
   create/list, file-output create/connect, script upload, and fixed-size
   persisted log download. The log endpoint snapshots JSONL under its lock so
