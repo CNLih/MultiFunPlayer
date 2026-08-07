@@ -16,6 +16,11 @@ importInput.className = 'sr-only';
 importInput.accept = '.funscript,.json,application/json';
 importInput.setAttribute('aria-label', 'Select a script file to import');
 document.body.append(importInput);
+const toastRegion = document.createElement('div');
+toastRegion.className = 'toast-region';
+toastRegion.setAttribute('aria-live', 'polite');
+toastRegion.setAttribute('aria-atomic', 'true');
+document.body.append(toastRegion);
 const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'runtime', label: 'Runtime', hint: 'Playback and health' },
   { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
@@ -30,7 +35,7 @@ const statusClass = (status: Status | 'pass' | 'warn'): string => status === 'pa
 const statusDot = (status: Status | 'pass' | 'warn'): string => `<span class="status-dot ${statusClass(status)}" aria-hidden="true"></span>`;
 
 function renderAuthScreen(message = '') {
-  appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label>Access token<input name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label>Pairing token<input name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label>New access token<input name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
+  appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label for="auth-access-token">Access token<input id="auth-access-token" name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label for="auth-pairing-token">Pairing token<input id="auth-pairing-token" name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label for="auth-new-token">New access token<input id="auth-new-token" name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
 }
 
 async function connectRemoteStore(showError = false): Promise<boolean> {
@@ -80,7 +85,7 @@ function render(state: AppState) {
           <div class="breadcrumbs"><span>Workspace</span><span aria-hidden="true">/</span><strong>${routes.find((item) => item.id === state.route)?.label}</strong></div>
           <div class="topbar-actions">
             <span class="sync-state">${statusDot('pass')} Synced ${escapeHtml(state.lastSync)}</span>
-            <button class="icon-button" data-action="refresh" aria-label="Refresh demo data" title="Refresh demo data">Refresh</button>
+            <button class="icon-button" data-action="refresh" aria-label="Reload workspace" title="Reload workspace">Reload</button>
             <button class="avatar" aria-label="Open account menu">MP</button>
           </div>
         </header>
@@ -89,8 +94,18 @@ function render(state: AppState) {
         </main>
       </div>
     </div>
-    <div class="toast-region" aria-live="polite" aria-atomic="true"></div>
   `;
+  document.querySelectorAll<HTMLSelectElement>('.resource-form label > select').forEach((select) => {
+    const labelText = Array.from(select.parentElement?.childNodes ?? [])
+      .find((node) => node.nodeType === Node.TEXT_NODE)?.textContent?.trim();
+    if (labelText) select.setAttribute('aria-label', labelText);
+  });
+  document.querySelectorAll<HTMLInputElement>('.resource-form input[pattern]').forEach((input) => {
+    const pattern = input.getAttribute('pattern');
+    // Chromium's current HTML pattern grammar uses the Unicode `v` flag,
+    // where a literal hyphen in a character class must be escaped.
+    if (pattern?.includes('_-')) input.setAttribute('pattern', pattern.replace('_-', '_\\x2d'));
+  });
 }
 
 function pageHeading(eyebrow: string, title: string, description: string, actions = ''): string {
@@ -164,7 +179,7 @@ function renderMedia(state: AppState): string {
 }
 
 function renderMediaForm(): string {
-  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label>Name<input name="name" required placeholder="Main media library" /></label><label>Kind<select name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label>Endpoint<input name="endpoint" placeholder="https://media.example/api" /></label><label>Remote device id<input name="deviceId" maxlength="256" placeholder="Optional session or client id" /></label><label>Secret environment variable<input name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="MFP_EMBY_API_KEY" /></label></div><p class="form-hint">Only the environment variable name is stored. The secret value stays on the server; leave this blank while editing to retain the current reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-id">Id<input id="media-id" name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label for="media-name">Name<input id="media-name" name="name" required placeholder="Main media library" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label for="media-endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="https://media.example/api" /></label><label for="media-device-id">Remote device id<input id="media-device-id" name="deviceId" maxlength="256" placeholder="Optional session or client id" /></label><label for="media-secret-ref">Secret environment variable<input id="media-secret-ref" name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="MFP_EMBY_API_KEY" /></label></div><p class="form-hint">Only the environment variable name is stored. The secret value stays on the server; leave this blank while editing to retain the current reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
 }
 
 function renderScripts(state: AppState): string {
@@ -185,7 +200,7 @@ function renderOutputs(state: AppState): string {
 }
 
 function renderOutputForm(): string {
-  return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label>Name<input name="name" required placeholder="Studio bridge" /></label><label>Protocol<select name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option><option value="the-handy">The Handy</option><option value="buttplug">Buttplug.io</option></select></label><label>Endpoint<input name="endpoint" required placeholder="127.0.0.1:8000 or ws://buttplug:12345" /></label><label>Source axis<input name="sourceAxis" required pattern="[a-zA-Z0-9_-]+" value="L0" placeholder="L0" /></label><label>Update rate<input name="rate" type="number" min="1" max="20" step="1" value="20" required /> Hz</label><label>Buttplug device name<input name="deviceName" maxlength="256" placeholder="Optional device name" /></label><label>Buttplug device index<input name="deviceIndex" type="number" min="0" step="1" placeholder="Auto-select" /></label><label>Buttplug actuator<select name="actuatorType"><option value="Vibrate">Vibrate</option><option value="Oscillate">Oscillate</option><option value="Constrict">Constrict</option><option value="Inflate">Inflate</option><option value="Linear">Linear</option><option value="Rotate">Rotate</option></select></label><label>Actuator index<input name="actuatorIndex" type="number" min="0" step="1" value="0" /></label><label>Linear duration<input name="durationMilliseconds" type="number" min="1" max="60000" step="1" value="50" /> ms</label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="output-id">Id<input id="output-id" name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label for="output-name">Name<input id="output-name" name="name" required placeholder="Studio bridge" /></label><label for="output-protocol">Protocol<select id="output-protocol" name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option><option value="the-handy">The Handy</option><option value="buttplug">Buttplug.io</option></select></label><label for="output-endpoint">Endpoint<input id="output-endpoint" name="endpoint" required placeholder="127.0.0.1:8000 or ws://buttplug:12345" /></label><label for="output-source-axis">Source axis<input id="output-source-axis" name="sourceAxis" required pattern="[a-zA-Z0-9_-]+" value="L0" placeholder="L0" /></label><label for="output-rate">Update rate<input id="output-rate" name="rate" type="number" min="1" max="20" step="1" value="20" required /></label><label for="output-device-name">Buttplug device name<input id="output-device-name" name="deviceName" maxlength="256" placeholder="Optional device name" /></label><label for="output-device-index">Buttplug device index<input id="output-device-index" name="deviceIndex" type="number" min="0" step="1" placeholder="Auto-select" /></label><label for="output-actuator-type">Buttplug actuator<select id="output-actuator-type" name="actuatorType"><option value="Vibrate">Vibrate</option><option value="Oscillate">Oscillate</option><option value="Constrict">Constrict</option><option value="Inflate">Inflate</option><option value="Linear">Linear</option><option value="Rotate">Rotate</option></select></label><label for="output-actuator-index">Actuator index<input id="output-actuator-index" name="actuatorIndex" type="number" min="0" step="1" value="0" /></label><label for="output-duration">Linear duration<input id="output-duration" name="durationMilliseconds" type="number" min="1" max="60000" step="1" value="50" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
 }
 
 function renderDeviceSettings(state: AppState): string {
@@ -196,7 +211,7 @@ function renderDeviceSettings(state: AppState): string {
 }
 
 function renderDeviceAxisForm(): string {
-  return `<form class="resource-form panel" data-resource-form="axis"><div class="panel-heading"><div><p class="eyebrow">Axis policy</p><h2>Set device axis behavior</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Axis<input name="axis" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="L0" /></label><label>Minimum<input name="minimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label>Maximum<input name="maximum" type="number" min="0" max="1" step="0.01" value="1" required /></label><label>Interpolation<select name="interpolation"><option>Linear</option><option>Pchip</option><option>Makima</option><option>Step</option></select></label><label>Limit minimum<input name="limitMinimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label>Limit maximum<input name="limitMaximum" type="number" min="0" max="1" step="0.01" value="1" required /></label></div><div class="resource-form-options"><label><input type="checkbox" name="inverted" /> Invert value</label><label><input type="checkbox" name="limitEnabled" /> Enable limit</label><button class="button button-primary" type="submit">Save axis policy</button><button class="button button-secondary" type="button" data-resource-cancel="axis">Clear</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="axis"><div class="panel-heading"><div><p class="eyebrow">Axis policy</p><h2>Set device axis behavior</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="axis-name">Axis<input id="axis-name" name="axis" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="L0" /></label><label for="axis-minimum">Minimum<input id="axis-minimum" name="minimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label for="axis-maximum">Maximum<input id="axis-maximum" name="maximum" type="number" min="0" max="1" step="0.01" value="1" required /></label><label for="axis-interpolation">Interpolation<select id="axis-interpolation" name="interpolation"><option>Linear</option><option>Pchip</option><option>Makima</option><option>Step</option></select></label><label for="axis-limit-minimum">Limit minimum<input id="axis-limit-minimum" name="limitMinimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label for="axis-limit-maximum">Limit maximum<input id="axis-limit-maximum" name="limitMaximum" type="number" min="0" max="1" step="0.01" value="1" required /></label></div><div class="resource-form-options"><label><input type="checkbox" name="inverted" /> Invert value</label><label><input type="checkbox" name="limitEnabled" /> Enable limit</label><button class="button button-primary" type="submit">Save axis policy</button><button class="button button-secondary" type="button" data-resource-cancel="axis">Clear</button></div></form>`;
 }
 
 function renderLogs(state: AppState): string {
@@ -239,10 +254,8 @@ function renderLogTable(logs: AppState['logs']): string {
 }
 
 function showToast(message: string, variant: 'success' | 'error' = 'success') {
-  const region = document.querySelector<HTMLDivElement>('.toast-region');
-  if (!region) return;
-  region.innerHTML = `<div class="toast toast-${variant}" role="status">${escapeHtml(message)}</div>`;
-  window.setTimeout(() => { region.innerHTML = ''; }, 2600);
+  toastRegion.innerHTML = `<div class="toast toast-${variant}" role="status">${escapeHtml(message)}</div>`;
+  window.setTimeout(() => { toastRegion.innerHTML = ''; }, 2600);
 }
 
 function saveBlob(blob: Blob, fileName: string) {
@@ -280,7 +293,8 @@ function handleClick(event: MouseEvent) {
   const route = target.closest<HTMLElement>('[data-route]')?.dataset.route as Route | undefined;
   if (route) {
     store.setRoute(route);
-    document.querySelector<HTMLElement>('.main-content')?.focus();
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
     return;
   }
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
@@ -313,7 +327,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.textContent = 'Save source';
-      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      form.scrollIntoView({ behavior: 'auto', block: 'center' });
       (form.elements.namedItem('name') as HTMLInputElement).focus();
     }
   }
@@ -339,7 +353,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('durationMilliseconds') as HTMLInputElement).value = String(output.durationMilliseconds ?? 50);
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.textContent = 'Save target';
-      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      form.scrollIntoView({ behavior: 'auto', block: 'center' });
       (form.elements.namedItem('name') as HTMLInputElement).focus();
     }
   }
@@ -356,7 +370,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('limitMaximum') as HTMLInputElement).value = String(axis.limitMaximum);
       (form.elements.namedItem('inverted') as HTMLInputElement).checked = axis.inverted;
       (form.elements.namedItem('limitEnabled') as HTMLInputElement).checked = axis.limitEnabled;
-      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      form.scrollIntoView({ behavior: 'auto', block: 'center' });
     }
   }
   const cancelKind = target.closest<HTMLElement>('[data-resource-cancel]')?.dataset.resourceCancel;
@@ -545,7 +559,10 @@ appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
 importInput.addEventListener('change', () => { void importSelectedFile(); });
 unsubscribeStore = store.subscribe(render);
-window.setInterval(() => store.tick(), 1000);
+window.setInterval(() => {
+  // Keep editing forms stable; only views that render the live clock need a tick.
+  if (store.getState().route === 'runtime' || store.getState().route === 'scripts') store.tick();
+}, 1000);
 const initialRoute = window.location.hash.slice(1) as Route;
 
 // A static preview remains useful without a backend. When served by ASP.NET

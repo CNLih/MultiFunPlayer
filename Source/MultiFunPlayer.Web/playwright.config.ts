@@ -23,6 +23,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 5'] } },
+    // Keep the CSS viewport deterministic on hosts whose headless mobile
+    // emulation applies an unrelated device scale factor to layout metrics.
+    { name: 'mobile-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 393, height: 727 }, deviceScaleFactor: 1, hasTouch: true } },
   ],
 });

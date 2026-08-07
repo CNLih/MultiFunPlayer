@@ -98,7 +98,7 @@ test.describe('control room demo journey', () => {
     await page.getByLabel('Filter log level').selectOption('warn');
     await expect(page.locator('.log-row')).not.toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh' }).click();
-    await expect(page.getByText('Diagnostics refreshed')).toBeVisible();
+    await expect(page.getByRole('status')).toHaveText('Diagnostics refreshed');
   });
 
   test('shows the server authentication entry instead of falling back to demo', async ({ page }) => {

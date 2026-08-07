@@ -296,6 +296,7 @@ export function createMockStore() {
         capabilities: ['Configured source'],
         enabled: input.enabled,
         autoConnect: input.autoConnect,
+        deviceId: input.deviceId ?? null,
       };
       state.media = [source, ...state.media];
       appendLog('info', `Added ${source.name}`, 'media');
@@ -311,6 +312,7 @@ export function createMockStore() {
       source.endpoint = input.endpoint || '(internal)';
       source.enabled = input.enabled;
       source.autoConnect = input.autoConnect;
+      source.deviceId = input.deviceId ?? null;
       source.status = input.enabled && input.autoConnect ? 'online' : 'offline';
       source.latency = source.status === 'online' ? 18 : 0;
       appendLog('info', `Updated ${source.name}`, 'media');

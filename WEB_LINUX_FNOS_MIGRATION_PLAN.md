@@ -682,8 +682,10 @@ Validated in the current Linux environment:
   API responses never return the secret reference, and ordinary updates retain
   it when omitted. Ten desktop/mobile Playwright executions now exercise
   media, output, axis, diagnostics CRUD, protected-server authentication, and
-  authenticated remote REST/WebSocket hydration paths; the focused harness is
-  source-validated here and requires the CI browser image for execution.
+  authenticated remote REST/WebSocket hydration paths; the latest run passed
+  all ten executions using user-local Chromium runtime libraries. The base
+  host still lacks `libnspr4.so`, so CI continues to install the browser image
+  dependencies explicitly.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -763,11 +765,12 @@ Validated in the current Linux environment:
   generates the corresponding x86/ARM SBOM and license artifacts. Runtime image
   scanning and release-owner review remain external.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
-  desktop and mobile Chromium journeys, viewport overflow assertions, and CI
-  screenshot artifacts. The five tests are enumerated for both projects;
-  execution on this host is dependency-limited by the missing Chromium
-  `libnspr4.so`, while CI installs the browser and host dependencies before
-  running them.
+  desktop and 393x727 mobile Chromium journeys, viewport overflow assertions,
+  service-worker API bypass coverage, and CI screenshot artifacts. The five
+  tests are enumerated for both projects; the latest local run passed 10/10
+  executions after adding user-local Chromium runtime libraries. The base
+  host remains missing `libnspr4.so`, while CI installs browser and host
+  dependencies before running them.
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
@@ -845,11 +848,10 @@ Validated in the current Linux environment:
   a non-parallel collection so the integration evidence is deterministic.
 - `tools/run-validation-matrix.py` now executes the reproducible local unit,
   integration, contract, Web/browser, boundary, packaging, and release-template
-  checks and writes a redacted JSON report. The last complete Linux run with
-  browser host dependencies passed 17 checks with 0 failures and covered
-  Playwright desktop/mobile viewports; the current dependency-limited run
-  passes 17 checks with 0 failures and keeps browser execution plus four target
-  gates pending. The interruption subset covers active-playback browser
+  checks and writes a redacted JSON report. The latest Linux run with user-local
+  browser host dependencies passed 18 checks with 0 failures and covered
+  Playwright desktop/mobile viewports; four target-environment gates remain
+  pending. The interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, Buttplug device
   removal, and persistent-volume process restart. The Ubuntu CI job installs browser
   dependencies and uploads the same artifact for each run. Command output is
@@ -890,10 +892,12 @@ Still open and intentionally not advertised as complete:
   external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   removal of an explicit key root is covered by a negative decryption test.
-- Host-level restart-required settings forms and the broader browser/device
-  matrix remain open. The resource/axis forms, protected-server bootstrap, and
-  focused Playwright harness are implemented; desktop/mobile screenshots still
-  depend on the CI browser environment.
+- Host-level restart-required settings forms and the broader physical
+  browser/device matrix remain open. The resource/axis forms, protected-server
+  bootstrap, service-worker API boundary, and focused Playwright harness are
+  implemented; the latest desktop/mobile screenshot run passed locally with
+  user-local browser libraries, while CI still supplies the reproducible
+  browser environment.
 - The local validation matrix is now reproducible and machine-readable, but its
   four target-environment entries remain pending until Docker/Buildx, fnOS,
   physical output, and container restart evidence is attached.

@@ -391,7 +391,7 @@ export class MfpApiClient {
     const token = this.token();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(`${this.apiRoot}${path}`, { ...init, headers });
-    if (!response.ok) throw new Error(`API request failed (${response.status})`);
+    if (!response.ok) throw new ApiError(response.status);
     if (response.status === 204)
       return undefined as T;
     return response.json() as Promise<T>;
