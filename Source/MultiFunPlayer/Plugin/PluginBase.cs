@@ -302,7 +302,7 @@ public abstract class PluginBase : Screen
     {
         IsDisposing = true;
 
-        EventAggregator.Unsubscribe(_messageProxy);
+        EventAggregator?.Unsubscribe(_messageProxy);
 
         CancellationSource.Cancel();
         CancellationSource.Dispose();

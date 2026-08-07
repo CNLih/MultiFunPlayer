@@ -560,6 +560,12 @@ Validated in the current Linux environment:
   `MultiFunPlayer.Application` project references. A clean
   `dotnet restore --locked-mode --disable-parallel` was rerun after refreshing
   those entries; this no longer depends on stale `obj` assets.
+- `Source/MultiFunPlayer.Tests/PluginTests.cs` now provides a Windows-runner
+  smoke for dynamic plugin source compilation, collectible loading, JSON
+  settings save/load, and disposal. Plugin disposal also tolerates a compile
+  result that has not yet been attached to a WPF event aggregator. The test
+  assembly compiles on Linux, but execution remains part of the WindowsDesktop
+  P1-05 gate.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
   Server tests: 39/39, including the Data Protection service wiring test.
 - Web `typecheck`, static contract check, and Vite production build pass.
