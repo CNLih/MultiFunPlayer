@@ -780,9 +780,13 @@ Validated in the current Linux environment:
   building the image stops while extracting the base image because this host
   has no `newuidmap`/`newgidmap` helper for the configured subordinate-ID
   ranges; both overlayfs and native snapshotters report an unmapped UID/GID
-  `lchown` failure. This is environment evidence only, not a passed image
-  build, so P6-06 remains pending until Docker Buildx or an equivalently
-  privileged runner produces the amd64/arm64 artifacts.
+  `lchown` failure. A follow-up probe using an isolated user and mount
+  namespace (`unshare -Ur -m`) resolved the pinned base metadata and started
+  the amd64 worker, but the first `WORKDIR` mount failed while remapping
+  `/etc/shadow` to UID 0/GID 42 (`lchown ... invalid argument`); no OCI image
+  was exported. This is environment evidence only, not a passed image build,
+  so P6-06 remains pending until Docker Buildx or an equivalently privileged
+  runner produces the amd64/arm64 artifacts.
 - A RID-specific framework-dependent Server publish for `linux-arm64` also
   succeeds locally (using an explicit RID restore); its apphost and
   `System.IO.Ports` native library identify as AArch64 ELF files. The default
