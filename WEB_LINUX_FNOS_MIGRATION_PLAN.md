@@ -788,6 +788,13 @@ Validated in the current Linux environment:
   after a successful write, with Infrastructure coverage for failure and
   recovery. The error detail is an optional companion interface, preserving
   the existing public diagnostics contract for older output plugins.
+- The Web entry now handles a protected server without a token explicitly:
+  HTTP 401 promotes an access-token/one-time-pairing form, rejected tokens do
+  not fall back to demo state, and successful pairing stores only the browser
+  bearer token. The focused Playwright suite now lists ten tests across the
+  desktop and mobile projects, including the no-token/authentication path;
+  actual browser execution remains dependent on the host/CI Chromium system
+  libraries.
 - P4-03 now includes the direct Buttplug protocol-v3 WebSocket output adapter.
   It performs server-info negotiation, current-device enumeration, scanning,
   strict device selection, Scalar/Linear/Rotate/Stop commands, bounded queue

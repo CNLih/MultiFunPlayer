@@ -1,5 +1,5 @@
 import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type Status, type SyncMode } from './store';
-import { MfpApiClient } from './api';
+import { ApiError, MfpApiClient } from './api';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -9,6 +9,7 @@ const appRoot = app;
 const demoStore = createMockStore();
 const apiClient = new MfpApiClient();
 let store = demoStore;
+let unsubscribeStore: () => void = () => {};
 const importInput = document.createElement('input');
 importInput.type = 'file';
 importInput.className = 'sr-only';
@@ -27,6 +28,35 @@ const routes: { id: Route; label: string; hint: string }[] = [
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] ?? character));
 const statusClass = (status: Status | 'pass' | 'warn'): string => status === 'pass' ? 'status-online' : `status-${status}`;
 const statusDot = (status: Status | 'pass' | 'warn'): string => `<span class="status-dot ${statusClass(status)}" aria-hidden="true"></span>`;
+
+function renderAuthScreen(message = '') {
+  appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label>Access token<input name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label>Pairing token<input name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label>New access token<input name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
+}
+
+async function connectRemoteStore(showError = false): Promise<boolean> {
+  try {
+    const remoteStore = createRemoteStore(apiClient);
+    await remoteStore.connect();
+    unsubscribeStore();
+    store = remoteStore;
+    unsubscribeStore = store.subscribe(render);
+    if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
+    render(store.getState());
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      apiClient.clearToken();
+      unsubscribeStore();
+      renderAuthScreen('The access token was rejected.');
+      return false;
+    }
+    if (showError) {
+      unsubscribeStore();
+      renderAuthScreen('The server could not be reached. Check the Web entry and try again.');
+    }
+    return false;
+  }
+}
 
 function render(state: AppState) {
   appRoot.innerHTML = `
@@ -402,6 +432,29 @@ function handleClick(event: MouseEvent) {
 
 async function handleSubmit(event: SubmitEvent) {
   const form = event.target as HTMLFormElement;
+  if (form.dataset.authForm) {
+    event.preventDefault();
+    const values = new FormData(form);
+    const value = (name: string): string => String(values.get(name) ?? '').trim();
+    const mode = (event.submitter as HTMLButtonElement | null)?.dataset.authMode ?? 'connect';
+    try {
+      if (mode === 'pair') {
+        const pairingToken = value('pairingToken');
+        const authToken = value('newAuthToken');
+        if (!pairingToken || authToken.length < 16)
+          throw new Error('Pairing requires a token and a new access token of at least 16 characters.');
+        await apiClient.pair(pairingToken, authToken);
+      } else {
+        const authToken = value('accessToken');
+        if (!authToken) throw new Error('Enter an access token or choose pairing.');
+        apiClient.setToken(authToken);
+      }
+      await connectRemoteStore(true);
+    } catch (error) {
+      renderAuthScreen(error instanceof Error ? error.message : 'Authentication failed.');
+    }
+    return;
+  }
   const kind = form.dataset.resourceForm;
   if (kind !== 'media' && kind !== 'output' && kind !== 'axis') return;
   event.preventDefault();
@@ -491,7 +544,7 @@ appRoot.addEventListener('submit', (event) => { void handleSubmit(event); });
 appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
 importInput.addEventListener('change', () => { void importSelectedFile(); });
-store.subscribe(render);
+unsubscribeStore = store.subscribe(render);
 window.setInterval(() => store.tick(), 1000);
 const initialRoute = window.location.hash.slice(1) as Route;
 
@@ -499,16 +552,7 @@ const initialRoute = window.location.hash.slice(1) as Route;
 // Core, promote the same UI to the authenticated server store automatically.
 void (async () => {
   if (new URLSearchParams(window.location.search).get('demo') === '1') return;
-  try {
-    const remoteStore = createRemoteStore(apiClient);
-    await remoteStore.connect();
-    store = remoteStore;
-    store.subscribe(render);
-    if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
-    render(store.getState());
-  } catch {
-    // Vite/static preview has no API; keep the deterministic demo store.
-  }
+  await connectRemoteStore();
 })();
 
 if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);

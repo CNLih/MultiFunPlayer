@@ -101,6 +101,30 @@ test.describe('control room demo journey', () => {
     await expect(page.getByText('Diagnostics refreshed')).toBeVisible();
   });
 
+  test('shows the server authentication entry instead of falling back to demo', async ({ page }) => {
+    let pairingBody: Record<string, string> | undefined;
+    await page.route('**/api/v1/**', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/api/v1/auth/pair') {
+        pairingBody = route.request().postDataJSON() as Record<string, string>;
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ title: 'Pairing unavailable' }) });
+        return;
+      }
+      await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ title: 'Authentication required' }) });
+    });
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Connect to your control room' })).toBeVisible();
+    await expect(page.getByText('Local demo mode')).not.toBeAttached();
+    await page.getByLabel('Pairing token').fill('pairing-secret');
+    await page.getByLabel('New access token').fill('new-browser-access-token');
+    await page.getByRole('button', { name: 'Pair and connect' }).click();
+    await expect(page.getByText('API request failed (503)')).toBeVisible();
+    expect(pairingBody).toEqual({ pairingToken: 'pairing-secret', authToken: 'new-browser-access-token' });
+    await expect(page.locator('body')).not.toContainText('pairing-secret');
+    await expect(page.locator('body')).not.toContainText('new-browser-access-token');
+  });
+
   test('hydrates an authenticated server store from REST and WebSocket state', async ({ page }) => {
     const bearerSeen: string[] = [];
     const mediaSource = {

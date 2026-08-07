@@ -1,5 +1,15 @@
 import type { StatusResponse } from './store';
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`API request failed (${status})`);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export interface ApiScriptDescriptor {
   id: string;
   name: string;
@@ -14,6 +24,10 @@ export interface ApiCapabilities {
   protocols: string[];
   authenticationRequired: boolean;
   webSocketPath: string;
+}
+
+export interface ApiPairResponse {
+  status: string;
 }
 
 export interface ApiSettings {
@@ -175,6 +189,7 @@ export type StateListener = (status: StatusResponse) => void;
 export class MfpApiClient {
   private readonly apiRoot: string;
   private readonly tokenKey = 'mfp.authToken';
+  private memoryToken: string | null = null;
 
   constructor(apiRoot = '/api/v1') {
     this.apiRoot = apiRoot.replace(/\/$/, '');
@@ -183,6 +198,31 @@ export class MfpApiClient {
 
   get hasToken(): boolean {
     return Boolean(this.token());
+  }
+
+  setToken(token: string): void {
+    const value = token.trim();
+    this.memoryToken = value || null;
+    try {
+      if (value) window.localStorage.setItem(this.tokenKey, value);
+      else window.localStorage.removeItem(this.tokenKey);
+    } catch {
+      // Private browsing may not provide storage; the request can still use
+      // the token during this page lifetime when storage is unavailable.
+    }
+  }
+
+  clearToken(): void {
+    this.setToken('');
+  }
+
+  async pair(pairingToken: string, authToken: string): Promise<ApiPairResponse> {
+    const response = await this.request<ApiPairResponse>('/auth/pair', {
+      method: 'POST',
+      body: JSON.stringify({ pairingToken, authToken }),
+    });
+    this.setToken(authToken);
+    return response;
   }
 
   async getStatus(): Promise<StatusResponse> {
@@ -233,7 +273,7 @@ export class MfpApiClient {
     const token = this.token();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(`${this.apiRoot}/logs/file`, { headers });
-    if (!response.ok) throw new Error(`API request failed (${response.status})`);
+    if (!response.ok) throw new ApiError(response.status);
     return response.blob();
   }
 
@@ -358,13 +398,13 @@ export class MfpApiClient {
   }
 
   private token(): string | null {
-    try { return window.localStorage.getItem(this.tokenKey); } catch { return null; }
+    try { return window.localStorage.getItem(this.tokenKey) ?? this.memoryToken; } catch { return this.memoryToken; }
   }
 
   private captureTokenFromUrl() {
     const token = new URLSearchParams(window.location.search).get('access_token');
     if (!token) return;
-    try { window.localStorage.setItem(this.tokenKey, token); } catch { /* private mode */ }
+    this.setToken(token);
     const cleanUrl = `${window.location.pathname}${window.location.hash}`;
     window.history.replaceState({}, '', cleanUrl);
   }

@@ -13,7 +13,7 @@ npm run dev
 
 Open the Vite URL shown in the terminal. `npm run typecheck`, `npm run check:static`, and `npm run build` are the expected CI checks.
 
-Use `?demo=1` to force the local preview. For a protected server, pass a bootstrap token once as `?access_token=...`; the client removes it from the address bar, moves it to local storage, and uses bearer headers for REST. WebSocket state uses a base64url token subprotocol so the secret is not placed in the upgrade URL.
+Use `?demo=1` to force the local preview. For a protected server, pass a bootstrap token once as `?access_token=...`; the client removes it from the address bar, moves it to local storage, and uses bearer headers for REST. WebSocket state uses a base64url token subprotocol so the secret is not placed in the upgrade URL. When no token is available, the Web entry shows an access-token or one-time pairing form; a rejected token stays on that form instead of silently switching to demo data.
 
 If npm is not available, open [`static/index.html`](static/index.html) directly in a browser for the no-build preview. It uses the same mock concepts and has no network or backend requirement.
 

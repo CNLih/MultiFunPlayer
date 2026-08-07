@@ -28,6 +28,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
 .app-shell { display: flex; min-height: 100vh; }
+.auth-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: var(--canvas); }
+.auth-panel { width: min(100%, 480px); padding: 28px; }
+.auth-panel .brand-lockup { padding: 0 0 28px; }
+.auth-panel h1 { margin-bottom: 10px; font-size: 28px; }
+.auth-form { display: grid; gap: 13px; margin-top: 24px; }
+.auth-form label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
+.auth-form input { width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 4px; background: #111a20; color: var(--text); }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 3px 0; color: var(--subtle); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.auth-divider::before, .auth-divider::after { content: ''; height: 1px; flex: 1; background: var(--line-soft); }
+.auth-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 5px; }
+.auth-error { margin: 18px 0 0; padding: 10px 12px; border: 1px solid #9b4a55; border-radius: 5px; background: var(--red-soft); color: #ffd9dc; font-size: 12px; }
 .sidebar { width: 244px; flex: 0 0 244px; display: flex; flex-direction: column; padding: 24px 16px 18px; border-right: 1px solid var(--line-soft); background: #111920; }
 .brand-lockup { display: flex; align-items: center; gap: 11px; padding: 2px 10px 26px; }
 .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid #2f8d86; border-radius: 10px; color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
@@ -279,6 +290,11 @@ td strong { color: var(--text); font-size: 12px; }
 
 @media (max-width: 500px) {
   h1 { font-size: 25px; }
+  .auth-shell { padding: 16px; }
+  .auth-panel { padding: 22px 18px; }
+  .auth-panel h1 { font-size: 25px; }
+  .auth-actions { display: grid; }
+  .auth-actions .button { width: 100%; }
   .topbar-actions { gap: 8px; }
   .breadcrumbs span:first-child, .breadcrumbs span[aria-hidden="true"] { display: none; }
   .now-playing-main { padding: 22px 19px; }
