@@ -889,7 +889,9 @@ Validated in the current Linux environment:
   adapter capability endpoints and exposes repository, general, security,
   serial, and log state with a real refresh action. Device-axis editing covers
   range, inversion, interpolation, and optional limits with persisted REST
-  settings and Application-level evaluation tests. Failed sink writes now
+  settings and Application-level evaluation tests. The checked-in Web
+  architecture contract includes a redacted output-target JSON example for
+  this response compatibility rule. Failed sink writes now
   expose a transient `lastError` in the output-target contract and clear it
   after a successful write, with Infrastructure coverage for failure and
   recovery. The error detail is an optional companion interface, preserving
