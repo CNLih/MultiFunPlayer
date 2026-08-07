@@ -475,6 +475,7 @@ export function createRemoteStore(client: MfpApiClient) {
   state.serialDevices = [];
   const listeners = new Set<Listener>();
   let socket: WebSocket | undefined;
+  let stateStreamDisconnected = false;
   const notify = () => listeners.forEach((listener) => listener(state));
   const appendLog = (level: ActivityLog['level'], message: string, source = 'server') => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -551,6 +552,7 @@ export function createRemoteStore(client: MfpApiClient) {
     notify();
   };
   const applyStatus = (status: StatusResponse) => {
+    stateStreamDisconnected = false;
     const playing = status.state.toLowerCase() === 'playing';
     const script = state.scripts.find((item) => item.name === status.script) ?? state.nowPlaying;
     state.playing = playing;
@@ -619,6 +621,8 @@ export function createRemoteStore(client: MfpApiClient) {
     void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
   };
   const handleStateDisconnect = () => {
+    if (stateStreamDisconnected) return;
+    stateStreamDisconnected = true;
     state.health = [
       { label: 'Engine loop', detail: 'Backend output continues independently', status: 'pass' },
       { label: 'API connection', detail: 'State stream disconnected; reconnect required', status: 'warn' },
