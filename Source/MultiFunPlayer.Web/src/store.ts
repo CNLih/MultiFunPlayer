@@ -211,6 +211,11 @@ export function createMockStore() {
       notify();
       return script;
     },
+    async downloadLogs(): Promise<Blob | undefined> {
+      appendLog('info', 'Diagnostic snapshot prepared', 'logs');
+      notify();
+      return undefined;
+    },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
       if (state.media.some((source) => source.id === input.id)) throw new Error('A media source with that id already exists.');
       const source: MediaSource = {
@@ -468,6 +473,9 @@ export function createRemoteStore(client: MfpApiClient) {
       appendLog('info', `Imported ${script.name}`, 'scripts');
       notify();
       return script;
+    },
+    async downloadLogs(): Promise<Blob> {
+      return client.downloadLogs();
     },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
       await client.createMediaSource(input);

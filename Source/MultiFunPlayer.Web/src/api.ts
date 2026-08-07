@@ -127,6 +127,15 @@ export class MfpApiClient {
     return this.request<ApiLogsResponse>(`/logs?limit=${encodeURIComponent(limit)}`);
   }
 
+  async downloadLogs(): Promise<Blob> {
+    const headers = new Headers({ Accept: 'application/x-ndjson' });
+    const token = this.token();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(`${this.apiRoot}/logs/file`, { headers });
+    if (!response.ok) throw new Error(`API request failed (${response.status})`);
+    return response.blob();
+  }
+
   async listScripts(): Promise<ApiScriptDescriptor[]> {
     return this.request<ApiScriptDescriptor[]>('/scripts');
   }

@@ -178,6 +178,14 @@ function showToast(message: string, variant: 'success' | 'error' = 'success') {
   window.setTimeout(() => { region.innerHTML = ''; }, 2600);
 }
 
+function saveBlob(blob: Blob, fileName: string) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 function scriptIdForFile(file: File): string {
   const originalName = file.name.split(/[\\/]/).pop() ?? 'uploaded-script.funscript';
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '-');
@@ -268,7 +276,14 @@ function handleClick(event: MouseEvent) {
     }
   }
   if (action === 'import-script') importInput.click();
-  if (action === 'download-logs') showToast('Diagnostic snapshot prepared (demo only)');
+  if (action === 'download-logs') {
+    void store.downloadLogs()
+      .then((blob) => {
+        if (blob) saveBlob(blob, 'runtime.log');
+        showToast('Diagnostic snapshot downloaded');
+      })
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Log download failed.', 'error'));
+  }
   if (action === 'load-next') {
     const next = store.getState().scripts.find((script) => script.id !== store.getState().nowPlaying.id);
     if (next) store.loadScript(next);
