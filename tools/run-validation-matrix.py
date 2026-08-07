@@ -178,6 +178,14 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             root,
         ),
         Check(
+            "interruption-network-player-restart",
+            "interruption",
+            _command(dotnet, "test", "Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj",
+                     "--no-restore", "--configuration", "Release", "-p:EnableWindowsTargeting=true",
+                     "--filter", "FullyQualifiedName~NetworkMediaAdapter_reconnects_after_remote_player_restart"),
+            root,
+        ),
+        Check(
             "interruption-device-removal",
             "interruption",
             _command(dotnet, "test", "Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj",
