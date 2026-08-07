@@ -21,6 +21,7 @@ using MultiFunPlayer.Script;
 
 namespace MultiFunPlayer.Server.Tests;
 
+[Collection("Server environment")]
 public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFunPlayer.Server.Program>>
 {
     private readonly WebApplicationFactory<MultiFunPlayer.Server.Program> _factory;

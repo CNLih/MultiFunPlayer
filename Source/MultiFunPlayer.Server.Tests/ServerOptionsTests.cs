@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace MultiFunPlayer.Server.Tests;
 
+[Collection("Server environment")]
 public sealed class ServerOptionsTests
 {
     [Theory]
