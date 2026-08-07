@@ -365,17 +365,22 @@ def repository_revision(root: Path) -> str | None:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     root = args.root.resolve()
+    started_at = datetime.now(timezone.utc)
+    started_monotonic = time.monotonic()
     checks = build_checks(root, include_browser=not args.skip_browser)
     results = [run_check(check, args.timeout_seconds) for check in checks]
-    return {
+    report = {
         "schemaVersion": 1,
-        "startedAtUtc": datetime.now(timezone.utc).isoformat(),
+        "startedAtUtc": started_at.isoformat(),
         "root": str(root),
         "repositoryRevision": repository_revision(root),
         "summary": summarize(results),
         "checks": results,
         "result": "pass" if all(item["status"] != "fail" for item in results) else "fail",
     }
+    report["endedAtUtc"] = datetime.now(timezone.utc).isoformat()
+    report["durationSeconds"] = round(time.monotonic() - started_monotonic, 3)
+    return report
 
 
 def main() -> int:

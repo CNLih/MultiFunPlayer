@@ -95,6 +95,25 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertIsNotNone(revision)
         self.assertRegex(revision or "", r"^[0-9a-f]{40}$")
 
+    def test_run_report_has_completion_timing(self):
+        original_build_checks = MODULE.build_checks
+        original_run_check = MODULE.run_check
+        try:
+            MODULE.build_checks = lambda root, include_browser: []
+            MODULE.run_check = lambda check, timeout_seconds: {"status": "pass"}
+            args = type("Args", (), {
+                "root": ROOT,
+                "skip_browser": True,
+                "timeout_seconds": 1,
+            })()
+            report = MODULE.run(args)
+        finally:
+            MODULE.build_checks = original_build_checks
+            MODULE.run_check = original_run_check
+        self.assertRegex(report["startedAtUtc"], r"\+00:00$")
+        self.assertRegex(report["endedAtUtc"], r"\+00:00$")
+        self.assertGreaterEqual(report["durationSeconds"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
