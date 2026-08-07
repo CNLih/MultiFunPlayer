@@ -798,7 +798,8 @@ Validated in the current Linux environment:
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   drop budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
   RSS was about 117 MiB, CPU time was 9.27 s, and shutdown was graceful. CI
-  runs a 10-second smoke and uploads the report. This does not replace the
+  runs a 10-second smoke with the same p95/drop budgets and uploads the report.
+  This does not replace the
   required eight-hour Linux/fnOS soak or target-device failure matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
@@ -868,8 +869,9 @@ Validated in the current Linux environment:
 - `tools/run-validation-matrix.py` now executes the reproducible local unit,
   integration, contract, Web/browser, boundary, packaging, and release-template
   checks and writes a redacted JSON report. The 2026-08-08 Linux rerun with
-  user-local browser host dependencies passed 18 checks with 0 failures and
-  covered Playwright desktop/mobile viewports; four target-environment gates
+  user-local browser host dependencies passed 19 checks with 0 failures and
+  covered Playwright desktop/mobile viewports plus a 10-second Linux soak
+  smoke with explicit p95 and drop budgets; four target-environment gates
   remain pending. The interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, Buttplug device
   removal, and persistent-volume process restart. The Ubuntu CI job installs browser

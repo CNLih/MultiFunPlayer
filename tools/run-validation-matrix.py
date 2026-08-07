@@ -174,6 +174,16 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             root,
         ),
         Check(
+            "soak-linux-smoke",
+            "soak",
+            _command(python, "tools/run-portable-soak.py",
+                     "--duration-seconds", "10", "--poll-seconds", "0.5",
+                     "--max-revision-interval-ms", "100",
+                     "--max-dropped-frames", "10",
+                     "--output", "artifacts/validation/portable-soak.json"),
+            root,
+        ),
+        Check(
             "web-typecheck",
             "browser",
             _command(npm, "run", "typecheck", "--prefix", "Source/MultiFunPlayer.Web"),
