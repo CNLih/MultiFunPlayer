@@ -25,6 +25,16 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertIsNone(playwright.command)
         self.assertIn("skipped", playwright.reason)
 
+    def test_interruption_matrix_keeps_network_restart_and_container_gate(self):
+        checks = {check.check_id: check for check in MODULE.build_checks(ROOT, include_browser=False)}
+        network_restart = checks["interruption-network-player-restart"]
+        self.assertIsNotNone(network_restart.command)
+        self.assertTrue(any("NetworkMediaAdapter_reconnects_after_remote_player_restart" in argument
+                            for argument in network_restart.command))
+        container_restart = checks["interruption-container-restart"]
+        self.assertIsNone(container_restart.command)
+        self.assertIn("real persistent volumes", container_restart.reason)
+
     def test_pending_check_is_explicit(self):
         check = MODULE.Check("external", "container", None, ROOT, "requires runner")
         result = MODULE.run_check(check, 1)
