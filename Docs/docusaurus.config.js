@@ -18,7 +18,11 @@ const config = {
   projectName: 'MultiFunPlayer',
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
   trailingSlash: false,
 
   // Even if you don't use internalization, you can use this field to set useful

@@ -643,13 +643,14 @@ Validated in the current Linux environment:
   The same validator runs in the packaging CI job. Docker Buildx, `fnpack`,
   official fnOS schema validation, image scanning, and target-NAS execution are
   intentionally still external gates.
-- Current dependency checks report no vulnerable .NET packages and no
-  production Web-package vulnerabilities. The Docs site still uses the locked
-  Docusaurus 3.1 dependency graph: its audit reports 62 development-only
-  findings (6 low, 33 moderate, 21 high, 2 critical). A lockfile-only update
-  was attempted but npm registry resolution timed out without changing the
-  lockfile, so P7-06 remains open for a controlled Docusaurus upgrade and
-  container scan before a release candidate.
+- Current dependency checks report no vulnerable .NET packages, no production
+  Web-package vulnerabilities, and no production Docs-package vulnerabilities.
+  The Docs toolchain is now pinned to Docusaurus 3.10.2 and builds cleanly;
+  its full development audit still reports 21 upstream findings (1 high, 20
+  moderate) in the webpack/serialize-javascript/sockjs chain. CI records that
+  full report while enforcing the zero-production-vulnerability gate, so P7-06
+  remains open for upstream remediation and a container scan before a release
+  candidate.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles; the
   current workspace contains 1,325 deduplicated components and CI uploads the
