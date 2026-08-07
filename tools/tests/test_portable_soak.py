@@ -26,7 +26,8 @@ def report(*, graceful=True, sent=10, dropped=0, failed=0, p95=50):
 
 class PortableSoakTests(unittest.TestCase):
     def test_acceptance_passes_observable_smoke_invariants(self):
-        result = MODULE.evaluate_acceptance(report(), max_revision_interval_ms=100)
+        result = MODULE.evaluate_acceptance(
+            report(dropped=3), max_revision_interval_ms=100)
         self.assertTrue(result["passed"])
         self.assertEqual([], result["failures"])
 
