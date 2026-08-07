@@ -16,6 +16,14 @@ jobs:
       uses: actions/checkout@v4
       with:
           fetch-depth: 0
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - name: Verify release evidence
+      run: |
+        test -f deploy/release-evidence.json
+        python tools/validate-release-evidence.py deploy/release-evidence.json --require-complete
     - name: Setup .NET 9 SDK
       uses: actions/setup-dotnet@v4
       with:

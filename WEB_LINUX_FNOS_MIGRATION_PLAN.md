@@ -768,6 +768,10 @@ Validated in the current Linux environment:
   target-acceptance gates in machine-readable form. Development validation may
   retain pending gates; `--require-complete` rejects any pending/failed gate or
   passed gate without an evidence reference.
+- The tag-based publish workflow now requires a separate
+  `deploy/release-evidence.json` and runs the complete evidence gate before
+  building release archives; the current branch intentionally does not provide
+  a fabricated complete manifest.
 
 Still open and intentionally not advertised as complete:
 

@@ -71,4 +71,6 @@ python3 tools/validate-release-evidence.py deploy/release-evidence.json --requir
 
 The first command allows pending gates during development. The second command
 is the release-candidate gate and fails unless all twenty required gates have a
-valid pass status and at least one evidence reference.
+valid pass status and at least one evidence reference. The tag-based publish
+workflow requires the non-example `deploy/release-evidence.json` and runs the
+second command before building release archives.
