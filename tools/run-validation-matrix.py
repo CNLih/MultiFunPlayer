@@ -43,6 +43,17 @@ def redact(text: str) -> str:
     return _SECRET_PATTERN.sub(r"\1<redacted>", text)
 
 
+def _browser_host_dependency_failure(check: Check, output: str) -> bool:
+    if check.check_id != "browser-playwright":
+        return False
+    lowered = output.lower()
+    return any(marker in lowered for marker in (
+        "error while loading shared libraries",
+        "host system is missing dependencies",
+        "executable doesn't exist",
+    ))
+
+
 def _command(executable: str, *args: str) -> tuple[str, ...]:
     return (executable, *args)
 
@@ -251,11 +262,17 @@ def run_check(check: Check, timeout_seconds: float) -> dict[str, Any]:
             check=False,
         )
         output = redact(completed.stdout or "")
+        status = "pass" if completed.returncode == 0 else "fail"
         result.update({
-            "status": "pass" if completed.returncode == 0 else "fail",
+            "status": status,
             "returnCode": completed.returncode,
             "outputTail": output[-4000:],
         })
+        if status == "fail" and _browser_host_dependency_failure(check, output):
+            result.update({
+                "status": "pending",
+                "reason": "Playwright host browser dependencies are unavailable; install the CI browser dependencies before claiming browser evidence",
+            })
     except subprocess.TimeoutExpired as error:
         output = redact((error.stdout or "") if isinstance(error.stdout, str) else "")
         result.update({"status": "fail", "returnCode": None, "outputTail": output[-4000:],

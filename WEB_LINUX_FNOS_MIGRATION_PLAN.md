@@ -834,7 +834,10 @@ Validated in the current Linux environment:
   persistent-volume process restart. The Ubuntu CI job installs browser
   dependencies and uploads the same artifact for each run. Command output is
   decoded as UTF-8 with replacement for malformed bytes, so a localized or
-  binary diagnostic cannot abort evidence collection.
+  binary diagnostic cannot abort evidence collection. When a local Playwright
+  process fails specifically because the host browser shared libraries are
+  absent, the matrix records that check as pending with an actionable reason;
+  actual browser assertion failures remain failures.
 - `tools/run-target-acceptance.py` provides a dependency-free black-box HTTP
   acceptance harness for an installed Linux/fnOS Web endpoint. It checks
   authentication, health, SPA fallback, capabilities, adapter/serial

@@ -37,6 +37,21 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertEqual("fail", result["status"])
         self.assertIn("executable not found", result["reason"])
 
+    def test_playwright_host_dependency_failure_is_pending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            check = MODULE.Check("browser-playwright", "browser", (sys.executable, "-c",
+                "print('error while loading shared libraries: libnspr4.so'); raise SystemExit(1)"), Path(directory))
+            result = MODULE.run_check(check, 5)
+        self.assertEqual("pending", result["status"])
+        self.assertIn("host browser dependencies", result["reason"])
+
+    def test_playwright_assertion_failure_remains_a_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            check = MODULE.Check("browser-playwright", "browser", (sys.executable, "-c",
+                "print('expectation failed')\nraise SystemExit(1)"), Path(directory))
+            result = MODULE.run_check(check, 5)
+        self.assertEqual("fail", result["status"])
+
     def test_command_output_is_redacted_and_status_is_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             check = MODULE.Check("echo", "contract", (sys.executable, "-c",
