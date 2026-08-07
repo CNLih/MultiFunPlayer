@@ -9,8 +9,9 @@ The older JSON `manifest` beside this file remains a repository-owned contract
 for Docker/fnOS static checks. It is not an FPK manifest and is intentionally
 kept separate from `fnpack/manifest`.
 
-Install the official `fnpack` binary from the fnOS developer portal, then build
-an architecture-specific package:
+Install the official [`fnpack`](https://developer.fnnas.com/docs/cli/fnpack/)
+binary from the fnOS developer portal, then build an architecture-specific
+package:
 
 ```sh
 FNPACK=/path/to/fnpack ./deploy/fnos/build-fpk.sh --platform x86
