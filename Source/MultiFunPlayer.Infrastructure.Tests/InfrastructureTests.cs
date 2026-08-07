@@ -1,6 +1,7 @@
 using System.Text;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Infrastructure.Output;
+using MultiFunPlayer.Infrastructure.Serial;
 using MultiFunPlayer.Infrastructure.Storage;
 using MultiFunPlayer.Infrastructure.Transport;
 
@@ -65,6 +66,23 @@ public sealed class InfrastructureTests
         var exception = Assert.Throws<TCodeOutputException>(() => sink.Publish(
             new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 })));
         Assert.Equal("fake", exception.TransportId);
+    }
+
+    [Fact]
+    public void LinuxSerialEnumeratorUsesStableByIdNames()
+    {
+        using var temp = new TemporaryDirectory();
+        var device = Path.Combine(temp.Path, "ttyACM0");
+        File.WriteAllText(device, string.Empty);
+        var link = Path.Combine(temp.Path, "usb-MultiFunPlayer_0001-if00");
+        File.CreateSymbolicLink(link, device);
+
+        var ports = new LinuxSerialPortEnumerator(temp.Path).Enumerate();
+
+        var port = Assert.Single(ports);
+        Assert.Equal("usb-MultiFunPlayer_0001-if00", port.StableId);
+        Assert.Equal(link, port.DevicePath);
+        Assert.Equal(device, port.LinkTarget);
     }
 
     private sealed record SampleSettings(string Name, int Count);

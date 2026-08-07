@@ -388,7 +388,7 @@ Tasks:
 - [ ] P4-01 Port network-native media sources without process detection requirements.
 - [x] P4-02 Add capability reporting for sources that require remote player configuration.
 - [ ] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
-- [ ] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
+- [x] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
 - [ ] P4-05 Keep serial open/write behavior behind an adapter and preserve TCode timing semantics.
 - [ ] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
 - [x] P4-07 Restrict filesystem browsing to administrator-configured roots and prevent path traversal/symlink escape.

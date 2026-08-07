@@ -4,5 +4,5 @@
   "status": "completed-with-adapter-scope-pending",
   "branch": "feature/web-linux-fnos-migration",
   "evidence": ["Server tests 6/6", "REST v1", "OpenAPI", "bounded WebSocket", "auth smoke"],
-  "pending": ["full media/output/settings CRUD", "pairing flow", "bounded structured log persistence"]
+  "pending": ["full media/output/settings CRUD", "pairing flow", "bounded structured log persistence", "serial open/write adapter"]
 }

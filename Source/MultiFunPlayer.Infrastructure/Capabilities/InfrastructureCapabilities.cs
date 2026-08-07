@@ -16,6 +16,8 @@ public static class InfrastructureCapabilities
         new("tcp", "TCode over TCP", true, ["linux", "windows", "container"], []),
         new("udp", "TCode over UDP", true, ["linux", "windows", "container"], []),
         new("websocket", "TCode over WebSocket", true, ["linux", "windows", "container"], []),
-        new("file", "TCode file sink", true, ["linux", "windows", "container"], [])
+        new("file", "TCode file sink", true, ["linux", "windows", "container"], []),
+        new("serial-enumeration", "Linux stable serial device discovery", true, ["linux", "container"],
+            ["MFP_SERIAL_BY_ID_ROOT"])
     ];
 }
