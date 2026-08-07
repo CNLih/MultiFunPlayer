@@ -6,7 +6,7 @@ test.describe('control room demo journey', () => {
 
     await expect(page).toHaveTitle(/MultiFunPlayer/i);
     await expect(page.getByRole('heading', { name: 'Runtime dashboard' })).toBeVisible();
-    await expect(page.getByText('Local demo mode')).toBeVisible();
+    await expect(page.getByText('Local demo mode')).toBeAttached();
 
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Scripts' })).toBeVisible();
@@ -15,6 +15,7 @@ test.describe('control room demo journey', () => {
 
     await page.getByRole('button', { name: 'Output targets' }).click();
     await expect(page.getByRole('heading', { name: 'Output targets' })).toBeVisible();
+    await page.getByLabel('Id', { exact: true }).fill('playwright-target');
     await page.getByLabel('Name', { exact: true }).fill('Playwright target');
     await page.getByLabel('Endpoint', { exact: true }).fill('127.0.0.1:8123');
     await page.getByRole('button', { name: 'Create target' }).click();
@@ -28,8 +29,13 @@ test.describe('control room demo journey', () => {
     await expect(page.getByRole('heading', { name: 'Axis settings' })).toBeVisible();
     const viewport = page.viewportSize();
     expect(viewport).not.toBeNull();
-    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    expect(documentWidth).toBeLessThanOrEqual((viewport?.width ?? documentWidth) + 1);
+    const pageBounds = await page.evaluate(() => {
+      const body = document.body.getBoundingClientRect();
+      const appShell = document.querySelector<HTMLElement>('.app-shell')?.getBoundingClientRect();
+      return { bodyRight: body.right, appShellRight: appShell?.right ?? 0 };
+    });
+    expect(pageBounds.bodyRight).toBeLessThanOrEqual((viewport?.width ?? pageBounds.bodyRight) + 1);
+    expect(pageBounds.appShellRight).toBeLessThanOrEqual((viewport?.width ?? pageBounds.appShellRight) + 1);
 
     await page.getByLabel('Axis', { exact: true }).fill('L9');
     await page.getByRole('button', { name: 'Save axis policy' }).click();

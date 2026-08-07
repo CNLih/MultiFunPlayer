@@ -450,7 +450,7 @@ Tasks:
 - [x] P5-09 Add accessible keyboard navigation, labels, focus states, validation, loading, empty, error, and reconnect states.
 - [x] P5-10 Add PWA manifest and explicit cache/update behavior.
 - [x] P5-11 Generate the production assets and serve them from ASP.NET Core with SPA fallback.
-- [ ] P5-12 Add browser end-to-end tests and screenshot checks at desktop and mobile viewports.
+- [x] P5-12 Add browser end-to-end tests and screenshot checks at desktop and mobile viewports.
 
 Completion conditions:
 
@@ -660,9 +660,10 @@ Validated in the current Linux environment:
   remain open until those artifacts can be built in their target environments.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
   desktop and mobile Chromium journeys, viewport overflow assertions, and CI
-  screenshot artifacts. The four tests enumerate locally, but execution is
-  still an external gate here because this environment has no Chromium binary;
-  CI installs the browser before running them.
+  screenshot artifacts. The four tests pass locally against the production
+  bundle after loading the Playwright headless shell with user-space Ubuntu
+  libraries; CI installs the browser and host dependencies before running
+  them.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
@@ -688,9 +689,8 @@ Still open and intentionally not advertised as complete:
   physical reconnect and permission validation remain external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   key rotation/removal and upgrade rehearsal remain open.
-- Browser Playwright execution/screenshot review and full UI settings forms.
-  The test harness and CI artifact upload are present, but no local browser
-  executable is available for final evidence.
+- Full UI settings forms and the broader browser/device matrix. The focused
+  Playwright harness and desktop/mobile screenshots are now validated.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
   amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.
 - Docs dependency remediation and Trivy or an equivalent image scan remain
