@@ -556,6 +556,10 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
+- The desktop and desktop-test NuGet lock files now include their existing
+  `MultiFunPlayer.Application` project references. A clean
+  `dotnet restore --locked-mode --disable-parallel` was rerun after refreshing
+  those entries; this no longer depends on stale `obj` assets.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
   Server tests: 39/39, including the Data Protection service wiring test.
 - Web `typecheck`, static contract check, and Vite production build pass.
