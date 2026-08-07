@@ -305,7 +305,7 @@ Tasks:
 - [ ] P2-05 Replace direct WPF dialog calls in shared flows with structured errors and operation results.
 - [ ] P2-06 Replace Stylet event dependencies in shared code with an application-owned event/command contract.
 - [x] P2-07 Keep the WPF host operational by adapting existing view models to the extracted services.
-- [ ] P2-08 Separate persisted configuration DTOs from WPF view models while maintaining a migration reader.
+- [x] P2-08 Separate persisted configuration DTOs from WPF view models while maintaining a migration reader.
 - [x] P2-09 Move output update contexts and TCode formatting into testable platform-neutral services.
 
 Primary modification locations:
@@ -553,12 +553,15 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 8/8;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 10/10;
   Server tests: 10/10.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
+- The Infrastructure migration reader accepts the sanitized desktop JSON shape,
+  emits versioned portable records, normalizes path separators, and omits
+  secret fields without modifying the source document.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -566,8 +569,9 @@ Validated in the current Linux environment:
 
 Still open and intentionally not advertised as complete:
 
-- Full media-source and output-target CRUD/adapters and desktop configuration
-  migration. Initial pairing is implemented, but upgrade/backup rehearsal and
+- Full media-source and output-target CRUD/adapters and startup integration of
+  the desktop migration reader. Initial pairing is implemented, but
+  upgrade/backup rehearsal and
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
