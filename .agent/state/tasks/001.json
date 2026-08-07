@@ -1,7 +1,8 @@
 {
   "id": "001",
   "slug": "baseline-and-golden-tests",
-  "status": "completed",
+  "status": "completed-with-Windows-CI-pending",
   "branch": "feature/web-linux-fnos-migration",
-  "evidence": ["global.json", "locked NuGet restore", "golden fixtures", "CI SDK pinning"]
+  "evidence": ["global.json", "locked NuGet restore", "golden fixtures", "CI SDK pinning"],
+  "pending": ["Windows runner execution"]
 }

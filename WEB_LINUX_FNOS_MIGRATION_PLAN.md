@@ -234,7 +234,7 @@ Tasks:
 - [x] P0-01 Install or provision the .NET 9 and .NET 10 SDKs in CI/development environments.
 - [x] P0-02 Add `global.json` and replace package wildcards with reviewed pinned versions.
 - [x] P0-03 Add NuGet lock files or equivalent deterministic restore policy.
-- [x] P0-04 Repair CI so the existing WPF project builds and tests on a Windows runner.
+- [ ] P0-04 Repair CI so the existing WPF project builds and tests on a Windows runner.
 - [x] P0-05 Capture sanitized configuration fixtures from supported desktop versions.
 - [x] P0-06 Add golden tests for Funscript parsing, interpolation, axis mapping, limits, offsets, synchronization, and TCode output.
 - [x] P0-07 Add deterministic fake clocks and output sinks around timing-sensitive tests.
@@ -271,7 +271,7 @@ Tasks:
 - [x] P1-01 Change desktop and test targets to `net10.0-windows` in a dedicated change.
 - [x] P1-02 Align `System.*`, test SDK, analyzer, Fody, and build package versions.
 - [x] P1-03 Remove obsolete or redundant direct framework package references where verified.
-- [x] P1-04 Compile all XAML and test every view/resource dictionary under .NET 10.
+- [ ] P1-04 Compile all XAML and test every view/resource dictionary under .NET 10.
 - [ ] P1-05 Smoke-test plugin compilation, loading, configuration migration, and application shutdown.
 - [ ] P1-06 Publish and run a framework-dependent Windows build.
 

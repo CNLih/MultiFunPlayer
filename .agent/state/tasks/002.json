@@ -3,6 +3,6 @@
   "slug": "dotnet10-upgrade",
   "status": "completed-with-windows-runtime-pending",
   "branch": "feature/web-linux-fnos-migration",
-  "evidence": ["net10.0-windows targets", "Release WPF/XAML build passed"],
+  "evidence": ["net10.0-windows targets", "Release WPF/XAML compile passed"],
   "pending": ["WindowsDesktop runtime and plugin/UI smoke on Windows"]
 }
