@@ -32,7 +32,7 @@ public sealed class BroadcastEvent<T> where T : class
     public (bool Success, T Value) WaitOne(object context, CancellationToken cancellationToken)
     {
         var waitHandle = _waitHandles[context];
-        if (!waitHandle.WaitOne(cancellationToken))
+        if (!WaitHandleIsSignalled(waitHandle, cancellationToken))
             return (false, default);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -42,7 +42,7 @@ public sealed class BroadcastEvent<T> where T : class
     public async ValueTask<(bool Success, T Value)> WaitOneAsync(object context, CancellationToken cancellationToken)
     {
         var waitHandle = _waitHandles[context];
-        if (waitHandle.WaitOne(0, cancellationToken))
+        if (WaitHandleIsSignalled(waitHandle, cancellationToken, waitImmediately: true))
             return (true, CleanupAndGetValue(context));
 
         if (!await GetWaitHandleTask(context, cancellationToken))
@@ -67,7 +67,16 @@ public sealed class BroadcastEvent<T> where T : class
     }
 
     private Task<bool> GetWaitHandleTask(object context, CancellationToken cancellationToken)
-        => _tasks.GetOrAdd(context, c => _waitHandles[c].WaitOneAsync(cancellationToken));
+        => _tasks.GetOrAdd(context, c => Task.Run(() => WaitHandleIsSignalled(_waitHandles[c], cancellationToken)));
+
+    private static bool WaitHandleIsSignalled(WaitHandle waitHandle, CancellationToken cancellationToken, bool waitImmediately = false)
+    {
+        if (waitImmediately && waitHandle.WaitOne(0))
+            return true;
+
+        var index = WaitHandle.WaitAny([waitHandle, cancellationToken.WaitHandle]);
+        return index == 0;
+    }
 
     public static (int Index, T Value) WaitAny(BroadcastEvent<T>[] events, object context, CancellationToken cancellationToken)
     {

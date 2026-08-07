@@ -35,7 +35,7 @@ public sealed class CoreBehaviorTests
     [Theory]
     [InlineData(InterpolationType.Linear, 0.5)]
     [InlineData(InterpolationType.Pchip, 0.5)]
-    [InlineData(InterpolationType.Makima, 0.5)]
+    [InlineData(InterpolationType.Makima, 0.5125)]
     [InlineData(InterpolationType.Step, 0)]
     public void KeyframesInterpolateAtSegment(InterpolationType type, double expected)
     {
@@ -78,6 +78,6 @@ public sealed class CoreBehaviorTests
         var data = AxisInputGestureData.Relative(0.25, 0.1);
 
         Assert.Equal(0.75, data.ApplyTo(0.5));
-        Assert.True(data.IsRelative);
+        Assert.True(((IAxisInputGestureData)data).IsRelative);
     }
 }

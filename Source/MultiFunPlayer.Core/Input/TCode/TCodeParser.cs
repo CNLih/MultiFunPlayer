@@ -24,7 +24,7 @@ public sealed partial class TCodeParser
         return gestures;
     }
 
-    private static void ParseCommand(string command, ICollection<IInputGesture> gestures)
+    private void ParseCommand(string command, ICollection<IInputGesture> gestures)
     {
         foreach (var match in ButtonRegex.Matches(command).Where(m => m.Success))
         {
