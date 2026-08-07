@@ -593,6 +593,10 @@ Validated in the current Linux environment:
   their matrix expressions, conditionals, and embedded shell blocks. This is
   workflow-syntax evidence only; the WindowsDesktop jobs still need a real
   runner result.
+- CI now grants Pages write and OIDC token permissions only to the Docs job;
+  build, portable, packaging, and container jobs inherit read-only repository
+  access. This keeps the workflow security boundary least-privilege while
+  preserving GitHub Pages deployment.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
