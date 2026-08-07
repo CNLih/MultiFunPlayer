@@ -589,6 +589,10 @@ Validated in the current Linux environment:
   restore, Core/Application/Infrastructure/Server tests, solution build, and
   SPA type/static/production checks. Windows runner execution remains required
   before P0-04/P1 WPF acceptance can be checked.
+- The current `ci.yml` and `publish.yml` pass actionlint 1.7.12, including
+  their matrix expressions, conditionals, and embedded shell blocks. This is
+  workflow-syntax evidence only; the WindowsDesktop jobs still need a real
+  runner result.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
