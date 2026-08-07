@@ -1008,6 +1008,10 @@ Validated in the current Linux environment:
   process fails specifically because the host browser shared libraries are
   absent, the matrix records that check as pending with an actionable reason;
   actual browser assertion failures remain failures.
+- The CI workflow files also pass `actionlint` v1.7.12 using the same
+  checksum-pinned binary download configured by the `detect-changes` job;
+  this validates the workflow expressions and shell blocks locally, while
+  runner execution remains an external gate.
 - `tools/run-target-acceptance.py` provides a dependency-free black-box HTTP
   acceptance harness for an installed Linux/fnOS Web endpoint. It checks
   authentication, health, SPA fallback, capabilities, adapter/serial
