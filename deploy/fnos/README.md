@@ -51,3 +51,19 @@ After building, verify the archive contents before transferring it to fnOS:
 
 `build-fpk.sh` writes the matching `multifunplayer.fpk.sha256` sidecar next to
 each package so the archive can be verified after transfer.
+
+After installing the FPK and opening its Web entry, run the black-box Web/API
+acceptance harness from a machine that can reach the NAS:
+
+```sh
+export MFP_ACCEPTANCE_TOKEN='the-target-bearer-token'
+python3 tools/run-target-acceptance.py \
+  --base-url http://fnos-host:8080 \
+  --output artifacts/target/fnos-acceptance.json
+```
+
+For a new installation using one-time pairing, also export
+`MFP_PAIRING_TOKEN`. The report covers authentication, health, SPA fallback,
+capabilities, script playback, and log redaction. It is not evidence of fnOS
+firmware schema acceptance, USB permission, ARM execution, or physical output;
+attach those target-device results separately to the release evidence manifest.
