@@ -474,6 +474,18 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 "{\"name\":\"disconnect.funscript\",\"axis\":\"L0\",\"content\":{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":10000,\"pos\":100}]}}",
                 Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.OK, load.StatusCode);
+
+            // Connect the browser while playback is still stopped. This
+            // proves that the output loop remains independent after a client
+            // disconnects during an active stream, rather than only after a
+            // playback run that never had a browser attached.
+            var websocketClient = factory.Server.CreateWebSocketClient();
+            using var socket = await websocketClient.ConnectAsync(new Uri("ws://localhost/hubs/state"),
+                CancellationToken.None);
+            var initialBuffer = new byte[4096];
+            var initial = await socket.ReceiveAsync(initialBuffer, CancellationToken.None);
+            Assert.Equal(WebSocketMessageType.Text, initial.MessageType);
+
             Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/v1/player/play", null)).StatusCode);
 
             var startedOutput = false;
@@ -489,15 +501,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 await Task.Delay(50);
             }
 
-            Assert.True(startedOutput, "The output target did not receive a frame before the browser connected.");
+            Assert.True(startedOutput, "The output target did not receive a frame while the browser was connected.");
             var beforeDisconnectLength = new FileInfo(outputPath).Length;
-
-            var websocketClient = factory.Server.CreateWebSocketClient();
-            using var socket = await websocketClient.ConnectAsync(new Uri("ws://localhost/hubs/state"),
-                CancellationToken.None);
-            var initialBuffer = new byte[4096];
-            var initial = await socket.ReceiveAsync(initialBuffer, CancellationToken.None);
-            Assert.Equal(WebSocketMessageType.Text, initial.MessageType);
 
             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "browser closed",
                 CancellationToken.None);
