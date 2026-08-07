@@ -141,6 +141,12 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             root,
         ),
         Check(
+            "security-docs-image-size-parser",
+            "security",
+            _command(npm, "run", "check:dependency-security", "--prefix", "Docs"),
+            root,
+        ),
+        Check(
             "interruption-browser-disconnect",
             "interruption",
             _command(dotnet, "test", "Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj",
