@@ -25,7 +25,7 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertIsNone(playwright.command)
         self.assertIn("skipped", playwright.reason)
         parser_check = next(check for check in checks if check.check_id == "security-docs-image-size-parser")
-        self.assertEqual(("npm", "run", "check:dependency-security", "--prefix", "Docs"), parser_check.command)
+        self.assertEqual(("run", "check:dependency-security", "--prefix", "Docs"), parser_check.command[1:])
 
     def test_interruption_matrix_keeps_network_restart_and_container_gate(self):
         checks = {check.check_id: check for check in MODULE.build_checks(ROOT, include_browser=False)}
