@@ -313,6 +313,9 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             return true;
         }
 
+        if (target.Transport is not null || target.Adapter is not null || target.Sink is not null)
+            await DisconnectLockedAsync(target, cancellationToken).ConfigureAwait(false);
+
         IOutputTransport? transport = null;
         IOutputTargetAdapter? adapter = null;
         try
@@ -329,6 +332,12 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 var result = await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 if (!result.Connected)
                     throw new InvalidOperationException(result.Error ?? "The Handy connection failed.");
+                adapter.Faulted += exception =>
+                {
+                    target.LastError = exception.Message;
+                    target.Registration?.Dispose();
+                    target.Registration = null;
+                };
                 target.Registration = _engine.AddSink(adapter);
                 target.Adapter = adapter;
                 target.Sink = adapter;

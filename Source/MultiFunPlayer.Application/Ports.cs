@@ -32,6 +32,8 @@ public interface IOutputTargetAdapter : IOutputSink, IAsyncDisposable
     bool IsConnected { get; }
     string? LastError { get; }
 
+    event Action<Exception>? Faulted;
+
     ValueTask<MediaConnectionResult> ConnectAsync(CancellationToken cancellationToken = default);
 
     ValueTask DisconnectAsync(CancellationToken cancellationToken = default);

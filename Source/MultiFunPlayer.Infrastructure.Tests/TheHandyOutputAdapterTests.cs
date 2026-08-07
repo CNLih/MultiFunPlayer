@@ -15,6 +15,8 @@ public sealed class TheHandyOutputAdapterTests
         using var simulator = new HandyProtocolSimulator();
         await using var adapter = new TheHandyOutputAdapter("handy-test", simulator.Endpoint,
             "test-connection-key", "L0", simulator.Handler);
+        var fault = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        adapter.Faulted += exception => fault.TrySetResult(exception);
 
         var connected = await adapter.ConnectAsync();
         Assert.True(connected.Connected);
@@ -38,6 +40,9 @@ public sealed class TheHandyOutputAdapterTests
         adapter.Publish(new OutputFrame(TimeSpan.Zero,
             new Dictionary<string, double> { ["L0"] = 0.5 }));
         await WaitUntilAsync(() => !adapter.IsConnected);
+        Assert.Contains("simulated connection reset",
+            (await fault.Task.WaitAsync(TimeSpan.FromSeconds(2))).Message,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("simulated connection reset", adapter.LastError,
             StringComparison.OrdinalIgnoreCase);
         Assert.False(adapter.IsConnected);

@@ -76,6 +76,7 @@ export interface ApiOutputTarget {
   name: string;
   protocol: string;
   endpoint: string;
+  sourceAxis: string;
   enabled: boolean;
   autoConnect: boolean;
   connected: boolean;
@@ -87,6 +88,7 @@ export interface ApiOutputTargetRequest {
   name: string;
   protocol: string;
   endpoint: string;
+  sourceAxis: string;
   enabled: boolean;
   autoConnect: boolean;
 }

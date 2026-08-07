@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -56,6 +55,7 @@ public sealed class TheHandyOutputAdapter : IOutputTargetAdapter, IAsyncDisposab
     public string Protocol => "the-handy";
     public bool IsConnected => Volatile.Read(ref _connected) == 1;
     public string? LastError { get; private set; }
+    public event Action<Exception>? Faulted;
 
     public async ValueTask<MediaConnectionResult> ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -217,6 +217,7 @@ public sealed class TheHandyOutputAdapter : IOutputTargetAdapter, IAsyncDisposab
                 {
                     Volatile.Write(ref _connected, 0);
                     LastError = exception.Message;
+                    RaiseFaulted(exception);
                     break;
                 }
             }
@@ -258,6 +259,18 @@ public sealed class TheHandyOutputAdapter : IOutputTargetAdapter, IAsyncDisposab
     private void DrainQueue()
     {
         while (_queue.Reader.TryRead(out _)) { }
+    }
+
+    private void RaiseFaulted(Exception exception)
+    {
+        var handlers = Faulted;
+        if (handlers is null)
+            return;
+        foreach (Action<Exception> handler in handlers.GetInvocationList())
+        {
+            try { handler(exception); }
+            catch { }
+        }
     }
 
     private async ValueTask<JsonElement> GetObjectAsync(string path, TimeSpan timeout,

@@ -31,6 +31,7 @@ export interface OutputTarget {
   name: string;
   protocol: string;
   endpoint: string;
+  sourceAxis: string;
   status: Status;
   rate: number;
   lastPacket: string;
@@ -54,6 +55,7 @@ export interface OutputTargetInput {
   name: string;
   protocol: string;
   endpoint: string;
+  sourceAxis: string;
   enabled: boolean;
   autoConnect: boolean;
 }
@@ -127,9 +129,9 @@ const initialState: AppState = {
     { id: 'script-slate', name: 'Slate / Device smoke test', format: 'JSON', duration: '01:00', updated: 'Aug 02', size: '84 KB', axes: 8 },
   ],
   outputs: [
-    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', status: 'online', rate: 60, lastPacket: '320 ms ago', signal: 94 },
-    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', status: 'warning', rate: 30, lastPacket: '1.8 s ago', signal: 58 },
-    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', status: 'offline', rate: 20, lastPacket: 'Never', signal: 0 },
+    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 60, lastPacket: '320 ms ago', signal: 94 },
+    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 30, lastPacket: '1.8 s ago', signal: 58 },
+    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 20, lastPacket: 'Never', signal: 0 },
   ],
   logs: [
     { id: 1, time: '09:47:22', level: 'info', message: 'Playback resumed at 60 Hz', source: 'runtime' },
@@ -286,6 +288,7 @@ export function createMockStore() {
         name: input.name,
         protocol: input.protocol.toUpperCase(),
         endpoint: input.endpoint,
+        sourceAxis: input.sourceAxis,
         status: input.enabled && input.autoConnect ? 'online' : 'offline',
         rate: 60,
         lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
@@ -305,6 +308,7 @@ export function createMockStore() {
       output.name = input.name;
       output.protocol = input.protocol.toUpperCase();
       output.endpoint = input.endpoint;
+      output.sourceAxis = input.sourceAxis;
       output.enabled = input.enabled;
       output.autoConnect = input.autoConnect;
       output.status = input.enabled && input.autoConnect ? 'online' : 'offline';
@@ -407,6 +411,7 @@ export function createRemoteStore(client: MfpApiClient) {
     name: target.name,
     protocol: target.protocol.toUpperCase(),
     endpoint: target.endpoint,
+    sourceAxis: target.sourceAxis || 'L0',
     status: statusFromConnection(target.connected, target.lastError),
     rate: 60,
     lastPacket: target.connected ? 'Just now' : target.lastError ?? 'Never',
