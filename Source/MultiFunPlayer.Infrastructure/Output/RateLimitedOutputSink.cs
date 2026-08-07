@@ -9,8 +9,13 @@ namespace MultiFunPlayer.Infrastructure.Output;
 public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     IOutputSinkErrorDiagnostics, IDisposable, IAsyncDisposable
 {
+    // PeriodicTimer and NAS/container scheduling can arrive early. Keep the
+    // configured rate as the target while avoiding drops caused only by up to
+    // 10% scheduler jitter at the exact boundary.
+    private const double SamplingToleranceRatio = 0.10;
     private readonly IOutputSink _inner;
     private readonly TimeSpan _minimumInterval;
+    private readonly TimeSpan _samplingTolerance;
     private TimeSpan? _lastPosition;
     private long _sentFrames;
     private long _droppedFrames;
@@ -26,6 +31,8 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
             throw new ArgumentOutOfRangeException(nameof(updateRateHz), "Output rate must be between 1 and 20 Hz.");
         UpdateRateHz = updateRateHz;
         _minimumInterval = TimeSpan.FromSeconds(1d / updateRateHz);
+        _samplingTolerance = TimeSpan.FromTicks(Math.Max(1,
+            (long)(_minimumInterval.Ticks * SamplingToleranceRatio)));
     }
 
     public int UpdateRateHz { get; }
@@ -49,7 +56,7 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
         ArgumentNullException.ThrowIfNull(frame);
         if (_lastPosition is { } previous
             && frame.Position >= previous
-            && frame.Position - previous < _minimumInterval)
+            && frame.Position - previous < _minimumInterval - _samplingTolerance)
         {
             Interlocked.Increment(ref _droppedFrames);
             return;

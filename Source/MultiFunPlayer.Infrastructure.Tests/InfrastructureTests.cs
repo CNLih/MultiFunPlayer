@@ -103,6 +103,22 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public void RateLimitedSink_tolerates_small_scheduler_jitter_at_the_rate_boundary()
+    {
+        var inner = new RecordingSink();
+        using var sink = new RateLimitedOutputSink(inner, 20);
+
+        sink.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0 }));
+        // 46 ms is early by less than the documented 10% scheduler tolerance.
+        sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(46),
+            new Dictionary<string, double> { ["L0"] = 0.1 }));
+
+        Assert.Equal(2, sink.SentFrames);
+        Assert.Equal(0, sink.DroppedFrames);
+    }
+
+    [Fact]
     public void RateLimitedSink_counts_forward_failures()
     {
         var inner = new ThrowingSink();

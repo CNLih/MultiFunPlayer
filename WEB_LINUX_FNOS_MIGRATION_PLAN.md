@@ -576,7 +576,7 @@ Validated in the current Linux environment:
   short smoke interval, requests a graceful close, and verifies exit code zero.
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 38/38;
   Server tests: 40/40, including the Data Protection service wiring test.
   A Linux cross-target solution build with `EnableWindowsTargeting=true` also
   completed with 0 errors; its 58 existing nullable/analyzer warnings do not
@@ -653,6 +653,10 @@ Validated in the current Linux environment:
   restart test also uploads a script, writes device settings and a redacted
   log, protects a value, and verifies all four persistent roots through an
   independent host instance.
+- `RateLimitedOutputSink` now tolerates up to 10% scheduler jitter at the
+  configured sample boundary, preventing normal `PeriodicTimer` early ticks
+  from being reported as output loss. The boundary behavior is covered by an
+  Infrastructure test; transport failures remain counted separately.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
   Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
@@ -664,7 +668,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 37/37). Registry
+  simulator tests cover all three sources (Infrastructure 38/38). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -790,12 +794,12 @@ Validated in the current Linux environment:
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
   acceptance results, optional p95/drop budgets, and JSON evidence. The latest
-  five-minute local smoke passed with 3,763 sent, 0 failed, 0 reconnects, and
-  2,240 diagnostic dropped frames; p95 revision interval was 50.665 ms under a
-  100 ms budget, peak RSS was about 134 MiB, CPU time was 9.44 s, and shutdown
-  was graceful. CI runs a 10-second smoke and uploads the report. This does not
-  replace the required eight-hour Linux/fnOS soak or target-device failure
-  matrix.
+  five-minute local smoke passed with 5,987 sent, 8 dropped, 0 failed, and
+  0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
+  drop budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
+  RSS was about 117 MiB, CPU time was 9.27 s, and shutdown was graceful. CI
+  runs a 10-second smoke and uploads the report. This does not replace the
+  required eight-hour Linux/fnOS soak or target-device failure matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
