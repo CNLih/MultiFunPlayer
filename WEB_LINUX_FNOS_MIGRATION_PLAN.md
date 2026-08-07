@@ -902,8 +902,11 @@ Validated in the current Linux environment:
   this response compatibility rule. Failed sink writes now
   expose a transient `lastError` in the output-target contract and clear it
   after a successful write, with Infrastructure coverage for failure and
-  recovery. The error detail is an optional companion interface, preserving
-  the existing public diagnostics contract for older output plugins.
+  recovery. `CoalescedFrames` is an added init-only response property rather
+  than a new positional constructor parameter, preserving the existing .NET
+  response construction shape for older output plugins. The error detail is
+  an optional companion interface, preserving the existing public diagnostics
+  contract for older output plugins.
 - The Web entry now handles a protected server without a token explicitly:
   HTTP 401 promotes an access-token/one-time-pairing form, rejected tokens do
   not fall back to demo state, and successful pairing stores only the browser
