@@ -301,7 +301,7 @@ Tasks:
 - [x] P2-01 Create `MultiFunPlayer.Core` and move platform-neutral script/model/math code.
 - [x] P2-02 Split `ScriptViewModel` into a headless `ScriptEngine`, playback state, axis state, settings, and UI projection.
 - [x] P2-03 Introduce clock/timer abstractions only where needed for deterministic tests and shutdown.
-- [ ] P2-04 Create application interfaces for media sources, output targets, configuration, secrets, files, and serial discovery.
+- [x] P2-04 Create application interfaces for media sources, output targets, configuration, secrets, files, and serial discovery.
 - [ ] P2-05 Replace direct WPF dialog calls in shared flows with structured errors and operation results.
 - [ ] P2-06 Replace Stylet event dependencies in shared code with an application-owned event/command contract.
 - [x] P2-07 Keep the WPF host operational by adapting existing view models to the extracted services.
@@ -580,6 +580,10 @@ Validated in the current Linux environment:
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
   20/20.
+- `MultiFunPlayer.Application` now exposes platform-neutral ports for media
+  adapters, output adapters, configuration, secrets, rooted files, and serial
+  discovery. Implementations remain in Infrastructure/Server and can be
+  replaced without changing Core timing or script evaluation.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

@@ -3,5 +3,5 @@
   "slug": "headless-engine-extraction",
   "status": "completed",
   "branch": "feature/web-linux-fnos-migration",
-  "evidence": ["plain net10.0 Application", "Application tests 4/4", "headless load/play/seek"]
+  "evidence": ["plain net10.0 Application", "Application tests 4/4", "headless load/play/seek", "platform-neutral media/output/configuration/secret/file/serial ports"]
 }
