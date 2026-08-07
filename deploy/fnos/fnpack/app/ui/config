@@ -1,0 +1,14 @@
+{
+    ".url": {
+        "multifunplayer.Application": {
+            "title": "MultiFunPlayer",
+            "desc": "MultiFunPlayer Web control room",
+            "icon": "images/icon_{0}.png",
+            "type": "url",
+            "port": "8080",
+            "protocol": "http",
+            "url": "/",
+            "allUsers": false
+        }
+    }
+}

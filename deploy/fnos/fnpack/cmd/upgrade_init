@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+# Upgrade must leave TRIM_PKGVAR and all four data shares untouched.
+exit 0

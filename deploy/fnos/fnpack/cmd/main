@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+container_name=${MFP_CONTAINER_NAME:-multifunplayer}
+
+case "${1:-}" in
+    start|stop)
+        # Docker projects are started and stopped by the fnOS app manager.
+        exit 0
+        ;;
+    status)
+        if docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null | grep -qx running; then
+            exit 0
+        fi
+        exit 3
+        ;;
+    *)
+        exit 1
+        ;;
+esac

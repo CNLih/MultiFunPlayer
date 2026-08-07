@@ -478,8 +478,8 @@ Tasks:
 - [x] P6-05 Document bridge networking and an opt-in host-network mode for protocols that require it.
 - [ ] P6-06 Build and test `linux/amd64` and `linux/arm64` images.
 - [x] P6-07 Add a compose example with a fake TCP/UDP endpoint for first-run validation.
-- [ ] P6-08 Create the fnOS Docker application project with `fnpack`.
-- [ ] P6-09 Add FPK manifest, icons, Web entry, port, volume, upgrade, and uninstall behavior.
+- [x] P6-08 Create the fnOS Docker application project with `fnpack`.
+- [x] P6-09 Add FPK manifest, icons, Web entry, port, volume, upgrade, and uninstall behavior.
 - [x] P6-10 Add fnOS-specific serial mapping and permission documentation.
 - [ ] P6-11 Verify upgrades retain settings, keys, scripts, and logs according to policy.
 
@@ -574,6 +574,13 @@ Validated in the current Linux environment:
   secret fields without modifying the source document. An explicit
   `MFP_LEGACY_CONFIG_PATH` startup import writes the versioned record once under
   the config root and exposes a protected migration status endpoint.
+- The repository now contains an official-template-shaped `deploy/fnos/fnpack`
+  Docker project. Its `manifest`, `config/resource`, privilege declaration,
+  Web URL entry, icons, lifecycle scripts, and four persistent shares are
+  validated statically; the official `fnpack` 1.2.3 binary built both x86 and
+  ARM FPK archives locally. The FPK build is source/image evidence only; clean
+  fnOS installation, Web launch, upgrade, rollback, and uninstall remain Tier 4
+  gates.
 - The Server exposes a versioned read-only adapter capability inventory and
   explicitly labels each transport by implementation status. Browser
   WebSocket binary/invalid text frames are ignored without affecting the
@@ -746,8 +753,8 @@ Still open and intentionally not advertised as complete:
   key root is covered by a negative decryption test.
 - Full UI settings forms and the broader browser/device matrix. The focused
   Playwright harness and desktop/mobile screenshots are now validated.
-- Docker Buildx execution, fnpack/official fnOS schema validation, physical
-  amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.
+- Docker Buildx execution, physical amd64/arm64 NAS checks, serial hardware,
+  clean fnOS installation/upgrade/rollback, and long-duration soak evidence.
 - Docs dependency remediation and Trivy or an equivalent image scan remain
   release-environment work. The repository now has dependency-level SBOM
   generation, but the static packaging contract is evidence of structure, not

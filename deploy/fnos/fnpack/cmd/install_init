@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+# fnOS creates the four data shares declared in config/resource.
+exit 0

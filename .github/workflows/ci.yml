@@ -226,11 +226,29 @@ jobs:
       uses: actions/checkout@v4
     - name: Validate container and fnOS contracts
       run: ./deploy/validate-packaging.sh --json > packaging-contract.json
+    - name: Download pinned official fnpack
+      env:
+        FNPACK_URL: https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+        FNPACK_SHA256: 54b97fa7b70968c4d05c79840f5daeff508957d0bb2062fdb0376d00d9615c93
+      run: |
+        curl --fail --location --silent --show-error "$FNPACK_URL" --output fnpack
+        echo "$FNPACK_SHA256  fnpack" | sha256sum --check
+        chmod 0755 fnpack
+    - name: Build fnOS x86 FPK
+      run: FNPACK="$PWD/fnpack" ./deploy/fnos/build-fpk.sh --platform x86 --output-dir artifacts/fnos/x86
+    - name: Build fnOS ARM FPK
+      run: FNPACK="$PWD/fnpack" ./deploy/fnos/build-fpk.sh --platform arm --output-dir artifacts/fnos/arm
+    - name: Verify fnOS FPK contents
+      run: |
+        ./deploy/validate-fpk.sh artifacts/fnos/x86/multifunplayer.fpk x86
+        ./deploy/validate-fpk.sh artifacts/fnos/arm/multifunplayer.fpk arm
     - name: Upload packaging evidence
       uses: actions/upload-artifact@v4
       with:
         name: packaging-contract
-        path: packaging-contract.json
+        path: |
+          packaging-contract.json
+          artifacts/fnos
 
   container:
     runs-on: ubuntu-latest

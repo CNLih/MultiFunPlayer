@@ -1,0 +1,12 @@
+appname               = multifunplayer
+version               = 0.1.0
+display_name          = MultiFunPlayer
+desc                  = Browser-controlled MultiFunPlayer server for fnOS.
+platform              = x86
+source                = thirdparty
+maintainer            = MultiFunPlayer contributors
+distributor           = MultiFunPlayer contributors
+desktop_uidir         = ui
+desktop_applaunchname = multifunplayer.Application
+service_port          = 8080
+checkport             = true

@@ -31,12 +31,158 @@ class Validator:
         self.check(f"file:{relative}", True, "present")
         return path.read_text(encoding="utf-8")
 
+    def binary_file(self, relative: str) -> bytes | None:
+        path = self.root / relative
+        if not path.is_file():
+            self.check(f"file:{relative}", False, "required file is missing")
+            return None
+        self.check(f"file:{relative}", True, "present")
+        return path.read_bytes()
+
+    def directory(self, relative: str) -> Path | None:
+        path = self.root / relative
+        if not path.is_dir():
+            self.check(f"directory:{relative}", False, "required directory is missing")
+            return None
+        self.check(f"directory:{relative}", True, "present")
+        return path
+
     def run(self) -> int:
         dockerfile = self.file("Dockerfile")
         compose = self.file("deploy/docker/compose.yaml")
         ignore = self.file(".dockerignore")
         fnos_manifest = self.file("deploy/fnos/manifest")
         fnos_readme = self.file("deploy/fnos/README.md")
+        fnpack_manifest = self.file("deploy/fnos/fnpack/manifest")
+        fnpack_compose = self.file("deploy/fnos/fnpack/app/docker/docker-compose.yaml")
+        fnpack_ui = self.file("deploy/fnos/fnpack/app/ui/config")
+        fnpack_privilege = self.file("deploy/fnos/fnpack/config/privilege")
+        fnpack_resource = self.file("deploy/fnos/fnpack/config/resource")
+        fnpack_build = self.file("deploy/fnos/build-fpk.sh")
+        fnpack_validate = self.file("deploy/validate-fpk.sh")
+
+        for relative in (
+            "deploy/fnos/fnpack/app",
+            "deploy/fnos/fnpack/app/docker",
+            "deploy/fnos/fnpack/app/ui",
+            "deploy/fnos/fnpack/app/ui/images",
+            "deploy/fnos/fnpack/cmd",
+            "deploy/fnos/fnpack/config",
+            "deploy/fnos/fnpack/wizard",
+        ):
+            self.directory(relative)
+
+        for relative in (
+            "deploy/fnos/fnpack/ICON.PNG",
+            "deploy/fnos/fnpack/ICON_256.PNG",
+            "deploy/fnos/fnpack/app/ui/images/icon_64.png",
+            "deploy/fnos/fnpack/app/ui/images/icon_256.png",
+        ):
+            image = self.binary_file(relative)
+            self.check(f"fnpack:png:{relative}", image is not None and image.startswith(b"\x89PNG\r\n\x1a\n"),
+                       "PNG icon is present")
+
+        for name in (
+            "main",
+            "install_init",
+            "install_callback",
+            "upgrade_init",
+            "upgrade_callback",
+            "uninstall_init",
+            "uninstall_callback",
+            "config_init",
+            "config_callback",
+        ):
+            relative = f"deploy/fnos/fnpack/cmd/{name}"
+            path = self.root / relative
+            self.check(f"fnpack:cmd:{name}", path.is_file() and bool(path.stat().st_mode & 0o111),
+                       "lifecycle script is present and executable")
+            if name.startswith("uninstall_") and path.is_file():
+                uninstall_script = path.read_text(encoding="utf-8")
+                self.check(f"fnpack:uninstall-preserves-data:{name}", not re.search(r"rm\s+-r[fF]", uninstall_script),
+                           "uninstall lifecycle script does not recursively remove user data")
+
+        if fnpack_manifest is not None:
+            def manifest_value(key: str) -> str:
+                match = re.search(rf"(?m)^{re.escape(key)}\s*=\s*(.+?)\s*$", fnpack_manifest)
+                return match.group(1).strip() if match else ""
+
+            self.check("fnpack:manifest-required", all(manifest_value(key) for key in (
+                "appname", "version", "display_name", "service_port", "source",
+            )), "manifest contains the required fnpack metadata")
+            self.check("fnpack:manifest-no-placeholders", "{" not in fnpack_manifest,
+                       "manifest has no unexpanded template placeholders")
+            self.check("fnpack:manifest-appname", manifest_value("appname") == "multifunplayer",
+                       "manifest appname matches the package directory")
+            self.check("fnpack:manifest-port", manifest_value("service_port") == "8080",
+                       "manifest service_port is 8080")
+            self.check("fnpack:manifest-ui", manifest_value("desktop_uidir") == "ui",
+                       "manifest points to the Web entry directory")
+
+        if fnpack_compose is not None:
+            for token in (
+                "${TRIM_SERVICE_PORT",
+                "${TRIM_PKGVAR",
+                "${MFP_IMAGE",
+                ":8080",
+                "/config",
+                "/keys",
+                "/scripts",
+                "/logs",
+            ):
+                self.check(f"fnpack:compose:{token}", token in fnpack_compose,
+                           f"fnOS Compose contract contains {token}")
+            self.check("fnpack:compose:no-privileged", "privileged:" not in fnpack_compose,
+                       "fnOS Compose project does not request privileged mode")
+            self.check("fnpack:compose:healthcheck", "/health/live" in fnpack_compose,
+                       "fnOS Compose project has a liveness health check")
+            self.check("fnpack:compose:volume-count", fnpack_compose.count("TRIM_PKGVAR") == 4,
+                       "exactly four persistent roots are mounted")
+
+        if fnpack_ui is not None:
+            try:
+                ui_config = json.loads(fnpack_ui)
+            except json.JSONDecodeError as exc:
+                self.check("fnpack:ui:json", False, f"invalid JSON: {exc}")
+                ui_config = None
+            entry = ui_config.get(".url", {}).get("multifunplayer.Application", {}) if isinstance(ui_config, dict) else {}
+            self.check("fnpack:ui:entry", isinstance(entry, dict) and entry.get("type") == "url",
+                       "Web entry is declared as a URL")
+            self.check("fnpack:ui:port", isinstance(entry, dict) and entry.get("port") == "8080",
+                       "Web entry targets the container port")
+            self.check("fnpack:ui:path", isinstance(entry, dict) and entry.get("url") == "/",
+                       "Web entry opens the SPA root")
+
+        for relative in ("deploy/fnos/fnpack/config/privilege", "deploy/fnos/fnpack/config/resource"):
+            content = fnpack_privilege if relative.endswith("privilege") else fnpack_resource
+            try:
+                parsed = json.loads(content) if content is not None else None
+                self.check(f"fnpack:json:{relative}", isinstance(parsed, dict), "valid JSON object")
+            except json.JSONDecodeError as exc:
+                self.check(f"fnpack:json:{relative}", False, f"invalid JSON: {exc}")
+
+        if fnpack_resource is not None:
+            try:
+                resource = json.loads(fnpack_resource)
+            except json.JSONDecodeError:
+                resource = {}
+            shares = resource.get("data-share", {}).get("shares", []) if isinstance(resource, dict) else []
+            share_names = {share.get("name") for share in shares if isinstance(share, dict)}
+            self.check("fnpack:resource:shares", share_names == {"config", "keys", "scripts", "logs"},
+                       "resource declares all four persistent data shares")
+            projects = resource.get("docker-project", {}).get("projects", []) if isinstance(resource, dict) else []
+            self.check("fnpack:resource:docker", any(
+                isinstance(project, dict) and project.get("name") == "multifunplayer" and project.get("path") == "docker"
+                for project in projects
+            ), "resource points fnOS to the Docker project")
+
+        if fnpack_build is not None:
+            self.check("fnpack:build-wrapper", "build --directory" in fnpack_build and "--platform" in fnpack_build,
+                       "repository wrapper exposes explicit architecture builds")
+
+        if fnpack_validate is not None:
+            self.check("fnpack:validation-wrapper", "app.tgz" in fnpack_validate and "service_port" in fnpack_validate,
+                       "repository wrapper validates the packaged app and manifest")
 
         if dockerfile is not None:
             self.check("docker:multi-stage", dockerfile.count("FROM ") >= 3,
@@ -121,8 +267,8 @@ class Validator:
                            "upgrade contract preserves persistent volumes")
 
         if fnos_readme is not None:
-            self.check("fnos:external-schema-warning", "does not claim to be an official" in fnos_readme,
-                       "README does not overclaim FPK schema validation")
+            self.check("fnos:external-schema-warning", "does not replace installation" in fnos_readme,
+                       "README keeps real fnOS installation validation as an external gate")
 
         failures = sum(result["status"] == "fail" for result in self.checks)
         return 1 if failures else 0

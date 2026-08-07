@@ -1,0 +1,41 @@
+{
+    "port-config": {
+        "protocol-file": "MultiFunPlayer.sc"
+    },
+    "data-share": {
+        "shares": [
+            {
+                "name": "config",
+                "permission": {
+                    "rw": ["docker-multifunplayer"]
+                }
+            },
+            {
+                "name": "keys",
+                "permission": {
+                    "rw": ["docker-multifunplayer"]
+                }
+            },
+            {
+                "name": "scripts",
+                "permission": {
+                    "rw": ["docker-multifunplayer"]
+                }
+            },
+            {
+                "name": "logs",
+                "permission": {
+                    "rw": ["docker-multifunplayer"]
+                }
+            }
+        ]
+    },
+    "docker-project": {
+        "projects": [
+            {
+                "name": "multifunplayer",
+                "path": "docker"
+            }
+        ]
+    }
+}

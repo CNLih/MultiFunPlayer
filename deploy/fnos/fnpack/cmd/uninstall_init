@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+# Do not remove user data during uninstall; fnOS owns the data-share lifecycle.
+exit 0

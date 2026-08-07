@@ -1,15 +1,32 @@
-# fnOS package scaffold
+# fnOS package project
 
-`manifest` describes the container contract expected by the fnOS Docker app
-manager: HTTP port `8080`, persistent configuration/key/script/log volumes, and
-a required bootstrap token. It deliberately does not claim to be an official
-`.fpk` package because fnOS package schemas and `fnpack` versions vary by NAS
-firmware.
+`fnpack/` is an official-template-shaped Docker application project for the
+MultiFunPlayer Web server. It contains the manifest, Docker Compose project,
+Web entry, icons, lifecycle scripts, resource/privilege declarations, and a
+non-interactive wizard placeholder required by current `fnpack` validation.
 
-Before publishing, validate the manifest with the target's official tooling,
-build the image for the target architecture, and test upgrade preservation of
-all four volumes. USB serial access must be an explicit device permission and
-is not enabled by default.
+The older JSON `manifest` beside this file remains a repository-owned contract
+for Docker/fnOS static checks. It is not an FPK manifest and is intentionally
+kept separate from `fnpack/manifest`.
+
+Install the official `fnpack` binary from the fnOS developer portal, then build
+an architecture-specific package:
+
+```sh
+FNPACK=/path/to/fnpack ./deploy/fnos/build-fpk.sh --platform x86
+FNPACK=/path/to/fnpack ./deploy/fnos/build-fpk.sh --platform arm
+```
+
+The wrapper maps fnOS `x86`/`arm` package labels to the Docker image's
+`linux/amd64`/`linux/arm64` builds. It refuses to overwrite an existing FPK
+unless `--force` is supplied. The Compose project uses fnOS's
+`TRIM_SERVICE_PORT` and `TRIM_PKGVAR` variables and preserves separate
+`config`, `keys`, `scripts`, and `logs` shares across upgrade and uninstall.
+
+The image in the Compose project defaults to `multifunplayer:local` so local
+development is deterministic. A release must set `MFP_IMAGE` to the published
+multi-architecture image before installing the FPK. USB serial access remains
+an explicit device permission and is not enabled by default.
 
 Run the repository-owned static checks before using `fnpack`:
 
@@ -17,7 +34,14 @@ Run the repository-owned static checks before using `fnpack`:
 ./deploy/validate-packaging.sh
 ```
 
-The check confirms the documented port, volume, health, secret, and upgrade
-invariants. It deliberately cannot certify an FPK: field names, Web-entry
-metadata, signing, uninstall hooks, and architecture support must be checked
-against the fnOS firmware and `fnpack` version used for release.
+This check confirms both the portable container contract and the canonical
+fnpack project structure. Running `fnpack build` validates the package with the
+installed official tool, but does not replace installation, upgrade, rollback,
+uninstall, serial, or ARM tests on a real fnOS device.
+
+After building, verify the archive contents before transferring it to fnOS:
+
+```sh
+./deploy/validate-fpk.sh artifacts/fnos/x86/multifunplayer.fpk x86
+./deploy/validate-fpk.sh artifacts/fnos/arm/multifunplayer.fpk arm
+```

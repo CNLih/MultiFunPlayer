@@ -1,0 +1,29 @@
+services:
+  multifunplayer:
+    image: ${MFP_IMAGE:-multifunplayer:local}
+    container_name: multifunplayer
+    ports:
+      - "${TRIM_SERVICE_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_HTTP_PORTS: "8080"
+      MFP_AUTH_TOKEN: ${MFP_AUTH_TOKEN:-}
+      MFP_PAIRING_TOKEN: ${MFP_PAIRING_TOKEN:-}
+      MFP_SCRIPTS_PATH: /scripts
+      MFP_CONFIG_PATH: /config
+      MFP_KEYS_PATH: /keys
+      MFP_LOGS_PATH: /logs
+      MFP_TICK_HZ: ${MFP_TICK_HZ:-20}
+    volumes:
+      - "${TRIM_PKGVAR:?}/config:/config"
+      - "${TRIM_PKGVAR:?}/keys:/keys"
+      - "${TRIM_PKGVAR:?}/scripts:/scripts"
+      - "${TRIM_PKGVAR:?}/logs:/logs"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
