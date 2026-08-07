@@ -47,6 +47,15 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertNotIn("secret-value", result["outputTail"])
         self.assertIn("<redacted>", result["outputTail"])
 
+    def test_non_utf8_command_output_is_replaced_and_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            check = MODULE.Check("bytes", "contract", (sys.executable, "-c",
+                "import sys; sys.stdout.buffer.write(b'prefix\\xff\\xfe')"), Path(directory))
+            result = MODULE.run_check(check, 5)
+        self.assertEqual("pass", result["status"])
+        self.assertIn("prefix", result["outputTail"])
+        self.assertIn("�", result["outputTail"])
+
     def test_summary_counts_statuses(self):
         summary = MODULE.summarize([
             {"status": "pass"}, {"status": "pending"}, {"status": "fail"},
