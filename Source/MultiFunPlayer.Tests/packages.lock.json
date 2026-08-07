@@ -380,6 +380,7 @@
           "MaterialDesignThemes.MahApps": "[0.2.6, )",
           "Microsoft.CodeAnalysis.CSharp": "[4.14.0, )",
           "Microsoft.CodeAnalysis.Common": "[4.14.0, )",
+          "MultiFunPlayer.Application": "[1.0.0, )",
           "MultiFunPlayer.Core": "[1.0.0, )",
           "NETStandard.Library": "[2.0.3, )",
           "NLog": "[5.5.1, )",
@@ -389,6 +390,12 @@
           "System.IO.Ports": "[9.0.18, )",
           "System.Management": "[9.0.18, )",
           "Vortice.XInput": "[3.8.3, )"
+        }
+      },
+      "multifunplayer.application": {
+        "type": "Project",
+        "dependencies": {
+          "MultiFunPlayer.Core": "[1.0.0, )"
         }
       },
       "multifunplayer.core": {

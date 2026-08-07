@@ -282,6 +282,12 @@
         "resolved": "9.0.18",
         "contentHash": "ndFG9mJIjKsyNZSpruO4beYNXEC+B0pxN8RrcbTCBzThakwIrQwKw7jLWf4b4U5DJUs/jGQUwJ36COMgVPafsg=="
       },
+      "multifunplayer.application": {
+        "type": "Project",
+        "dependencies": {
+          "MultiFunPlayer.Core": "[1.0.0, )"
+        }
+      },
       "multifunplayer.core": {
         "type": "Project",
         "dependencies": {
