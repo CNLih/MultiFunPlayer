@@ -1191,6 +1191,20 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/scripts", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}", out _));
+        var outputList = document.GetProperty("paths").GetProperty("/api/v1/output-targets").GetProperty("get");
+        Assert.Equal("#/components/schemas/OutputTargetList", outputList
+            .GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString());
+        var outputSchema = document.GetProperty("components").GetProperty("schemas")
+            .GetProperty("OutputTarget");
+        var outputListSchema = document.GetProperty("components").GetProperty("schemas")
+            .GetProperty("OutputTargetList");
+        Assert.Equal("array", outputListSchema.GetProperty("type").GetString());
+        Assert.Equal("#/components/schemas/OutputTarget", outputListSchema
+            .GetProperty("items").GetProperty("$ref").GetString());
+        Assert.True(outputSchema.GetProperty("properties").TryGetProperty("coalescedFrames", out _));
+        Assert.True(outputSchema.GetProperty("properties").TryGetProperty("droppedFrames", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/play", out _));

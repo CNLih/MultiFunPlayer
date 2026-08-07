@@ -525,7 +525,11 @@ internal static class OpenApiDocument
             ["/api/v1/adapters"] = new { get = Operation("Adapter and integration capabilities") },
             ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
             ["/api/v1/configuration/migration"] = new { get = Operation("Legacy configuration migration status") },
-            ["/api/v1/output-targets"] = new { get = Operation("List output targets"), post = Operation("Create output target") },
+            ["/api/v1/output-targets"] = new
+            {
+                get = Operation("List output targets", "#/components/schemas/OutputTargetList"),
+                post = Operation("Create output target")
+            },
             ["/api/v1/output-targets/{id}"] = new { put = Operation("Update output target"), delete = Operation("Delete output target") },
             ["/api/v1/output-targets/{id}/connect"] = new { post = Operation("Connect output target") },
             ["/api/v1/output-targets/{id}/disconnect"] = new { post = Operation("Disconnect output target") },
@@ -556,15 +560,101 @@ internal static class OpenApiDocument
             {
                 bearerAuth = new { type = "http", scheme = "bearer" },
                 tokenHeader = new { type = "apiKey", name = "X-MFP-Token", @in = "header" }
+            },
+            schemas = new Dictionary<string, object>
+            {
+                ["OutputTargetList"] = new
+                {
+                    type = "array",
+                    items = new Dictionary<string, string>
+                    {
+                        ["$ref"] = "#/components/schemas/OutputTarget"
+                    }
+                },
+                ["OutputTarget"] = new
+                {
+                    type = "object",
+                    required = new[]
+                    {
+                        "id", "name", "protocol", "endpoint", "sourceAxis",
+                        "updateRateHz", "enabled", "autoConnect", "connected",
+                        "sentFrames", "coalescedFrames", "droppedFrames",
+                        "failedFrames", "reconnects"
+                    },
+                    properties = new Dictionary<string, object>
+                    {
+                        ["id"] = new { type = "string" },
+                        ["name"] = new { type = "string" },
+                        ["protocol"] = new { type = "string" },
+                        ["endpoint"] = new { type = "string" },
+                        ["sourceAxis"] = new { type = "string" },
+                        ["updateRateHz"] = new { type = "integer", minimum = 1, maximum = 20 },
+                        ["enabled"] = new { type = "boolean" },
+                        ["autoConnect"] = new { type = "boolean" },
+                        ["connected"] = new { type = "boolean" },
+                        ["lastError"] = new { type = "string", nullable = true },
+                        ["sentFrames"] = new { type = "integer", format = "int64", minimum = 0 },
+                        ["coalescedFrames"] = new { type = "integer", format = "int64", minimum = 0 },
+                        ["droppedFrames"] = new { type = "integer", format = "int64", minimum = 0 },
+                        ["failedFrames"] = new { type = "integer", format = "int64", minimum = 0 },
+                        ["reconnects"] = new { type = "integer", format = "int64", minimum = 0 },
+                        ["lastSentAtUtc"] = new { type = "string", format = "date-time", nullable = true },
+                        ["deviceName"] = new { type = "string", nullable = true },
+                        ["deviceIndex"] = new { type = "integer", format = "int32", nullable = true },
+                        ["actuatorType"] = new { type = "string" },
+                        ["actuatorIndex"] = new { type = "integer", format = "int32" },
+                        ["durationMilliseconds"] = new { type = "integer", format = "int32", minimum = 1 }
+                    },
+                    example = new
+                    {
+                        id = "studio-bridge",
+                        name = "Studio bridge",
+                        protocol = "tcp",
+                        endpoint = "127.0.0.1:8123",
+                        sourceAxis = "L0",
+                        updateRateHz = 20,
+                        enabled = true,
+                        autoConnect = true,
+                        connected = true,
+                        lastError = (string?)null,
+                        sentFrames = 1200L,
+                        coalescedFrames = 12L,
+                        droppedFrames = 12L,
+                        failedFrames = 0L,
+                        reconnects = 1L,
+                        lastSentAtUtc = "2026-08-08T12:00:00Z",
+                        deviceName = (string?)null,
+                        deviceIndex = (uint?)null,
+                        actuatorType = "Vibrate",
+                        actuatorIndex = 0U,
+                        durationMilliseconds = 50
+                    }
+                }
             }
         }
     };
 
-    private static object Operation(string summary) => new
+    private static object Operation(string summary, string? responseReference = null)
     {
-        summary,
-        responses = new Dictionary<string, object> { ["200"] = new { description = "Success" } }
-    };
+        object response = responseReference is null
+            ? new { description = "Success" }
+            : new
+            {
+                description = "Success",
+                content = new Dictionary<string, object>
+                {
+                    ["application/json"] = new
+                    {
+                        schema = new Dictionary<string, string> { ["$ref"] = responseReference }
+                    }
+                }
+            };
+        return new
+        {
+            summary,
+            responses = new Dictionary<string, object> { ["200"] = response }
+        };
+    }
 }
 
 public partial class Program { }
