@@ -976,13 +976,13 @@ Validated in the current Linux environment:
   a non-parallel collection so the integration evidence is deterministic.
 - `tools/run-validation-matrix.py` now executes the reproducible local unit,
   integration, contract, Web/browser, boundary, packaging, and release-template
-  checks and writes a redacted JSON report. The 2026-08-08 Linux rerun with
-  user-local browser host dependencies passed 23 checks with 0 failures and
-  covered .NET/Web/Docs high-severity dependency audits, Playwright
-  desktop/mobile viewports, and a 10-second Linux soak smoke with explicit p95
-  and coalescing budgets; the current report is
-  `/tmp/mfp-validation-2026-08-08-async-output.json`; four target-environment gates
-  remain pending. The
+  checks and writes a redacted JSON report. The latest 2026-08-08 Linux rerun
+  with user-local Chromium host libraries on `LD_LIBRARY_PATH` passed 23
+  checks with 0 failures and covered .NET/Web/Docs high-severity dependency
+  audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
+  soak smoke with explicit p95 and coalescing budgets; the report is
+  `/tmp/mfp-validation-current.json`; four target-environment gates remain
+  pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
