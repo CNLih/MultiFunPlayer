@@ -885,6 +885,10 @@ Still open and intentionally not advertised as complete:
   work. The repository has dependency and file-level SBOM generation, but the
   static packaging contract is evidence of structure, not a substitute for
   those scans.
+- The current local dependency audit reports no vulnerable packages across all
+  .NET projects and zero NPM vulnerabilities in both Web and Docs lockfiles.
+  This is repository dependency evidence only; exact published runtime image
+  scanning and artifact review remain external P7-06 gates.
 
 These are external or higher-scope gates rather than reasons to roll back the
 portable foundation. The acceptance checklist below remains unchecked until
