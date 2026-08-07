@@ -1,10 +1,14 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -663,6 +667,154 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal(OutputTargetOperationStatus.Success,
             (await restarted.DeleteAsync("file-1")).Status);
         Assert.Empty(restarted.List());
+    }
+
+    [Fact]
+    public async Task Output_target_registry_routes_tcp_udp_and_websocket_frames()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var registry = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await registry.StartAsync(CancellationToken.None);
+
+        using var tcpListener = new TcpListener(IPAddress.Loopback, 0);
+        tcpListener.Start();
+        var tcpPort = ((IPEndPoint)tcpListener.LocalEndpoint).Port;
+        var tcpAccept = tcpListener.AcceptTcpClientAsync();
+
+        using var udpReceiver = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var udpPort = ((IPEndPoint)udpReceiver.Client.LocalEndPoint!).Port;
+
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var webSocketPort = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var webSocketAccepted = new TaskCompletionSource<WebSocket>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var webSocketFrame = new TaskCompletionSource<string>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, webSocketPort));
+        var webApp = builder.Build();
+        webApp.UseWebSockets();
+        webApp.Run(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            var socket = await context.WebSockets.AcceptWebSocketAsync();
+            webSocketAccepted.TrySetResult(socket);
+            var buffer = new byte[4096];
+            try
+            {
+                while (socket.State == WebSocketState.Open
+                    && !context.RequestAborted.IsCancellationRequested)
+                {
+                    var result = await socket.ReceiveAsync(buffer, context.RequestAborted);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        break;
+                    if (result.MessageType == WebSocketMessageType.Text && result.EndOfMessage)
+                    {
+                        var payload = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        if (payload.Contains("L0500", StringComparison.Ordinal))
+                            webSocketFrame.TrySetResult(payload);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Kestrel cancels the request when the simulator is stopped.
+            }
+            finally
+            {
+                socket.Dispose();
+            }
+        });
+        await webApp.StartAsync();
+
+        try
+        {
+            foreach (var definition in new[]
+            {
+                new OutputTargetDefinition("tcp-loopback", "TCP loopback", "tcp",
+                    $"127.0.0.1:{tcpPort}", Enabled: true, AutoConnect: false),
+                new OutputTargetDefinition("udp-loopback", "UDP loopback", "udp",
+                    $"127.0.0.1:{udpPort}", Enabled: true, AutoConnect: false),
+                new OutputTargetDefinition("websocket-loopback", "WebSocket loopback", "websocket",
+                    $"ws://127.0.0.1:{webSocketPort}/output", Enabled: true, AutoConnect: false)
+            })
+            {
+                var created = await registry.CreateAsync(definition);
+                Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
+                var connected = await registry.ConnectAsync(definition.Id);
+                Assert.Equal(OutputTargetOperationStatus.Success, connected.Status);
+                Assert.True(connected.Target!.Connected);
+            }
+
+            var acceptedWebSocket = await webSocketAccepted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var parsed = FunscriptReader.Default.FromText("network.funscript", "test",
+                "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}");
+            Assert.True(parsed.IsSuccess);
+            engine.Load(parsed.Resource, "L0");
+            engine.Play();
+            engine.Tick(TimeSpan.FromMilliseconds(500));
+
+            using var acceptedTcp = await tcpAccept.WaitAsync(TimeSpan.FromSeconds(2));
+            var tcpBuffer = new byte[256];
+            var tcpText = new StringBuilder();
+            for (var attempt = 0; attempt < 8
+                && !tcpText.ToString().Contains("L0500", StringComparison.Ordinal); attempt++)
+            {
+                var tcpCount = await acceptedTcp.GetStream().ReadAsync(tcpBuffer)
+                    .AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+                if (tcpCount == 0)
+                    break;
+                tcpText.Append(Encoding.UTF8.GetString(tcpBuffer, 0, tcpCount));
+            }
+
+            var udpText = string.Empty;
+            for (var attempt = 0; attempt < 8
+                && !udpText.Contains("L0500", StringComparison.Ordinal); attempt++)
+            {
+                var udpPayload = await udpReceiver.ReceiveAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(2));
+                udpText = Encoding.UTF8.GetString(udpPayload.Buffer);
+            }
+            var webSocketPayload = await webSocketFrame.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Contains("L0500", tcpText.ToString(), StringComparison.Ordinal);
+            Assert.Contains("L0500", udpText, StringComparison.Ordinal);
+            Assert.Contains("L0500", webSocketPayload, StringComparison.Ordinal);
+            foreach (var target in registry.List())
+            {
+                Assert.True(target.Connected);
+                Assert.True(target.SentFrames >= 1);
+                Assert.Equal(0, target.FailedFrames);
+            }
+
+            foreach (var id in new[] { "tcp-loopback", "udp-loopback", "websocket-loopback" })
+            {
+                var disconnected = await registry.DisconnectAsync(id);
+                Assert.Equal(OutputTargetOperationStatus.Success, disconnected.Status);
+                Assert.False(disconnected.Target!.Connected);
+            }
+        }
+        finally
+        {
+            await registry.StopAsync(CancellationToken.None);
+            await webApp.StopAsync();
+            await webApp.DisposeAsync();
+        }
     }
 
     [Fact]

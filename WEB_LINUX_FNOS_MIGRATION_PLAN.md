@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 35/35;
-  Server tests: 32/32.
+  Server tests: 33/33.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings.
@@ -600,7 +600,9 @@ Validated in the current Linux environment:
   target state. Simulator tests cover handshake, malformed/timeout responses,
   caller cancellation, send failure, explicit reconnect, and rate-limit/seek
   behavior; TCP and WebSocket loopback tests close/reopen the peer to simulate
-  a player restart before sending the next frame.
+  a player restart before sending the next frame. The Server registry also has
+  a TCP/UDP/WebSocket loopback test that creates, connects, sends a multi-axis
+  engine frame, verifies diagnostics, and disconnects all three targets.
 - Linux serial discovery is verified against stable `/dev/serial/by-id`
   identities and re-enumerates cleanly after a device link is removed; actual
   serial open/write permissions and hardware reconnect behavior remain
@@ -610,7 +612,8 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  32/32, including The Handy registry integration, device-axis persistence,
+  33/33, including The Handy and TCP/UDP/WebSocket registry integrations,
+  device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
   explicit key-root reuse across independent host instances, and rejection of
   old protected data after the explicit key root is removed. A dedicated host

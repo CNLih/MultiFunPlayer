@@ -26,9 +26,21 @@ public sealed class WebSocketOutputTransport : BoundedOutputTransport
 
     protected override async Task DisconnectCoreAsync(CancellationToken cancellationToken)
     {
-        if (_socket is { State: WebSocketState.Open })
-            await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "shutdown", cancellationToken).ConfigureAwait(false);
-        _socket?.Dispose();
-        _socket = null;
+        try
+        {
+            if (_socket is { State: WebSocketState.Open })
+                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "shutdown", cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        catch (WebSocketException)
+        {
+            // A peer restart may have already torn down the connection. Cleanup
+            // must remain idempotent and should not fail host shutdown.
+        }
+        finally
+        {
+            _socket?.Dispose();
+            _socket = null;
+        }
     }
 }
