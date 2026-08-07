@@ -42,10 +42,18 @@ def nuget_license(root: Path, package_id: str, version: str) -> str | None:
         document = ET.parse(nuspecs[0])
     except (ET.ParseError, OSError):
         return None
+    license_url: str | None = None
     for element in document.iter():
-        if element.tag.rsplit("}", 1)[-1] == "license":
-            return (element.text or "").strip() or None
-    return None
+        tag = element.tag.rsplit("}", 1)[-1]
+        value = (element.text or "").strip()
+        if tag == "license" and value:
+            return value
+        if tag == "licenseUrl" and value:
+            license_url = value
+    # Older NuGet packages use licenseUrl instead of the SPDX-aware license
+    # element. Preserve that authoritative URL instead of silently reporting
+    # the component as having no license metadata.
+    return license_url
 
 
 def add_component(components: dict[str, dict], name: str, version: str,

@@ -39,6 +39,7 @@ jobs:
           source:
             - 'Source/**'
             - 'MultiFunPlayer.sln'
+            - 'tools/**'
             - '.github/workflows/**'
           docs:
             - 'Docs/**'
@@ -170,6 +171,9 @@ jobs:
     - name: Install Web dependencies
       run: npm ci --no-audit --no-fund
       working-directory: ./Source/MultiFunPlayer.Web
+    - name: Install Playwright browser
+      run: npx playwright install --with-deps chromium
+      working-directory: ./Source/MultiFunPlayer.Web
     - name: Check Web contracts
       run: |
         npm run typecheck
@@ -177,13 +181,27 @@ jobs:
         npm run build
         npm audit --omit=dev --audit-level=high
       working-directory: ./Source/MultiFunPlayer.Web
+    - name: Run Web browser smoke and screenshots
+      run: npm run test:e2e
+      working-directory: ./Source/MultiFunPlayer.Web
+    - name: Upload Web browser evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-playwright-evidence
+        path: |
+          Source/MultiFunPlayer.Web/playwright-report
+          Source/MultiFunPlayer.Web/test-results
+        if-no-files-found: ignore
     - name: Generate dependency SBOM
       run: python tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json
+    - name: Generate license inventory
+      run: python tools/generate-license-report.py --input artifacts/sbom/multifunplayer.cyclonedx.json --output artifacts/sbom/THIRD_PARTY_LICENSES.md
     - name: Upload dependency SBOM
       uses: actions/upload-artifact@v4
       with:
         name: dependency-sbom
-        path: artifacts/sbom/multifunplayer.cyclonedx.json
+        path: artifacts/sbom
 
   packaging:
     runs-on: ubuntu-latest

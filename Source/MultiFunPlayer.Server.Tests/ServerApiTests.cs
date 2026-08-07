@@ -726,8 +726,21 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         public void Dispose()
         {
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
+            for (var attempt = 0; attempt < 8 && Directory.Exists(Path); attempt++)
+            {
+                try
+                {
+                    Directory.Delete(Path, recursive: true);
+                }
+                catch (IOException) when (attempt < 7)
+                {
+                    Thread.Sleep(25);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 7)
+                {
+                    Thread.Sleep(25);
+                }
+            }
         }
     }
 

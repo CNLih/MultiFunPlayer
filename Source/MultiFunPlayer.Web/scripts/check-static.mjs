@@ -11,6 +11,8 @@ const required = [
   'src/store.ts',
   'src/api.ts',
   'src/styles.css',
+  'playwright.config.ts',
+  'tests/control-room.spec.ts',
   'public/manifest.webmanifest',
   'public/sw.js',
   'static/index.html',

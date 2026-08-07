@@ -653,9 +653,16 @@ Validated in the current Linux environment:
   candidate.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles; the
-  current workspace contains 1,392 deduplicated components and CI uploads the
-  artifact. The exact runtime image/FPK SBOM and license review remain open
-  until those artifacts can be built in their target environments.
+  current workspace contains 1,396 deduplicated components and CI uploads the
+  artifact together with a deterministic `THIRD_PARTY_LICENSES.md` inventory.
+  Three legacy components currently have no license declaration and are listed
+  for release-owner review. The exact runtime image/FPK SBOM and license review
+  remain open until those artifacts can be built in their target environments.
+- The Web project now includes a pinned Playwright 1.53.2 configuration with
+  desktop and mobile Chromium journeys, viewport overflow assertions, and CI
+  screenshot artifacts. The four tests enumerate locally, but execution is
+  still an external gate here because this environment has no Chromium binary;
+  CI installs the browser before running them.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
@@ -681,7 +688,9 @@ Still open and intentionally not advertised as complete:
   physical reconnect and permission validation remain external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   key rotation/removal and upgrade rehearsal remain open.
-- Browser Playwright/screenshot tests and full UI settings forms.
+- Browser Playwright execution/screenshot review and full UI settings forms.
+  The test harness and CI artifact upload are present, but no local browser
+  executable is available for final evidence.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
   amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.
 - Docs dependency remediation and Trivy or an equivalent image scan remain
