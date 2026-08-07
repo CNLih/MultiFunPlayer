@@ -854,7 +854,7 @@ Validated in the current Linux environment:
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
-  acceptance results, optional p95/drop budgets, and JSON evidence. Its report
+  acceptance results, optional p95/coalescing budgets, and JSON evidence. Its report
   now exposes `coalescedFrames` explicitly while retaining the historical
   `droppedFrames` alias; transport failures remain in `failedFrames`. A previous
   five-minute local smoke passed with 5,987 sent, 8 coalesced, 0 failed, and
@@ -940,7 +940,7 @@ Validated in the current Linux environment:
   user-local browser host dependencies passed 23 checks with 0 failures and
   covered .NET/Web/Docs high-severity dependency audits, Playwright
   desktop/mobile viewports, and a 10-second Linux soak smoke with explicit p95
-  and drop budgets; four target-environment gates remain pending. The
+  and coalescing budgets; four target-environment gates remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
