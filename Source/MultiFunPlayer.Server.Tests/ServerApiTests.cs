@@ -130,4 +130,16 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Contains("test.component", json, StringComparison.Ordinal);
         Assert.Contains("42", json, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Runtime_log_store_evicts_oldest_entries_at_capacity()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<MultiFunPlayer.Server.RuntimeLogStore>();
+        for (var index = 0; index < store.Capacity + 3; index++)
+            store.Add(LogLevel.Information, "test.retention", new EventId(index), $"entry {index}");
+
+        Assert.Equal(store.Capacity, store.Count);
+        Assert.True(store.DroppedCount > 0);
+    }
 }
