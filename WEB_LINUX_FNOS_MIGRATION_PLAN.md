@@ -885,9 +885,10 @@ Validated in the current Linux environment:
   three phases (including forced interruption and state restoration); this
   validates the harness path only, not a different-version upgrade. A
   versioned local rehearsal using the `e3f2f8a3` Server publish as baseline and
-  rollback, with the current branch as upgrade (`/tmp/mfp-versioned-upgrade.json`),
-  also passed all phases and restored scripts, axis policy, logs, and all four
-  persistent roots after upgrade and rollback. This remains process-level
+  rollback, with the current branch as upgrade
+  (`/tmp/mfp-versioned-upgrade-c4e91a59.json`), also passed all phases and
+  restored scripts, axis policy, logs, and all four persistent roots after
+  upgrade and rollback. This remains process-level
   evidence only; Docker volume and fnOS package upgrade/rollback evidence
   remains external. The forced-stop helper has a unit test.
 - The output view and `GET /api/v1/output-targets` now show per-target
