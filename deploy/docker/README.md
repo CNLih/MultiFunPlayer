@@ -58,6 +58,7 @@ harness from the repository root:
 python3 tools/run-portable-soak.py \
   --dotnet /path/to/dotnet \
   --duration-seconds 28800 \
+  --max-revision-interval-ms 100 \
   --output artifacts/soak/portable-soak.json
 ```
 
@@ -65,7 +66,11 @@ The harness starts an isolated server with temporary config, key, script, and
 log roots, then records output sent/dropped/failed counts, reconnects, status
 revision intervals, process RSS, CPU time, and graceful shutdown. A short
 duration is suitable for CI smoke checks; only a target Linux/fnOS run can
-provide the release-required eight-hour evidence.
+provide the release-required eight-hour evidence. The p95 revision interval
+budget is optional. Dropped/coalesced frames remain diagnostic by default; add
+`--max-dropped-frames 0` only when the target's output policy requires zero
+drops. The command exits non-zero for failed frames, no output, abnormal
+shutdown, or an explicitly exceeded budget.
 
 To rehearse a process-level upgrade while preserving the same four roots, run:
 

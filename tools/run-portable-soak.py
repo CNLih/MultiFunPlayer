@@ -108,6 +108,40 @@ def stop_process(process: subprocess.Popen[Any]) -> bool:
     return process.returncode == 0
 
 
+def evaluate_acceptance(report: dict[str, Any],
+                        max_revision_interval_ms: float | None = None,
+                        max_dropped_frames: int | None = None) -> dict[str, Any]:
+    """Evaluate only observable soak invariants; keep performance budgets explicit."""
+    output = report.get("output", {})
+    failures: list[str] = []
+    if output.get("sentFrames", 0) <= 0:
+        failures.append("no output frames were sent")
+    if output.get("failedFrames", 0) != 0:
+        failures.append("output sink reported failed frames")
+    dropped_frames = output.get("droppedFrames", 0)
+    if max_dropped_frames is not None and dropped_frames > max_dropped_frames:
+        failures.append(
+            f"output sink dropped {dropped_frames} frames (budget {max_dropped_frames})"
+        )
+    if report.get("gracefulStop") is not True:
+        failures.append("server did not stop gracefully")
+
+    interval = report.get("revisionIntervalMilliseconds", {})
+    p95 = interval.get("p95") if isinstance(interval, dict) else None
+    if max_revision_interval_ms is not None and (p95 is None or p95 > max_revision_interval_ms):
+        failures.append(
+            f"revision interval p95 exceeds {max_revision_interval_ms:g} ms"
+        )
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "maxRevisionIntervalMilliseconds": max_revision_interval_ms,
+        "observedRevisionIntervalP95Milliseconds": p95,
+        "maxDroppedFrames": max_dropped_frames,
+        "observedDroppedFrames": dropped_frames,
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     token = "portable-soak-token-1234567890"
     port = args.port or free_port()
@@ -119,6 +153,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "schemaVersion": 1,
         "durationSecondsRequested": args.duration_seconds,
         "pollSeconds": args.poll_seconds,
+        "maxRevisionIntervalMilliseconds": args.max_revision_interval_ms,
+        "maxDroppedFrames": args.max_dropped_frames,
         "server": str(server),
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "samples": [],
@@ -201,6 +237,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 time.sleep(args.poll_seconds)
 
             graceful_stop = stop_process(process)
+            report["gracefulStop"] = graceful_stop
             output = report["samples"][-1] if report["samples"] else {}
             report["result"] = "pass" if output.get("sentFrames", 0) > 0 and output.get("failedFrames", 0) == 0 else "fail"
             report["output"] = {
@@ -220,6 +257,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "p95": percentile(revision_intervals, 0.95) * 1000 if revision_intervals else None,
                 "stdev": statistics.pstdev(revision_intervals) * 1000 if len(revision_intervals) > 1 else None,
             }
+            report["acceptance"] = evaluate_acceptance(
+                report, args.max_revision_interval_ms, args.max_dropped_frames)
+            report["result"] = "pass" if report["acceptance"]["passed"] else "fail"
         except Exception as error:
             graceful_stop = stop_process(process)
             report["result"] = "error"
@@ -240,12 +280,20 @@ def main() -> int:
     parser.add_argument("--dotnet", default="dotnet")
     parser.add_argument("--duration-seconds", type=float, default=8 * 60 * 60)
     parser.add_argument("--poll-seconds", type=float, default=1.0)
+    parser.add_argument("--max-revision-interval-ms", type=float,
+                        help="optional p95 revision interval budget")
+    parser.add_argument("--max-dropped-frames", type=int,
+                        help="optional dropped-frame budget")
     parser.add_argument("--startup-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path("artifacts/soak/portable-soak.json"))
     args = parser.parse_args()
     if args.duration_seconds <= 0 or args.poll_seconds <= 0:
         parser.error("duration and poll intervals must be positive")
+    if args.max_revision_interval_ms is not None and args.max_revision_interval_ms <= 0:
+        parser.error("revision interval budget must be positive")
+    if args.max_dropped_frames is not None and args.max_dropped_frames < 0:
+        parser.error("dropped-frame budget must not be negative")
     report = run(args)
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

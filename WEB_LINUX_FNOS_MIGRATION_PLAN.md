@@ -725,11 +725,12 @@ Validated in the current Linux environment:
   them.
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
-  interval statistics, RSS/CPU sampling, graceful-stop reporting, and JSON
-  evidence. The latest 5-second local smoke passed with 59 sent and 0 failed
-  frames; CI runs a 10-second smoke and uploads the report. This does not
-  replace the required eight-hour Linux/fnOS soak or target-device failure
-  matrix.
+  interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
+  acceptance results, optional p95/drop budgets, and JSON evidence. The latest
+  5-second local smoke passed with 57 sent, 0 failed, and 37 diagnostic dropped
+  frames; p95 revision interval was about 50.8 ms and shutdown was graceful.
+  CI runs a 10-second smoke and uploads the report. This does not replace the
+  required eight-hour Linux/fnOS soak or target-device failure matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
