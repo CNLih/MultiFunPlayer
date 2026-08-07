@@ -20,6 +20,9 @@ Set `MFP_SCRIPTS_PATH` to a directory containing `.funscript` files. If
 `MFP_AUTH_TOKEN` is non-empty, all API and WebSocket requests require either
 `Authorization: Bearer <token>` or `X-MFP-Token: <token>`; health endpoints stay
 anonymous. The token is never included in logs or response bodies.
+Set `MFP_KEYS_PATH` (or `MFP_KEYS_ROOT`) to enable persistent ASP.NET Data
+Protection keys in a mounted volume; without it, local development uses the
+framework's ephemeral key repository.
 
 `/hubs/state` is a text WebSocket stream of the same status shape returned by
 `/api/v1/status`. Each subscriber has a one-item latest-value queue, so a slow
