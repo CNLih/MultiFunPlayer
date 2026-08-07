@@ -144,6 +144,67 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public void Script_catalog_upload_is_json_validated_and_symlink_safe()
+    {
+        using var temp = new TemporaryDirectory();
+        var catalog = new ScriptCatalog(temp.Path);
+
+        Assert.True(catalog.TryWrite("demo.funscript", "{\"actions\":[]}", false,
+            out var descriptor, out _, out _));
+        Assert.Equal("demo.funscript", descriptor!.Id);
+        Assert.False(catalog.TryWrite("demo.funscript", "{\"actions\":[]}", false,
+            out _, out _, out var conflict));
+        Assert.True(conflict);
+        Assert.False(catalog.TryWrite("bad.funscript", "not-json", false,
+            out _, out var error, out _));
+        Assert.Contains("valid JSON", error, StringComparison.Ordinal);
+
+        var outside = Path.Combine(temp.Path, "outside.json");
+        File.WriteAllText(outside, "{\"actions\":[]}");
+        var linked = Path.Combine(temp.Path, "linked.funscript");
+        File.CreateSymbolicLink(linked, outside);
+        Assert.False(catalog.TryRead("linked.funscript", out _));
+    }
+
+    [Fact]
+    public async Task Script_upload_endpoint_writes_below_the_configured_root()
+    {
+        var previous = Environment.GetEnvironmentVariable("MFP_SCRIPTS_PATH");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_SCRIPTS_PATH", temp.Path);
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var upload = await client.PostAsJsonAsync("/api/v1/scripts", new
+            {
+                id = "http-upload.funscript",
+                content = "{\"actions\":[]}"
+            });
+            Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+            Assert.True(File.Exists(Path.Combine(temp.Path, "http-upload.funscript")));
+
+            var conflict = await client.PostAsJsonAsync("/api/v1/scripts", new
+            {
+                id = "http-upload.funscript",
+                content = "{\"actions\":[]}"
+            });
+            Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+
+            var traversal = await client.PostAsJsonAsync("/api/v1/scripts", new
+            {
+                id = "../outside.funscript",
+                content = "{\"actions\":[]}"
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, traversal.StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_SCRIPTS_PATH", previous);
+        }
+    }
+
+    [Fact]
     public async Task Environment_tick_rate_overrides_configuration_section()
     {
         var previous = Environment.GetEnvironmentVariable("MFP_TICK_HZ");
@@ -200,6 +261,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/adapters", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/settings", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/configuration/migration", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/scripts", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }

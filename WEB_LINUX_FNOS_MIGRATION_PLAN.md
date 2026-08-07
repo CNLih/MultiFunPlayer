@@ -554,7 +554,7 @@ Validated in the current Linux environment:
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
-  Server tests: 14/14.
+  Server tests: 16/16.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
@@ -568,6 +568,8 @@ Validated in the current Linux environment:
   explicitly labels direct transports as planned until output registries are
   wired. Browser WebSocket binary/invalid text frames are ignored without
   affecting the playback API.
+- Script repository reads and uploads reject traversal and reparse points;
+  uploads are JSON-validated, bounded, atomic, and opt-in overwrite only.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

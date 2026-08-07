@@ -46,6 +46,8 @@ public sealed record LoadScriptRequest(
     JsonElement Content,
     string? Axis);
 
+public sealed record ScriptUploadRequest(string? Id, string? Content, bool Overwrite = false);
+
 public sealed record SeekRequest(double PositionSeconds);
 
 public static class ApiModelMapper

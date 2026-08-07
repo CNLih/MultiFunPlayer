@@ -160,6 +160,20 @@ public static class ServerProgram
             catalog.TryRead(id, out var response)
                 ? Results.Ok(response)
                 : Problem(StatusCodes.Status404NotFound, "Script not found", "The requested script id is not in the catalog.", "script_not_found"));
+        app.MapPost("/api/v1/scripts", (ScriptUploadRequest request, ScriptCatalog catalog) =>
+        {
+            if (!catalog.TryWrite(request.Id, request.Content, request.Overwrite,
+                    out var descriptor, out var error, out var conflict))
+            {
+                if (conflict)
+                    return Problem(StatusCodes.Status409Conflict, "Script already exists",
+                        "Set overwrite=true to replace the existing script.", "script_conflict");
+                return Problem(StatusCodes.Status400BadRequest, "Invalid script upload",
+                    error ?? "The script upload was rejected.", "invalid_script_upload");
+            }
+
+            return Results.Created($"/api/v1/scripts/{Uri.EscapeDataString(descriptor!.Id)}", descriptor);
+        });
         app.MapPost("/api/v1/scripts/load", (LoadScriptRequest request, ScriptCatalog catalog,
             HeadlessPlayerEngine engine) =>
         {
@@ -354,7 +368,7 @@ internal static class OpenApiDocument
             ["/api/v1/configuration/migration"] = new { get = Operation("Legacy configuration migration status") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
-            ["/api/v1/scripts"] = new { get = Operation("List scripts") },
+            ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
             ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
             ["/api/v1/player/play"] = new { post = Operation("Play") },
             ["/api/v1/player/pause"] = new { post = Operation("Pause") },

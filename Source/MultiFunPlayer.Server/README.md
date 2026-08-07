@@ -65,3 +65,8 @@ and `file`) separately from adapter implementation status. Entries marked
 connections. Windows-player integrations are marked `external-proxy` or
 `unsupported` with required services; this endpoint does not create pretend
 media/output CRUD resources.
+
+`POST /api/v1/scripts` accepts `{ "id": "name.funscript", "content": "..." }`
+and writes only valid JSON below the configured scripts root. Uploads are
+limited to 8 MiB, reject path traversal and symbolic links, and do not
+overwrite an existing file unless `overwrite: true` is supplied.
