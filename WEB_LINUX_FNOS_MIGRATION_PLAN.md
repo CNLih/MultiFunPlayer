@@ -643,6 +643,11 @@ Validated in the current Linux environment:
   The same validator runs in the packaging CI job. Docker Buildx, `fnpack`,
   official fnOS schema validation, image scanning, and target-NAS execution are
   intentionally still external gates.
+- CI now contains a separate amd64/arm64 Buildx matrix that builds each image,
+  starts it with temporary persistent roots, checks anonymous liveness,
+  authenticated adapter access, and SPA fallback, then removes the container.
+  This is an executable release gate, but it remains unchecked here until an
+  Ubuntu runner produces both matrix results.
 - Current dependency checks report no vulnerable .NET packages, no production
   Web-package vulnerabilities, and no production Docs-package vulnerabilities.
   The Docs toolchain is now pinned to Docusaurus 3.10.2 and builds cleanly;
