@@ -577,7 +577,10 @@ Validated in the current Linux environment:
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
-  Server tests: 39/39, including the Data Protection service wiring test.
+  Server tests: 40/40, including the Data Protection service wiring test.
+  A Linux cross-target solution build with `EnableWindowsTargeting=true` also
+  completed with 0 errors; its 58 existing nullable/analyzer warnings do not
+  replace the WindowsDesktop runtime and WPF UI execution gates.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings. The Playwright desktop/mobile
@@ -642,7 +645,7 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  39/39, including The Handy and TCP/UDP/WebSocket registry integrations,
+  40/40, including The Handy and TCP/UDP/WebSocket registry integrations,
   device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
   explicit key-root reuse across independent host instances, and rejection of
