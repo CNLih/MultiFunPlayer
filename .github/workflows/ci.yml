@@ -193,6 +193,11 @@ jobs:
           Source/MultiFunPlayer.Web/playwright-report
           Source/MultiFunPlayer.Web/test-results
         if-no-files-found: ignore
+    - name: Install Docs dependencies for SBOM metadata
+      run: npm ci --no-audit --no-fund
+      working-directory: ./Docs
+    - name: Test SBOM tooling
+      run: python -m unittest discover -s tools/tests -v
     - name: Generate dependency SBOM
       run: python tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json
     - name: Generate license inventory

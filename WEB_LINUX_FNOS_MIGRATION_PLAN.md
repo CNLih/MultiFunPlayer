@@ -677,12 +677,14 @@ Validated in the current Linux environment:
   remains open for upstream remediation and a container scan before a release
   candidate.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
-  dependency SBOM from restored NuGet assets and committed npm lockfiles; the
-  current workspace contains 1,396 deduplicated components and CI uploads the
-  artifact together with a deterministic `THIRD_PARTY_LICENSES.md` inventory.
-  Three legacy components currently have no license declaration and are listed
-  for release-owner review. The exact runtime image/FPK SBOM and license review
-  remain open until those artifacts can be built in their target environments.
+  dependency SBOM from restored NuGet assets and committed npm lockfiles,
+  falling back to the integrity-pinned npm package manifests for legacy
+  license arrays. The current workspace contains 1,396 deduplicated
+  components and CI uploads the artifact together with a deterministic
+  `THIRD_PARTY_LICENSES.md` inventory. One legacy component, `require-like`,
+  currently has no license declaration and remains listed for release-owner
+  review. The exact runtime image/FPK SBOM and license review remain open until
+  those artifacts can be built in their target environments.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
   desktop and mobile Chromium journeys, viewport overflow assertions, and CI
   screenshot artifacts. The four tests pass locally against the production

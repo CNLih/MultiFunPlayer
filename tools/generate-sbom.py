@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generate a dependency-only CycloneDX SBOM for the repository.
 
-The generator consumes restored NuGet assets and committed npm lockfiles, so
-the output describes the exact dependency graph used by a build rather than a
-best-effort scan of source text. It does not inspect a container image; image
-SBOM and vulnerability scanning remain release-environment gates.
+The generator consumes restored NuGet assets and committed npm lockfiles, with
+package metadata from the lockfile-pinned ``node_modules`` trees as a fallback
+for old npm packages whose license declaration is omitted from the lockfile.
+It does not inspect a container image; image SBOM and vulnerability scanning
+remain release-environment gates.
 """
 
 from __future__ import annotations
@@ -72,6 +73,52 @@ def add_component(components: dict[str, dict], name: str, version: str,
             item["licenses"] = [entry]
 
 
+def npm_license_value(value: object) -> str | None:
+    """Normalize current and legacy npm license metadata to one name."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, dict):
+        for key in ("type", "id", "name"):
+            result = npm_license_value(value.get(key))
+            if result:
+                return result
+        return None
+    if isinstance(value, list):
+        for item in value:
+            result = npm_license_value(item)
+            if result:
+                return result
+    return None
+
+
+def npm_license(lockfile: Path, package_path: str, metadata: dict) -> str | None:
+    """Read a lockfile license, then the installed package manifest.
+
+    npm v7+ does not always copy legacy ``licenses`` arrays into a v3
+    lockfile. The package manifest is safe to consult here because ``npm ci``
+    materializes the exact integrity-pinned package before SBOM generation.
+    """
+    for key in ("license", "licenses"):
+        result = npm_license_value(metadata.get(key))
+        if result:
+            return result
+
+    package_json = lockfile.parent / package_path / "package.json"
+    try:
+        package_metadata = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(package_metadata, dict) or (
+        str(package_metadata.get("version", "")) != str(metadata.get("version", ""))
+    ):
+        return None
+    for key in ("license", "licenses"):
+        result = npm_license_value(package_metadata.get(key))
+        if result:
+            return result
+    return None
+
+
 def collect_nuget(root: Path, components: dict[str, dict]) -> int:
     package_root = Path(os.environ.get("NUGET_PACKAGES", Path.home() / ".nuget/packages"))
     assets_count = 0
@@ -117,7 +164,7 @@ def collect_npm(root: Path, components: dict[str, dict]) -> int:
                 name,
                 version,
                 f"pkg:npm/{quote(name, safe='@._-/')}@{quote(version, safe='.-_+')}",
-                metadata.get("license"),
+                npm_license(lockfile, path, metadata),
             )
     return lockfile_count
 
