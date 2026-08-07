@@ -878,7 +878,7 @@ Validated in the current Linux environment:
   rollback DLL arguments allow a versioned upgrade rehearsal. The forced-stop
   helper has a unit test. Docker volume and fnOS package upgrade/rollback
   evidence remains external.
-- The output view now shows per-target sent/dropped/failed frame counts,
+- The output view now shows per-target sent/coalesced/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
   serial, and log state with a real refresh action. Device-axis editing covers
