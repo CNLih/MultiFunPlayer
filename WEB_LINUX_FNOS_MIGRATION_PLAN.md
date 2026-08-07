@@ -806,8 +806,9 @@ Validated in the current Linux environment:
   `/scripts`, and `/logs` volumes, pairs once to persist an authentication hash,
   writes an axis policy and script, gracefully stops and replaces the container,
   and verifies the authenticated state, resources, volume markers, and all four
-  mount points after replacement. It also rejects plaintext bearer-token storage
-  in `/config`.
+  mount points after replacement. It confirms the persisted authentication hash
+  and compares the Data Protection XML key-ring digest before and after the
+  replacement, while rejecting plaintext bearer-token storage in `/config`.
   Each leg uploads a non-sensitive JSON summary; local Docker-volume and fnOS
   upgrade/rollback evidence remains external.
 - The Windows build matrix now uses the same non-parallel xUnit collection
