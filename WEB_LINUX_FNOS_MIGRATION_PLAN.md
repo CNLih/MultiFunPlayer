@@ -554,7 +554,7 @@ Validated in the current Linux environment:
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
-  Server tests: 18/18.
+  Server tests: 21/21.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
@@ -592,6 +592,10 @@ Validated in the current Linux environment:
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
   all pass. WebSocket snapshots use camelCase to match REST.
+- Local HTTP smoke on Release Server also passed SPA fallback, media-source
+  create/list, file-output create/connect, script upload, and fixed-size
+  persisted log download. The log endpoint snapshots JSONL under its lock so
+  ongoing request logging cannot change the response content length.
 
 Still open and intentionally not advertised as complete:
 
