@@ -995,9 +995,10 @@ Validated in the current Linux environment:
   with user-local Chromium host libraries on `LD_LIBRARY_PATH` passed 24
   checks with 0 failures and covered .NET/Web/Docs high-severity dependency
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
-  soak smoke with explicit p95 and coalescing budgets; the report is
-  `/tmp/mfp-validation-security-fixed.json`; four target-environment gates remain
-  pending. The
+  soak smoke with explicit p95 and coalescing budgets. The report now records
+  its top-level `repositoryRevision`; the current run is bound to
+  `082209206ff35d8df744f38b965cf4c8ce30ed47`, while four target-environment
+  gates remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
