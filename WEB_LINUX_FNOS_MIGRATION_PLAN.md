@@ -602,10 +602,14 @@ Validated in the current Linux environment:
 - The repository now contains an official-template-shaped `deploy/fnos/fnpack`
   Docker project. Its `manifest`, `config/resource`, privilege declaration,
   Web URL entry, icons, lifecycle scripts, and four persistent shares are
-  validated statically; the official `fnpack` 1.2.3 binary built both x86 and
-  ARM FPK archives locally. The FPK build is source/image evidence only; clean
-  fnOS installation, Web launch, upgrade, rollback, and uninstall remain Tier 4
-  gates.
+  validated statically; the official `fnpack` 1.2.3 binary has built both x86
+  and ARM FPK archives locally. The latest rebuild also unpacked both
+  `app.tgz` files and confirmed the fnOS Compose read-only root, bounded
+  non-executable `/tmp`, no-new-privileges, graceful-stop, and resource-limit
+  settings are present. Each archive has a 22-component file SBOM, a complete
+  license report, and a SHA-256 sidecar. The FPK build is source/image evidence
+  only; clean fnOS installation, Web launch, upgrade, rollback, and uninstall
+  remain Tier 4 gates.
 - The Server exposes a versioned read-only adapter capability inventory and
   explicitly labels each transport by implementation status. Browser
   WebSocket binary/invalid text frames are ignored without affecting the
