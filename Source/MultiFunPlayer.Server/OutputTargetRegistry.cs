@@ -72,10 +72,6 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         {
             _logger.LogWarning(exception, "Output target persistence is unavailable.");
         }
-        catch (UnauthorizedAccessException exception)
-        {
-            _logger.LogWarning(exception, "Output target persistence is unavailable.");
-        }
     }
 
     public IReadOnlyList<OutputTargetResponse> List()
