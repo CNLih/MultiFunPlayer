@@ -765,10 +765,11 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 115/115 checks passed for the
+- The packaging contract validator reports 124/124 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
   roots, health check, secret interpolation, the structural fnOS manifest, and
-  the canonical `fnpack` project. The fnOS Compose service now carries the
+  the canonical `fnpack` project; all nine fnOS lifecycle scripts also pass
+  POSIX `sh -n` syntax validation. The fnOS Compose service now carries the
   same runtime boundary as the portable deployment: read-only root, bounded
   non-executable `/tmp`, `no-new-privileges`, a 30-second graceful-stop budget,
   and 2 CPU/512 MiB resource limits. The validator checks these fnOS-specific

@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -97,6 +99,22 @@ class Validator:
             path = self.root / relative
             self.check(f"fnpack:cmd:{name}", path.is_file() and bool(path.stat().st_mode & 0o111),
                        "lifecycle script is present and executable")
+            shell = shutil.which("sh")
+            if path.is_file() and shell:
+                syntax = subprocess.run(
+                    [shell, "-n", str(path)],
+                    cwd=self.root,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+                self.check(f"fnpack:cmd-syntax:{name}", syntax.returncode == 0,
+                           "lifecycle script passes POSIX shell syntax validation"
+                           if syntax.returncode == 0 else syntax.stderr.strip())
+            else:
+                self.check(f"fnpack:cmd-syntax:{name}", False,
+                           "POSIX sh is required for lifecycle script syntax validation")
             if name.startswith("uninstall_") and path.is_file():
                 uninstall_script = path.read_text(encoding="utf-8")
                 self.check(f"fnpack:uninstall-preserves-data:{name}", not re.search(r"rm\s+-r[fF]", uninstall_script),
