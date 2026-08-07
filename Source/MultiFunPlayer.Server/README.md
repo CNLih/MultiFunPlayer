@@ -88,8 +88,10 @@ are stored as non-secret JSON below the config root. File endpoints are relative
 to the logs root, while serial endpoints must use a stable Linux device path
 or a COM name. The Handy endpoints use the existing Handy HTTP API v2 and
 accept a `sourceAxis` (default `L0`) and `updateRateHz` from 1 to 20 (default
-20). The server samples engine frames per target at that rate; seeking
-backwards resets the sampler so a seek is delivered immediately. Set
+20). The server samples engine frames per target at that rate; it tolerates up
+to 10% scheduler jitter at the sample boundary so normal timer variance is not
+counted as a drop. Seeking backwards resets the sampler so a seek is delivered
+immediately. Set
 `MFP_THE_HANDY_CONNECTION_KEY` in the
 host environment; the key is sent as `X-Connection-Key` and is never persisted
 or returned by the API. Connection failures remain visible as `lastError` and

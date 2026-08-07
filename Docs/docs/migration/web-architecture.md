@@ -24,8 +24,10 @@ Core
 The engine owns playback time and output dispatch. The browser owns only view
 state and commands; refreshing or closing it cannot stop the backend loop.
 Each output target has its own persisted `sourceAxis` and `updateRateHz` (1-20)
-sampler. Transport queues and log stores are bounded. Adapter failures become
-structured state and logs instead of WPF dialogs.
+sampler; up to 10% scheduler jitter at the sample boundary is tolerated so
+normal timer variance is not counted as a drop. Transport queues and log stores
+are bounded. Adapter failures become structured state and logs instead of WPF
+dialogs.
 
 ## Contracts
 
