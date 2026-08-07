@@ -314,7 +314,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     private async Task<bool> ConnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
     {
-        if (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true)
+        if (target.LastError is null
+            && (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true))
         {
             target.LastError = null;
             return true;
@@ -382,6 +383,15 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 var sink = new RateLimitedOutputSink(new TCodeOutputSink(transport),
                     target.Definition.UpdateRateHz);
+                sink.Faulted += exception =>
+                {
+                    target.LastError = exception.Message;
+                    target.Registration?.Dispose();
+                    target.Registration = null;
+                    // The sink owns disposal of the failed transport. Mark it
+                    // unavailable so the next connect call rebuilds both.
+                    target.Transport = null;
+                };
                 target.Registration = _engine.AddSink(sink);
                 target.Transport = transport;
                 target.Sink = sink;

@@ -32,4 +32,10 @@ public interface IOutputSinkErrorDiagnostics
     string? LastError { get; }
 }
 
+/// <summary>Optional asynchronous fault notifications for queued output sinks.</summary>
+public interface IOutputSinkFaults
+{
+    event Action<Exception>? Faulted;
+}
+
 public sealed record OutputSinkError(IOutputSink Sink, OutputFrame Frame, Exception Exception);

@@ -7,13 +7,14 @@ namespace MultiFunPlayer.Infrastructure.Output;
 /// the engine. The wrapped sink still owns transport backpressure and errors.
 /// </summary>
 public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
-    IOutputSinkErrorDiagnostics, IDisposable, IAsyncDisposable
+    IOutputSinkErrorDiagnostics, IOutputSinkFaults, IDisposable, IAsyncDisposable
 {
     // PeriodicTimer and NAS/container scheduling can arrive early. Keep the
     // configured rate as the target while avoiding drops caused only by up to
     // 10% scheduler jitter at the exact boundary.
     private const double SamplingToleranceRatio = 0.10;
     private readonly IOutputSink _inner;
+    private readonly IOutputSinkFaults? _innerFaults;
     private readonly TimeSpan _minimumInterval;
     private readonly TimeSpan _samplingTolerance;
     private TimeSpan? _lastPosition;
@@ -29,6 +30,9 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         if (updateRateHz is < 1 or > 20)
             throw new ArgumentOutOfRangeException(nameof(updateRateHz), "Output rate must be between 1 and 20 Hz.");
+        _innerFaults = inner as IOutputSinkFaults;
+        if (_innerFaults is not null)
+            _innerFaults.Faulted += HandleInnerFault;
         UpdateRateHz = updateRateHz;
         _minimumInterval = TimeSpan.FromSeconds(1d / updateRateHz);
         _samplingTolerance = TimeSpan.FromTicks(Math.Max(1,
@@ -48,7 +52,10 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
             return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
         }
     }
-    public string? LastError => Volatile.Read(ref _lastError);
+    public string? LastError => Volatile.Read(ref _lastError)
+        ?? (_inner as IOutputSinkErrorDiagnostics)?.LastError;
+
+    public event Action<Exception>? Faulted;
 
     public void Publish(OutputFrame frame)
     {
@@ -71,8 +78,7 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
         }
         catch (Exception exception)
         {
-            Interlocked.Increment(ref _failedFrames);
-            Volatile.Write(ref _lastError, exception.Message);
+            RecordFailure(exception);
             throw;
         }
         _lastPosition = frame.Position;
@@ -82,6 +88,8 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
+        if (_innerFaults is not null)
+            _innerFaults.Faulted -= HandleInnerFault;
         if (_inner is IDisposable disposable)
             disposable.Dispose();
     }
@@ -90,6 +98,8 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
+        if (_innerFaults is not null)
+            _innerFaults.Faulted -= HandleInnerFault;
         switch (_inner)
         {
             case IAsyncDisposable asyncDisposable:
@@ -98,6 +108,22 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
             case IDisposable disposable:
                 disposable.Dispose();
                 break;
+        }
+    }
+
+    private void HandleInnerFault(Exception exception) => RecordFailure(exception);
+
+    private void RecordFailure(Exception exception)
+    {
+        Interlocked.Increment(ref _failedFrames);
+        Volatile.Write(ref _lastError, exception.Message);
+        try
+        {
+            Faulted?.Invoke(exception);
+        }
+        catch
+        {
+            // Diagnostics subscribers must not terminate an output worker.
         }
     }
 }

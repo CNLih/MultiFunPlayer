@@ -105,10 +105,11 @@ and `lastSentAtUtc`, plus the latest `lastError` from a failed sink write.
 `coalescedFrames` is the canonical name for the per-target rate-limiter's
 coalesced sample count. `droppedFrames` remains a historical response alias
 for older clients and is not a transport-loss count; `failedFrames` records
-sink write failures. A sent frame means the sink accepted it; a transport may
-complete the physical write asynchronously. Counters accumulate for the
-current server process across disconnect/reconnect and reset on restart. A
-successful later write clears the transient `lastError`; reconnect remains an
+sink write failures. A sent frame means the sink accepted it; TCode transports
+use a bounded target-owned worker so physical writes complete asynchronously
+without blocking other output targets. Counters accumulate for the current
+server process across disconnect/reconnect and reset on restart. A successful
+later write clears the transient `lastError`; reconnect remains an
 explicit lifecycle operation.
 
 Media sources are managed through `/api/v1/media-sources` and the matching

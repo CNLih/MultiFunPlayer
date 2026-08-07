@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.IO.Ports;
@@ -17,6 +18,7 @@ using MultiFunPlayer.Infrastructure.Output;
 using MultiFunPlayer.Infrastructure.Serial;
 using MultiFunPlayer.Infrastructure.Storage;
 using MultiFunPlayer.Infrastructure.Transport;
+using MultiFunPlayer.Script;
 
 namespace MultiFunPlayer.Infrastructure.Tests;
 
@@ -71,14 +73,68 @@ public sealed class InfrastructureTests
     {
         await using var transport = new RecordingTransport("fake");
         await transport.ConnectAsync();
-        var sink = new TCodeOutputSink(transport);
+        await using var sink = new TCodeOutputSink(transport);
         sink.Publish(new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 }));
+        for (var attempt = 0; attempt < 40 && transport.Payloads.Count == 0; attempt++)
+            await Task.Delay(10);
         Assert.Equal("L0500\n", Assert.Single(transport.Payloads));
 
         await transport.DisposeAsync();
         var exception = Assert.Throws<TCodeOutputException>(() => sink.Publish(
             new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 })));
         Assert.Equal("fake", exception.TransportId);
+    }
+
+    [Fact]
+    public async Task TCodeSink_writes_off_engine_thread_and_reports_async_faults()
+    {
+        await using var transport = new RecordingTransport("async-fake");
+        await transport.ConnectAsync();
+        await using var sink = new TCodeOutputSink(transport);
+        var fault = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        sink.Faulted += exception => fault.TrySetResult(exception);
+        transport.FailWrites = true;
+
+        var started = Stopwatch.GetTimestamp();
+        sink.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0.5 }));
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        Assert.True(elapsed < TimeSpan.FromMilliseconds(250),
+            $"Publish synchronously waited for transport I/O ({elapsed}).");
+        var exception = await fault.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.IsType<TCodeOutputException>(exception);
+        Assert.Contains("fake send failure", exception.InnerException?.InnerException?.Message,
+            StringComparison.Ordinal);
+        Assert.NotNull(sink.LastError);
+        Assert.Throws<TCodeOutputException>(() => sink.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0.6 })));
+    }
+
+    [Fact]
+    public async Task TCodeSink_does_not_block_other_engine_sinks_when_transport_is_slow()
+    {
+        await using var transport = new BlockingWriteTransport("slow-fake",
+            new OutputTransportOptions { SendTimeout = TimeSpan.FromSeconds(5) });
+        await transport.ConnectAsync();
+        await using var sink = new TCodeOutputSink(transport);
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        var recording = new RecordingSink();
+        engine.AddSink(sink);
+        engine.AddSink(recording);
+
+        var parsed = FunscriptReader.Default.FromText("slow.funscript", "test",
+            "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}");
+        Assert.True(parsed.IsSuccess);
+        engine.Load(parsed.Resource);
+        engine.Play();
+        var started = Stopwatch.GetTimestamp();
+        engine.Tick(TimeSpan.FromMilliseconds(500));
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        Assert.True(elapsed < TimeSpan.FromMilliseconds(250),
+            $"A slow target blocked the engine tick ({elapsed}).");
+        Assert.Equal(3, recording.Positions.Count);
     }
 
     [Fact]

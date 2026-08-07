@@ -578,7 +578,7 @@ Validated in the current Linux environment:
   short smoke interval, requests a graceful close, and verifies exit code zero.
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 41/41;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 43/43;
   Server tests: 42/42, including the Data Protection service wiring test and
   registry-level VLC/MPC adapter coverage.
   A Linux cross-target solution build with `EnableWindowsTargeting=true` also
@@ -659,6 +659,13 @@ Validated in the current Linux environment:
   a player restart before sending the next frame. The Server registry also has
   a TCP/UDP/WebSocket loopback test that creates, connects, sends a multi-axis
   engine frame, verifies diagnostics, and disconnects all three targets.
+- TCode transport writes now run on a bounded worker owned by each target;
+  engine ticks only format and enqueue a frame, so a slow TCP/UDP/WebSocket,
+  file, or serial peer cannot block other output targets. Queue saturation and
+  asynchronous transport failures still surface through the existing failed
+  frame/last-error diagnostics and trigger the normal reconnect path.
+  Infrastructure coverage verifies asynchronous fault notification and a
+  slow-target engine tick.
 - Linux serial discovery is verified against stable `/dev/serial/by-id`
   identities and re-enumerates cleanly after a device link is removed. A Linux
   pseudo-terminal integration test now opens the real `SerialOutputTransport`
@@ -969,7 +976,9 @@ Validated in the current Linux environment:
   user-local browser host dependencies passed 23 checks with 0 failures and
   covered .NET/Web/Docs high-severity dependency audits, Playwright
   desktop/mobile viewports, and a 10-second Linux soak smoke with explicit p95
-  and coalescing budgets; four target-environment gates remain pending. The
+  and coalescing budgets; the current report is
+  `/tmp/mfp-validation-2026-08-08-async-output.json`; four target-environment gates
+  remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume

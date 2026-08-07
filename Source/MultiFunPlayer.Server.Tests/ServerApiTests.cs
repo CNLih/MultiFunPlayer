@@ -664,7 +664,15 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         engine.Load(parsed.Resource, "L0");
         engine.Play();
         engine.Tick(TimeSpan.FromMilliseconds(500));
-        Assert.Contains("L0500", await File.ReadAllTextAsync(outputPath), StringComparison.Ordinal);
+        var fileFrame = string.Empty;
+        for (var attempt = 0; attempt < 40 && !fileFrame.Contains("L0500", StringComparison.Ordinal); attempt++)
+        {
+            if (File.Exists(outputPath))
+                fileFrame = await File.ReadAllTextAsync(outputPath);
+            if (!fileFrame.Contains("L0500", StringComparison.Ordinal))
+                await Task.Delay(10);
+        }
+        Assert.Contains("L0500", fileFrame, StringComparison.Ordinal);
 
         await registry.DisconnectAsync("file-1");
         await registry.StopAsync(CancellationToken.None);
