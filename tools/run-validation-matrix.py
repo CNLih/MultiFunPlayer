@@ -208,7 +208,7 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             _command(python, "tools/run-portable-soak.py",
                      "--duration-seconds", "10", "--poll-seconds", "0.5",
                      "--max-revision-interval-ms", "100",
-                     "--max-dropped-frames", "10",
+                     "--max-coalesced-frames", "10",
                      "--output", "artifacts/validation/portable-soak.json"),
             root,
         ),

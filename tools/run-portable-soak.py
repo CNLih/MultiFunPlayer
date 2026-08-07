@@ -115,8 +115,14 @@ def stop_process(process: subprocess.Popen[Any]) -> bool:
 
 def evaluate_acceptance(report: dict[str, Any],
                         max_revision_interval_ms: float | None = None,
-                        max_dropped_frames: int | None = None) -> dict[str, Any]:
+                        max_dropped_frames: int | None = None,
+                        *, max_coalesced_frames: int | None = None) -> dict[str, Any]:
     """Evaluate only observable soak invariants; keep performance budgets explicit."""
+    if (max_coalesced_frames is not None and max_dropped_frames is not None
+            and max_coalesced_frames != max_dropped_frames):
+        raise ValueError("coalesced and historical dropped-frame budgets must match")
+    coalescing_budget = (max_coalesced_frames
+                         if max_coalesced_frames is not None else max_dropped_frames)
     output = report.get("output", {})
     failures: list[str] = []
     if output.get("sentFrames", 0) <= 0:
@@ -126,9 +132,9 @@ def evaluate_acceptance(report: dict[str, Any],
     # ``droppedFrames`` is the historical API name for rate-limited samples.
     # Prefer the explicit report field while accepting older evidence files.
     coalesced_frames = coalesced_frame_count(output)
-    if max_dropped_frames is not None and coalesced_frames > max_dropped_frames:
+    if coalescing_budget is not None and coalesced_frames > coalescing_budget:
         failures.append(
-            f"output sink coalesced {coalesced_frames} frames (budget {max_dropped_frames})"
+            f"output sink coalesced {coalesced_frames} frames (budget {coalescing_budget})"
         )
     if report.get("gracefulStop") is not True:
         failures.append("server did not stop gracefully")
@@ -144,7 +150,9 @@ def evaluate_acceptance(report: dict[str, Any],
         "failures": failures,
         "maxRevisionIntervalMilliseconds": max_revision_interval_ms,
         "observedRevisionIntervalP95Milliseconds": p95,
-        "maxDroppedFrames": max_dropped_frames,
+        "maxCoalescedFrames": coalescing_budget,
+        # Keep the historical report field for schema-v1 consumers.
+        "maxDroppedFrames": coalescing_budget,
         "observedDroppedFrames": output.get("droppedFrames", coalesced_frames),
         "observedCoalescedFrames": coalesced_frames,
     }
@@ -162,7 +170,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "durationSecondsRequested": args.duration_seconds,
         "pollSeconds": args.poll_seconds,
         "maxRevisionIntervalMilliseconds": args.max_revision_interval_ms,
-        "maxDroppedFrames": args.max_dropped_frames,
+        "maxCoalescedFrames": (args.max_coalesced_frames
+                                if args.max_coalesced_frames is not None
+                                else args.max_dropped_frames),
+        # Keep the historical report field for schema-v1 consumers.
+        "maxDroppedFrames": (args.max_coalesced_frames
+                              if args.max_coalesced_frames is not None
+                              else args.max_dropped_frames),
         "server": str(server),
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "samples": [],
@@ -301,7 +315,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "stdev": statistics.pstdev(revision_intervals) * 1000 if len(revision_intervals) > 1 else None,
             }
             report["acceptance"] = evaluate_acceptance(
-                report, args.max_revision_interval_ms, args.max_dropped_frames)
+                report, args.max_revision_interval_ms,
+                max_dropped_frames=args.max_dropped_frames,
+                max_coalesced_frames=args.max_coalesced_frames)
             report["result"] = "pass" if report["acceptance"]["passed"] else "fail"
         except Exception as error:
             graceful_stop = stop_process(process)
@@ -325,8 +341,10 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--max-revision-interval-ms", type=float,
                         help="optional p95 revision interval budget")
+    parser.add_argument("--max-coalesced-frames", type=int,
+                        help="optional rate-limited/coalesced sample budget")
     parser.add_argument("--max-dropped-frames", type=int,
-                        help="optional dropped-frame budget")
+                        help="deprecated alias for --max-coalesced-frames")
     parser.add_argument("--startup-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path("artifacts/soak/portable-soak.json"))
@@ -335,8 +353,13 @@ def main() -> int:
         parser.error("duration and poll intervals must be positive")
     if args.max_revision_interval_ms is not None and args.max_revision_interval_ms <= 0:
         parser.error("revision interval budget must be positive")
+    if args.max_coalesced_frames is not None and args.max_coalesced_frames < 0:
+        parser.error("coalesced-frame budget must not be negative")
     if args.max_dropped_frames is not None and args.max_dropped_frames < 0:
         parser.error("dropped-frame budget must not be negative")
+    if (args.max_coalesced_frames is not None and args.max_dropped_frames is not None
+            and args.max_coalesced_frames != args.max_dropped_frames):
+        parser.error("coalesced and historical dropped-frame budgets must match")
     report = run(args)
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

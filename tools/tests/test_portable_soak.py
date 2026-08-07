@@ -54,6 +54,15 @@ class PortableSoakTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(4, result["observedCoalescedFrames"])
 
+    def test_acceptance_reports_canonical_budget_and_rejects_conflicting_alias(self):
+        result = MODULE.evaluate_acceptance(report(dropped=1), max_coalesced_frames=3)
+        self.assertTrue(result["passed"])
+        self.assertEqual(3, result["maxCoalescedFrames"])
+        self.assertEqual(3, result["maxDroppedFrames"])
+        with self.assertRaises(ValueError):
+            MODULE.evaluate_acceptance(report(), max_dropped_frames=3,
+                                       max_coalesced_frames=4)
+
     def test_optional_jitter_budget_is_enforced(self):
         result = MODULE.evaluate_acceptance(report(p95=125), max_revision_interval_ms=100)
         self.assertFalse(result["passed"])

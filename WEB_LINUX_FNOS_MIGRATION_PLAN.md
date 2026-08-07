@@ -882,8 +882,9 @@ Validated in the current Linux environment:
   acceptance results, optional p95/coalescing budgets, and JSON evidence. It takes
   a bounded final status/output snapshot immediately before shutdown and records
   whether that snapshot succeeded. Its report now exposes `coalescedFrames`
-  explicitly while retaining the historical `droppedFrames` alias; transport
-  failures remain in `failedFrames`. A previous
+  explicitly while retaining the historical `droppedFrames` alias; its CLI uses
+  `--max-coalesced-frames` and accepts the old `--max-dropped-frames` option as
+  a compatibility alias. Transport failures remain in `failedFrames`. A previous
   five-minute local smoke passed with 5,987 sent, 8 coalesced, 0 failed, and
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   coalescing budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak

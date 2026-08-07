@@ -97,10 +97,12 @@ while `failedFrames` represents sink write failures. A short duration is
 suitable for CI smoke checks; only a target Linux/fnOS run can
 provide the release-required eight-hour evidence. The p95 revision interval
 budget is optional. Coalesced frames remain diagnostic by default; add
-`--max-dropped-frames 5760` for an explicit 1% budget on the default 20 Hz,
-eight-hour run, or `--max-dropped-frames 0` only when the target's output policy
-requires zero coalescing. The command exits non-zero for failed frames, no
-output, abnormal shutdown, or an explicitly exceeded coalescing budget.
+`--max-coalesced-frames 5760` for an explicit 1% budget on the default 20 Hz,
+eight-hour run, or `--max-coalesced-frames 0` only when the target's output
+policy requires zero coalescing. The historical `--max-dropped-frames` option
+remains accepted as a compatibility alias. The command exits non-zero for
+failed frames, no output, abnormal shutdown, or an explicitly exceeded
+coalescing budget.
 
 To rehearse a process-level upgrade while preserving the same four roots, run:
 
