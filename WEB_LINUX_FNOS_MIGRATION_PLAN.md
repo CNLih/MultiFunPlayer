@@ -841,10 +841,13 @@ Validated in the current Linux environment:
 - Current dependency checks report no vulnerable .NET packages, no production
   Web-package vulnerabilities, and no Docs-package vulnerabilities. The Docs
   toolchain remains on Docusaurus 3.10.2, pins safe `serialize-javascript` and
-  `uuid` overrides, requires Node 20+, and builds cleanly. CI now runs full
-  high/critical audits for both Web and Docs instead of omitting development
-  tooling; P7-06 remains open only for the exact runtime-image scan and
-  release-environment review.
+  `uuid` overrides, requires Node 20+, and builds cleanly. Because the archived
+  `image-size` 2.0.2 dependency has no upstream patched release, Docs now uses
+  a locally vendored `2.0.3-mfp.1` fork that rejects zero-length ICNS and
+  HEIF/JXL parser entries; a focused security check covers malformed inputs and
+  valid PNG dimensions. CI now runs full high/critical audits for both Web and
+  Docs instead of omitting development tooling; P7-06 remains open only for the
+  exact runtime-image scan and release-environment review.
 - The Web lockfile now pins Playwright 1.55.1 and Vite 6.4.3 (including the
   patched esbuild line). A clean `npm ci --ignore-scripts`, Web audit, Vite
   build, and the ten desktop/mobile browser executions all pass with zero npm
@@ -985,7 +988,7 @@ Validated in the current Linux environment:
   checks with 0 failures and covered .NET/Web/Docs high-severity dependency
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
   soak smoke with explicit p95 and coalescing budgets; the report is
-  `/tmp/mfp-validation-current.json`; four target-environment gates remain
+  `/tmp/mfp-validation-security-fixed.json`; four target-environment gates remain
   pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player

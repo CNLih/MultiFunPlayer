@@ -249,6 +249,9 @@ jobs:
     - name: Install Docs dependencies for SBOM metadata
       run: npm ci --no-audit --no-fund
       working-directory: ./Docs
+    - name: Check Docs dependency security boundary
+      run: npm run check:dependency-security
+      working-directory: ./Docs
     - name: Test SBOM tooling
       run: python -m unittest discover -s tools/tests -v
     - name: Check portable dependency boundary
