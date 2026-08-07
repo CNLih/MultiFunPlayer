@@ -56,9 +56,10 @@ the untouched volumes.
 1. `401 Unauthorized`: verify the bearer token, pairing state, and that the
    browser local storage does not contain an old token. Health endpoints remain
    anonymous for diagnosis.
-2. A target is `offline` with `lastError`: check endpoint reachability from the
-   container network, then use the target connect route. Serial targets also
-   require an explicit device mapping and write permission.
+2. A target is `offline`, or reports `lastError`/a rising `failedFrames` count:
+   check endpoint reachability from the container network, then use the target
+   connect route. A later successful write clears the transient error. Serial
+   targets also require an explicit device mapping and write permission.
 3. The Handy reports a missing key: set
    `MFP_THE_HANDY_CONNECTION_KEY` in the host environment. It is intentionally
    never persisted by the server.
