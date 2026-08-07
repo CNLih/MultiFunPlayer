@@ -105,9 +105,23 @@ client: `media_change`, `play_change`, `duration_change`, `time_change`,
 `project_change`, with `change_play`, `change_time`, and
 `change_playbackspeed` commands. OFS has no capability handshake in that
 protocol, so the server reports only a successful WebSocket upgrade and does
-not claim unobserved features. Emby, Jellyfin, and Plex remain `planned`,
-while MPV, VLC, MPC, Whirligig, DeoVR, and HereSphere are reported as
-`blocked` external-proxy capabilities until a remote adapter or companion
-process is provided. Source endpoints accept only `http(s)` or `ws(s)` URLs
-and never accept embedded credentials; unsupported connections return a
-visible error rather than pretending to be connected.
+not claim unobserved features.
+
+Emby and Jellyfin use the real `/System/Ping` plus `/Sessions` JSON contract;
+the adapter polls `PlayState`/`NowPlayingItem` and sends `Pause`, `Unpause`,
+and `Seek` commands. Plex uses `/player/timeline/poll` and the timeline
+metadata key to read the XML `Part` path/duration, then sends the documented
+playback commands. A source is marked connected only after the session or
+timeline response parses successfully; a server health response alone never
+claims a media clock. `GET /api/v1/media-sources` includes the latest
+normalized `mediaState` when available. Set `secretRef` to an environment
+variable name, or use the defaults `MFP_EMBY_API_KEY`,
+`MFP_JELLYFIN_API_KEY`, and `MFP_PLEX_TOKEN`; secret values are never stored
+in `media-sources.json` or returned by the API. `deviceId` selects an Emby or
+Jellyfin session and is used as the Plex target-client identifier.
+
+MPV, VLC, MPC, Whirligig, DeoVR, and HereSphere remain `blocked`
+external-proxy capabilities until a remote adapter or companion process is
+provided. Source endpoints accept only `http(s)` for Emby/Jellyfin/Plex and
+`ws(s)` for OFS, never accept embedded credentials, and expose connection
+failures instead of pretending to be connected.

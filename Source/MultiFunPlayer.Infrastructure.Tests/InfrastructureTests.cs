@@ -399,6 +399,150 @@ public sealed class InfrastructureTests
         }
     }
 
+    [Theory]
+    [InlineData(NetworkMediaSourceKind.Emby, "X-Emby-Token")]
+    [InlineData(NetworkMediaSourceKind.Jellyfin, "X-Emby-Token")]
+    public async Task NetworkMediaAdapter_reads_json_clock_and_sends_controls(
+        NetworkMediaSourceKind kind, string authHeader)
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+        var commands = new List<string>();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.Run(async context =>
+        {
+            if (!string.IsNullOrEmpty(context.Request.Headers[authHeader])
+                && context.Request.Headers[authHeader] != "test-token")
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+            switch (context.Request.Path.Value)
+            {
+                case "/System/Ping":
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync("{}");
+                    break;
+                case "/Sessions":
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync("[{\"Id\":\"session-1\",\"DeviceId\":\"browser-1\",\"PlayState\":{\"PositionTicks\":25000000,\"IsPaused\":false,\"PlaybackRate\":1},\"NowPlayingItem\":{\"Id\":\"item-1\",\"Path\":\"/media/demo.mp4\",\"RunTimeTicks\":120000000}}]");
+                    break;
+                case "/Sessions/session-1/Playing/Pause":
+                case "/Sessions/session-1/Playing/Seek":
+                    commands.Add(context.Request.Path + context.Request.QueryString);
+                    context.Response.StatusCode = StatusCodes.Status204NoContent;
+                    break;
+                default:
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    break;
+            }
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var adapter = new NetworkMediaSourceAdapter(kind,
+                new Uri($"http://127.0.0.1:{port}/"), "test-token", "browser-1",
+                options: new NetworkMediaSourceAdapterOptions
+                {
+                    PollInterval = TimeSpan.FromMilliseconds(100),
+                    ConnectTimeout = TimeSpan.FromSeconds(2),
+                    RequestTimeout = TimeSpan.FromSeconds(2)
+                });
+            await adapter.ConnectAsync();
+            Assert.True(adapter.IsConnected);
+            Assert.Equal("/media/demo.mp4", adapter.Current.Path);
+            Assert.True(adapter.Current.Playing);
+            Assert.Equal(TimeSpan.FromSeconds(2.5), adapter.Current.Position);
+            Assert.Equal(TimeSpan.FromSeconds(12), adapter.Current.Duration);
+            Assert.Equal("session-1", adapter.Current.SessionId);
+
+            await adapter.SendPlayAsync(false);
+            await adapter.SendSeekAsync(TimeSpan.FromSeconds(3));
+            Assert.Contains(commands, command => command.EndsWith("/Pause", StringComparison.Ordinal));
+            Assert.Contains(commands, command => command.Contains("SeekPositionTicks=30000000", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task NetworkMediaAdapter_reads_plex_timeline_metadata_and_commands()
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+        var commands = new List<string>();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.Run(async context =>
+        {
+            if (context.Request.Path == "/player/timeline/poll")
+            {
+                context.Response.ContentType = "application/xml";
+                await context.Response.WriteAsync("<MediaContainer><Timeline type=\"movie\" key=\"/library/metadata/1\" state=\"playing\" time=\"2500\" duration=\"12000\" rate=\"1\" machineIdentifier=\"client-1\" /></MediaContainer>");
+            }
+            else if (context.Request.Path == "/library/metadata/1")
+            {
+                context.Response.ContentType = "application/xml";
+                await context.Response.WriteAsync("<MediaContainer><Video><Media><Part duration=\"12000\" file=\"/media/plex-demo.mp4\" /></Media></Video></MediaContainer>");
+            }
+            else if (context.Request.Path == "/clients")
+            {
+                context.Response.ContentType = "application/xml";
+                await context.Response.WriteAsync("<MediaContainer />");
+            }
+            else if (context.Request.Path.StartsWithSegments("/player/playback"))
+            {
+                commands.Add(context.Request.Path + context.Request.QueryString);
+                context.Response.ContentType = "application/xml";
+                await context.Response.WriteAsync("<MediaContainer />");
+            }
+            else
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+            }
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var adapter = new NetworkMediaSourceAdapter(NetworkMediaSourceKind.Plex,
+                new Uri($"http://127.0.0.1:{port}/"), "plex-token", "client-1",
+                options: new NetworkMediaSourceAdapterOptions
+                {
+                    PollInterval = TimeSpan.FromMilliseconds(100),
+                    ConnectTimeout = TimeSpan.FromSeconds(2),
+                    RequestTimeout = TimeSpan.FromSeconds(2)
+                });
+            await adapter.ConnectAsync();
+            Assert.True(adapter.IsConnected);
+            Assert.Equal("/media/plex-demo.mp4", adapter.Current.Path);
+            Assert.Equal(TimeSpan.FromSeconds(2.5), adapter.Current.Position);
+            Assert.Equal(TimeSpan.FromSeconds(12), adapter.Current.Duration);
+            Assert.Equal("movie", adapter.Current.ContentType);
+
+            await adapter.SendPlayAsync(false);
+            await adapter.SendSeekAsync(TimeSpan.FromSeconds(4));
+            Assert.Contains(commands, command => command.Contains("/player/playback/pause", StringComparison.Ordinal));
+            Assert.Contains(commands, command => command.Contains("offset=4000", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
     [Fact]
     public void ConfigurationMigrationExtractsPortableFieldsAndDropsSecrets()
     {

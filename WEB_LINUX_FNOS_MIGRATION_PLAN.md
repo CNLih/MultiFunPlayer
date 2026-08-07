@@ -385,7 +385,7 @@ Estimate: 10-16 person-days.
 
 Tasks:
 
-- [ ] P4-01 Port network-native media sources without process detection requirements.
+- [x] P4-01 Port network-native media sources without process detection requirements.
 - [x] P4-02 Add capability reporting for sources that require remote player configuration.
 - [ ] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
 - [x] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
@@ -598,12 +598,21 @@ Validated in the current Linux environment:
   unavailable-adapter error instead of claiming a live connection. Server tests:
   22/22, including The Handy registry integration and redacted JSONL log
   persistence/download.
-- The OFS portion of P4-01 is now a portable Infrastructure WebSocket adapter
-  wired into the media-source registry. It implements only the event/command
-  envelope observed in the desktop adapter, handles fragmented text frames,
-  malformed/oversized payloads, cancellation, and explicit connection errors,
-  and has a local Kestrel loopback simulator test. OFS is reported `ready`;
-  Emby/Jellyfin/Plex and the other network-player adapters remain pending.
+- P4-01 now includes portable Infrastructure HTTP adapters for Emby,
+  Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
+  validate `/System/Ping` and parse `/Sessions` `PlayState`/
+  `NowPlayingItem` responses, then expose Pause/Unpause/Seek commands. Plex
+  parses `/player/timeline/poll` XML and the referenced metadata `Part`, then
+  exposes the documented playback commands. The adapter polls a real session
+  or timeline response before reporting connected; health checks alone do not
+  claim a media clock. `secretRef` stores only an environment variable name
+  (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
+  while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
+  XML DTD rejection, malformed response handling, cancellation, and protocol
+  simulator tests cover all three sources (Infrastructure 25/25). Registry
+  integration verifies normalized `mediaState` and that token values never
+  reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
+  remain blocked.
 - `MultiFunPlayer.Application` now exposes platform-neutral ports for media
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be
