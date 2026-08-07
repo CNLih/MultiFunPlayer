@@ -848,10 +848,10 @@ Validated in the current Linux environment:
   a non-parallel collection so the integration evidence is deterministic.
 - `tools/run-validation-matrix.py` now executes the reproducible local unit,
   integration, contract, Web/browser, boundary, packaging, and release-template
-  checks and writes a redacted JSON report. The latest Linux run with user-local
-  browser host dependencies passed 18 checks with 0 failures and covered
-  Playwright desktop/mobile viewports; four target-environment gates remain
-  pending. The interruption subset covers active-playback browser
+  checks and writes a redacted JSON report. The 2026-08-08 Linux rerun with
+  user-local browser host dependencies passed 18 checks with 0 failures and
+  covered Playwright desktop/mobile viewports; four target-environment gates
+  remain pending. The interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, Buttplug device
   removal, and persistent-volume process restart. The Ubuntu CI job installs browser
   dependencies and uploads the same artifact for each run. Command output is
