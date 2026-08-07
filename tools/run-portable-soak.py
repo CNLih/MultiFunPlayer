@@ -245,6 +245,35 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 })
                 time.sleep(args.poll_seconds)
 
+            # Capture one bounded snapshot immediately before shutdown so a
+            # worker fault between the last scheduled poll and SIGINT is not
+            # silently omitted from the final counters.
+            report["finalSampleCaptured"] = False
+            try:
+                observed_at = time.monotonic()
+                final_status = request_json(base_url, "/api/v1/status", token)
+                final_targets = request_json(base_url, "/api/v1/output-targets", token)
+                final_target = next(item for item in final_targets if item["id"] == "portable-soak-file")
+                final_rss_bytes, final_cpu_seconds = process_metrics(process.pid)
+                if report["samples"]:
+                    report["samples"][-1].update({
+                        "elapsedSeconds": observed_at - started,
+                        "observedAtUtc": datetime.now(timezone.utc).isoformat(),
+                        "revision": final_status["revision"],
+                        "state": final_status["state"],
+                        "positionSeconds": final_status["positionSeconds"],
+                        "sentFrames": final_target["sentFrames"],
+                        "droppedFrames": final_target.get("droppedFrames", coalesced_frame_count(final_target)),
+                        "coalescedFrames": coalesced_frame_count(final_target),
+                        "failedFrames": final_target["failedFrames"],
+                        "reconnects": final_target["reconnects"],
+                        "rssBytes": final_rss_bytes,
+                        "cpuSeconds": final_cpu_seconds,
+                    })
+                    report["finalSampleCaptured"] = True
+            except (RuntimeError, KeyError, StopIteration, TypeError) as error:
+                report["finalSampleError"] = str(error)
+
             graceful_stop = stop_process(process)
             report["gracefulStop"] = graceful_stop
             output = report["samples"][-1] if report["samples"] else {}

@@ -879,9 +879,11 @@ Validated in the current Linux environment:
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
-  acceptance results, optional p95/coalescing budgets, and JSON evidence. Its report
-  now exposes `coalescedFrames` explicitly while retaining the historical
-  `droppedFrames` alias; transport failures remain in `failedFrames`. A previous
+  acceptance results, optional p95/coalescing budgets, and JSON evidence. It takes
+  a bounded final status/output snapshot immediately before shutdown and records
+  whether that snapshot succeeded. Its report now exposes `coalescedFrames`
+  explicitly while retaining the historical `droppedFrames` alias; transport
+  failures remain in `failedFrames`. A previous
   five-minute local smoke passed with 5,987 sent, 8 coalesced, 0 failed, and
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   coalescing budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
