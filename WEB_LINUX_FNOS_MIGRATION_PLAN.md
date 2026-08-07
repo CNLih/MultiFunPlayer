@@ -663,13 +663,18 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 98/98 checks passed for the
+- The packaging contract validator reports 100/100 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
   roots, health check, secret interpolation, the structural fnOS manifest, and
   the canonical `fnpack` project. The same validator runs in the packaging CI
   job, which now builds and inspects x86/ARM FPK archives with pinned official
   `fnpack` 1.2.3. Docker Buildx, image scanning, official target-firmware
   validation, and target-NAS execution remain external gates.
+- The FPK wrapper now normalizes relative output directories before invoking
+  `fnpack` and writes a portable `multifunplayer.fpk.sha256` sidecar. A local
+  relative-output build, checksum verification, and FPK content validation
+  pass; the packaging CI artifact includes both architecture-specific packages
+  and their checksums.
 - CI now contains a separate amd64/arm64 Buildx matrix that builds each image,
   verifies the loaded image OS/architecture, starts it with temporary persistent roots, checks anonymous liveness,
   authenticated adapter access, and SPA fallback, then removes the container.
