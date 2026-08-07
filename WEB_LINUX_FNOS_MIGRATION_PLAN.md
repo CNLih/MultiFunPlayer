@@ -779,8 +779,10 @@ Validated in the current Linux environment:
   current scan passes and is enforced in the portable CI job.
 - Persistent Data Protection now uses an explicit 90-day automatic key
   lifetime, bounded by `MFP_DATA_PROTECTION_KEY_LIFETIME_DAYS` (7-3650 days),
-  with tests and operations documentation requiring old key files to remain
-  available during rotation.
+  with resolver and ASP.NET `KeyManagementOptions` integration tests plus
+  operations documentation requiring old key files to remain available during
+  rotation. Server tests that mutate process-level environment variables share
+  a non-parallel collection so the integration evidence is deterministic.
 
 Still open and intentionally not advertised as complete:
 
