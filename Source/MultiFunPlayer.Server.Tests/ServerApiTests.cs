@@ -676,6 +676,47 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Output_target_recovers_when_tcp_endpoint_becomes_available()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var registry = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await registry.StartAsync(CancellationToken.None);
+
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var definition = new OutputTargetDefinition("tcp-recovery", "TCP recovery", "tcp",
+            $"127.0.0.1:{port}", Enabled: true, AutoConnect: false);
+        Assert.Equal(OutputTargetOperationStatus.Success,
+            (await registry.CreateAsync(definition)).Status);
+
+        var failed = await registry.ConnectAsync(definition.Id);
+        Assert.Equal(OutputTargetOperationStatus.Failed, failed.Status);
+        Assert.False(failed.Target!.Connected);
+        Assert.False(string.IsNullOrWhiteSpace(failed.Target.LastError));
+
+        using var listener = new TcpListener(IPAddress.Loopback, port);
+        listener.Start();
+        var acceptedTask = listener.AcceptTcpClientAsync();
+        var recovered = await registry.ConnectAsync(definition.Id);
+        Assert.Equal(OutputTargetOperationStatus.Success, recovered.Status);
+        Assert.True(recovered.Target!.Connected);
+        using var accepted = await acceptedTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await registry.DisconnectAsync(definition.Id);
+        Assert.False(Assert.Single(registry.List()).Connected);
+    }
+
+    [Fact]
     public async Task Output_target_registry_routes_tcp_udp_and_websocket_frames()
     {
         using var temp = new TemporaryDirectory();

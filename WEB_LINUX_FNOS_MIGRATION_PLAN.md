@@ -829,10 +829,10 @@ Validated in the current Linux environment:
   checks and writes a redacted JSON report. The last complete Linux run with
   browser host dependencies passed 17 checks with 0 failures and covered
   Playwright desktop/mobile viewports; the current dependency-limited run
-  passes 16 checks with 0 failures and keeps browser execution plus four target
+  passes 17 checks with 0 failures and keeps browser execution plus four target
   gates pending. The interruption subset covers active-playback browser
-  disconnect, TCP/WS peer restart, Buttplug device removal, and
-  persistent-volume process restart. The Ubuntu CI job installs browser
+  disconnect, output-endpoint recovery, TCP/WS peer restart, Buttplug device
+  removal, and persistent-volume process restart. The Ubuntu CI job installs browser
   dependencies and uploads the same artifact for each run. Command output is
   decoded as UTF-8 with replacement for malformed bytes, so a localized or
   binary diagnostic cannot abort evidence collection. When a local Playwright

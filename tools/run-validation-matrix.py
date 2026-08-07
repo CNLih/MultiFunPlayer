@@ -132,6 +132,16 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             root,
         ),
         Check(
+            "interruption-output-endpoint-recovery",
+            "interruption",
+            _command(dotnet, "test", "Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj",
+                     "--no-restore", "--configuration", "Release",
+                     "-p:EnableWindowsTargeting=true", "--filter",
+                     "FullyQualifiedName~Output_target_recovers_when_tcp_endpoint_becomes_available", "--",
+                     "xunit.parallelizeTestCollections=false"),
+            root,
+        ),
+        Check(
             "interruption-tcp-peer-restart",
             "interruption",
             _command(dotnet, "test", "Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj",
