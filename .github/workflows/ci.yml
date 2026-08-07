@@ -25,6 +25,7 @@ jobs:
     outputs:
       source: ${{ steps.changes.outputs.source }}
       docs: ${{ steps.changes.outputs.docs }}
+      packaging: ${{ steps.changes.outputs.packaging }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -41,6 +42,14 @@ jobs:
             - '.github/workflows/**'
           docs:
             - 'Docs/**'
+          packaging:
+            - 'Dockerfile'
+            - '.dockerignore'
+            - 'deploy/**'
+            - 'SECURITY.md'
+            - 'deploy/validate-packaging.py'
+            - 'deploy/validate-packaging.sh'
+            - '.github/workflows/**'
   
   docs:
     runs-on: ubuntu-latest
@@ -154,3 +163,18 @@ jobs:
         npm run check:static
         npm run build
       working-directory: ./Source/MultiFunPlayer.Web
+
+  packaging:
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ (needs.detect-changes.outputs.packaging == 'true') || (github.event.inputs.force-build == 'true') }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Validate container and fnOS contracts
+      run: ./deploy/validate-packaging.sh --json > packaging-contract.json
+    - name: Upload packaging evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: packaging-contract
+        path: packaging-contract.json

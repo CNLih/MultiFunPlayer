@@ -1,9 +1,11 @@
 # Security policy
 
-MultiFunPlayer is intended for a trusted home or lab network. The server still
-supports authentication by default for a reachable deployment, but it is not a
-multi-tenant internet service and should not be exposed directly to the public
-internet.
+MultiFunPlayer is intended for a trusted home or lab network. The server
+supports bearer authentication and one-time pairing; the Docker and fnOS
+deployment contracts require an explicit bootstrap token. Anonymous mode is
+only suitable for an isolated local development run. This is not a
+multi-tenant internet service and it should not be exposed directly to the
+public internet.
 
 ## Reporting a vulnerability
 
