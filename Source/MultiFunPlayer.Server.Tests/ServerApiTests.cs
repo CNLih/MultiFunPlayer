@@ -762,10 +762,13 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             }
 
             var acceptedWebSocket = await webSocketAccepted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            DeviceAxis.InitializeDefaults();
             var parsed = FunscriptReader.Default.FromText("network.funscript", "test",
-                "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}");
-            Assert.True(parsed.IsSuccess);
-            engine.Load(parsed.Resource, "L0");
+                "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}],"
+                + "\"axes\":[{\"id\":\"R2\",\"actions\":[{\"at\":0,\"pos\":100},"
+                + "{\"at\":1000,\"pos\":0}]}]}");
+            Assert.True(parsed.IsMultiAxis);
+            engine.Load(parsed.Resources);
             engine.Play();
             engine.Tick(TimeSpan.FromMilliseconds(500));
 
