@@ -1,13 +1,13 @@
 # Build the browser bundle separately so the runtime image contains only the
 # published ASP.NET Core service and static assets.
-FROM node:22-alpine AS web-build
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS web-build
 WORKDIR /src/web
 COPY Source/MultiFunPlayer.Web/package.json Source/MultiFunPlayer.Web/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY Source/MultiFunPlayer.Web/ ./
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS server-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:72dd743782f2ae7e5476fd64f6a460045e3998dc862218b80e6944cba79a01b0 AS server-build
 WORKDIR /src
 COPY . .
 COPY --from=web-build /src/web/dist/ Source/MultiFunPlayer.Server/wwwroot/
@@ -18,7 +18,7 @@ RUN dotnet publish Source/MultiFunPlayer.Server/MultiFunPlayer.Server.csproj \
     --output /app/publish \
     --property:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:f1126d438ccc359f51cc6d4701a8deae513856cf10f5fe645d29ea6403dcac6b AS runtime
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_HTTP_PORTS=8080 \

@@ -201,6 +201,12 @@ class Validator:
         if dockerfile is not None:
             self.check("docker:multi-stage", dockerfile.count("FROM ") >= 3,
                        "web build, server build, and runtime stages are present")
+            base_images = re.findall(r"(?m)^FROM\s+([^\s]+)", dockerfile)
+            self.check("docker:pinned-base-images",
+                       len(base_images) >= 3
+                       and all("@sha256:" in image and re.search(r"@sha256:[0-9a-f]{64}", image)
+                               for image in base_images[:3]),
+                       "all build and runtime base images use reviewed manifest digests")
             self.check("docker:non-root", re.search(r"(?m)^USER\s+mfp\s*$", dockerfile) is not None,
                        "runtime image declares the mfp user")
             self.check("docker:healthcheck", "HEALTHCHECK" in dockerfile and "/health/live" in dockerfile,
