@@ -773,10 +773,13 @@ Still open and intentionally not advertised as complete:
   Playwright harness and desktop/mobile screenshots are now validated.
 - Docker Buildx execution, physical amd64/arm64 NAS checks, serial hardware,
   clean fnOS installation/upgrade/rollback, and long-duration soak evidence.
-- Docs dependency remediation and Trivy or an equivalent image scan remain
-  release-environment work. The repository now has dependency-level SBOM
-  generation, but the static packaging contract is evidence of structure, not
-  a substitute for image/FPK scans.
+- Docs dependency remediation is complete: the full documentation audit is
+  clean at the current lockfile, and the CI job now fails on high/critical
+  findings. Trivy or an equivalent scan of the exact runtime images, plus
+  release-owner review of image/FPK artifacts, remain release-environment
+  work. The repository has dependency and file-level SBOM generation, but the
+  static packaging contract is evidence of structure, not a substitute for
+  those scans.
 
 These are external or higher-scope gates rather than reasons to roll back the
 portable foundation. The acceptance checklist below remains unchecked until
