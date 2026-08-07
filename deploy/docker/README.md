@@ -28,8 +28,13 @@ host-network override is documented in the compose file for remote protocols
 that depend on LAN discovery, and should be used only when bridge networking
 cannot reach the target.
 
-The Dockerfile has not been executed on this host because Docker is unavailable.
-The first hardware validation must cover both `linux/amd64` and `linux/arm64`.
+No Docker daemon is available on the current host. A rootless BuildKit probe
+was attempted and could start an amd64 worker, but image extraction failed
+because `newuidmap`/`newgidmap` are unavailable for the configured subordinate
+UID/GID ranges. This is not image-build evidence; use Docker Buildx (or a
+rootless environment with those helpers) before claiming `linux/amd64` or
+`linux/arm64` support. The first hardware validation must cover both
+architectures.
 
 For a local protocol smoke target, start the optional simulators with:
 
