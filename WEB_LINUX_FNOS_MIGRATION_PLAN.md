@@ -906,7 +906,12 @@ Validated in the current Linux environment:
   budget; it does not indicate transport loss (`failedFrames` stayed zero), but
   it also does not satisfy the budgeted soak gate. CI runs a 10-second smoke with
   the same p95/coalescing budgets and uploads the report. Neither run replaces the
-  required eight-hour Linux/fnOS soak or target-device failure matrix.
+  required eight-hour Linux/fnOS soak or target-device failure matrix. A fresh
+  eight-hour Linux run was started on 2026-08-08 05:26:47 CST with
+  `--duration-seconds 28800`, a 100 ms revision-interval budget, and a 5,760
+  coalesced-frame budget. Its detached process is still active; health and
+  `Playing` status probes remain successful, but no final JSON evidence exists
+  yet, so P7-02 remains unchecked until graceful completion and report review.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
