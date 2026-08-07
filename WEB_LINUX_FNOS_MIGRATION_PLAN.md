@@ -676,9 +676,10 @@ Validated in the current Linux environment:
   in both demo and remote modes. Media configuration now exposes the
   non-secret remote `deviceId` and environment-variable-only `secretRef`;
   API responses never return the secret reference, and ordinary updates retain
-  it when omitted. A six-case desktop/mobile Playwright journey now exercises
-  media, output, axis, and diagnostics CRUD paths; the focused harness is
-  source-validated here and requires the CI browser image for execution.
+  it when omitted. Eight desktop/mobile Playwright executions now exercise
+  media, output, axis, diagnostics CRUD, and authenticated remote
+  REST/WebSocket hydration paths; the focused harness is source-validated here
+  and requires the CI browser image for execution.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

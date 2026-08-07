@@ -100,4 +100,78 @@ test.describe('control room demo journey', () => {
     await page.getByRole('button', { name: 'Refresh' }).click();
     await expect(page.getByText('Diagnostics refreshed')).toBeVisible();
   });
+
+  test('hydrates an authenticated server store from REST and WebSocket state', async ({ page }) => {
+    const bearerSeen: string[] = [];
+    const mediaSource = {
+      id: 'remote-media',
+      name: 'Remote Jellyfin',
+      kind: 'jellyfin',
+      endpoint: 'https://media.example.local',
+      enabled: true,
+      autoConnect: false,
+      deviceId: 'remote-session-1',
+      integration: 'direct',
+      implementationStatus: 'ready',
+      connected: false,
+      lastError: null,
+    };
+
+    await page.addInitScript(() => {
+      class MockWebSocket extends EventTarget {
+        static readonly OPEN = 1;
+        readyState = MockWebSocket.OPEN;
+
+        constructor() {
+          super();
+          window.setTimeout(() => this.dispatchEvent(new MessageEvent('message', {
+            data: JSON.stringify({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 }),
+          })), 0);
+        }
+
+        close() {
+          this.readyState = 3;
+          this.dispatchEvent(new Event('close'));
+        }
+      }
+
+      Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
+    });
+    await page.route('**/api/v1/**', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const auth = request.headers().authorization;
+      if (auth) bearerSeen.push(auth);
+      const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+      if (url.pathname === '/api/v1/capabilities') return json({ apiVersion: 'v1', tickHz: 20, commands: ['play', 'pause', 'stop'], protocols: ['tcp'], authenticationRequired: true, webSocketPath: '/hubs/state' });
+      if (url.pathname === '/api/v1/status') return json({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 });
+      if (url.pathname === '/api/v1/scripts') return json([{ id: 'remote-script.funscript', name: 'Remote script', size: 128, lastModifiedUtc: '2026-08-07T00:00:00Z' }]);
+      if (url.pathname === '/api/v1/settings') return json({ schemaVersion: 1, tickHz: 20, maxWebSocketClients: 16, configRoot: '/config', scriptsRoot: '/scripts', logsRoot: '/logs', keysRoot: '/keys', authenticationRequired: true });
+      if (url.pathname === '/api/v1/configuration/migration') return json({ state: 'disabled', sourceFile: null, targetFile: 'migrated-configuration.json', warningCount: 0, error: null });
+      if (url.pathname === '/api/v1/adapters') return json({ apiVersion: 'v1', schemaVersion: '1.0', transports: [{ id: 'tcp', integration: 'direct', implementationStatus: 'ready', platforms: ['linux'], notes: 'loopback' }], adapters: [{ id: 'output.tcp', kind: 'output', integration: 'direct', implementationStatus: 'ready', transport: 'tcp', requiredServices: [], notes: 'loopback' }] });
+      if (url.pathname === '/api/v1/devices/serial') return json([]);
+      if (url.pathname === '/api/v1/logs') return json({ items: [{ timestampUtc: '2026-08-07T00:00:00Z', level: 'Information', category: 'remote-test', eventId: 1, message: 'Remote state loaded', traceId: null, properties: {} }], truncated: false, capacity: 500 });
+      if (url.pathname === '/api/v1/device-axes') return json([{ axis: 'L0', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 }]);
+      if (url.pathname === '/api/v1/media-sources') return json([mediaSource]);
+      if (url.pathname === '/api/v1/output-targets') return json([]);
+      return json({ title: 'Not found' }, 404);
+    });
+
+    await page.goto('/?access_token=remote-browser-token#media');
+    await expect(page.getByRole('heading', { name: 'Media sources' })).toBeVisible();
+    await expect(page.getByText('Server API connected')).toBeVisible();
+    await expect(page.getByText('Remote Jellyfin')).toBeVisible();
+    await expect(page.getByLabel('Remote device id', { exact: true })).toHaveValue('');
+    await page.locator('.source-card').filter({ hasText: 'Remote Jellyfin' }).getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByLabel('Remote device id', { exact: true })).toHaveValue('remote-session-1');
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.locator('body')).not.toContainText('remote-browser-token');
+    expect(bearerSeen.length).toBeGreaterThan(0);
+    expect(bearerSeen.every((value) => value === 'Bearer remote-browser-token')).toBeTruthy();
+
+    await page.getByRole('button', { name: 'Scripts' }).click();
+    await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();
+    await expect(page.getByText('25%')).toBeVisible();
+    await expect(page.getByText('75%')).toBeVisible();
+  });
 });
