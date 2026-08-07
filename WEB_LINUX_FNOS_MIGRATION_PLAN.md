@@ -746,7 +746,8 @@ Validated in the current Linux environment:
   settings and Application-level evaluation tests. Failed sink writes now
   expose a transient `lastError` in the output-target contract and clear it
   after a successful write, with Infrastructure coverage for failure and
-  recovery.
+  recovery. The error detail is an optional companion interface, preserving
+  the existing public diagnostics contract for older output plugins.
 - P4-03 now includes the direct Buttplug protocol-v3 WebSocket output adapter.
   It performs server-info negotiation, current-device enumeration, scanning,
   strict device selection, Scalar/Linear/Rotate/Stop commands, bounded queue
