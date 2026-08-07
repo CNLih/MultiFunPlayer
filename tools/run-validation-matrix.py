@@ -257,7 +257,7 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             "interruption",
             None,
             root,
-            "requires restarting the built Docker image with real persistent volumes; see the persistent-volume step in .github/workflows/ci.yml",
+            "requires replacing the built Docker container with real persistent volumes; see the persistent-volume step in .github/workflows/ci.yml",
         ),
         Check(
             "target-fnos-device",
