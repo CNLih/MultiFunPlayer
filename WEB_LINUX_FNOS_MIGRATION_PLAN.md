@@ -766,6 +766,11 @@ Validated in the current Linux environment:
   `uuid` overrides, requires Node 20+, and builds cleanly. CI now fails on a
   high/critical full Docs audit instead of swallowing the result; P7-06 remains
   open only for the exact runtime-image scan and release-environment review.
+- The Web lockfile now pins Playwright 1.55.1 and Vite 6.4.3 (including the
+  patched esbuild line). A clean `npm ci --ignore-scripts`, Web audit, Vite
+  build, and the ten desktop/mobile browser executions all pass with zero npm
+  audit findings; the host still needs the documented Chromium shared-library
+  path or CI's installed browser dependencies.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
   falling back to the integrity-pinned npm package manifests and unambiguous
@@ -783,7 +788,7 @@ Validated in the current Linux environment:
   produced 22 components with zero missing declarations; packaging CI now
   generates the corresponding x86/ARM SBOM and license artifacts. Runtime image
   scanning and release-owner review remain external.
-- The Web project now includes a pinned Playwright 1.53.2 configuration with
+- The Web project now includes a pinned Playwright 1.55.1 configuration with
   desktop and 393x727 mobile Chromium journeys, viewport overflow assertions,
   service-worker API bypass coverage, and CI screenshot artifacts. The five
   tests are enumerated for both projects; the latest local run passed 10/10
