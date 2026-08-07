@@ -1,4 +1,4 @@
-import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type MediaSourceInput, type OutputTargetInput, type Route, type Status } from './store';
+import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type MediaSourceInput, type OutputTargetInput, type Route, type Status, type SyncMode } from './store';
 import { MfpApiClient } from './api';
 import './styles.css';
 
@@ -136,8 +136,13 @@ function renderMediaForm(): string {
 }
 
 function renderScripts(state: AppState): string {
+  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
+  const axisRows = axes.map(([axis, value]) => {
+    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
+    return `<div class="axis-row"><span>${escapeHtml(axis)}</span><div class="axis-track"><span style="width:${percentage}%"></span></div><strong>${percentage}%</strong></div>`;
+  }).join('');
   return `${pageHeading('Library', 'Scripts', 'Browse, load, and inspect axis coverage before sending a script to the engine.', '<button class="button button-primary" data-action="import-script">Import script</button>')}
-    <div class="script-layout"><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or format" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${state.scripts.map((script) => `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`).join('')}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2>${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span>${state.nowPlaying.format}</span><span>${state.nowPlaying.duration}</span><span>${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${Array.from({ length: state.nowPlaying.axes }, (_, index) => `<div class="axis-row"><span>Axis ${index + 1}</span><div class="axis-track"><span style="width:${32 + ((index * 13) % 58)}%"></span></div><strong>${32 + ((index * 13) % 58)}%</strong></div>`).join('')}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input type="number" value="0" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select aria-label="Playback synchronization mode"><option>Engine clock</option><option>Media clock</option></select></label></div></section></div>`;
+    <div class="script-layout"><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or format" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${state.scripts.map((script) => `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`).join('')}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2>${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span>${state.nowPlaying.format}</span><span>${state.nowPlaying.duration}</span><span>${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
 }
 
 function renderOutputs(state: AppState): string {
@@ -377,10 +382,16 @@ function handleInput(event: Event) {
     if (table) table.innerHTML = renderLogTable(logs);
   }
   if (target.id === 'script-position' && event.type === 'change') {
-    const position = Number(target.value);
+    const position = Number(target.value) + store.getState().scriptOffset;
     void store.seek(position)
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Seek failed.', 'error'));
   }
+  if (target.id === 'script-offset' && event.type === 'change') {
+    const offset = Number(target.value);
+    if (Number.isFinite(offset)) store.setScriptOffset(offset);
+  }
+  if (target.id === 'script-sync-mode' && event.type === 'change')
+    store.setSyncMode(target.value as SyncMode);
 }
 
 appRoot.addEventListener('click', handleClick);

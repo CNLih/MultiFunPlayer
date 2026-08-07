@@ -2,6 +2,7 @@ import type { ApiCapabilities, ApiLogsResponse, ApiMediaSource, ApiOutputTarget,
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
+export type SyncMode = 'engine' | 'media';
 
 export interface MediaSource {
   id: string;
@@ -81,6 +82,9 @@ export interface AppState {
   nowPlaying: ScriptResource;
   elapsed: number;
   playing: boolean;
+  axisValues: Record<string, number>;
+  scriptOffset: number;
+  syncMode: SyncMode;
   media: MediaSource[];
   scripts: ScriptResource[];
   outputs: OutputTarget[];
@@ -117,6 +121,9 @@ const initialState: AppState = {
   },
   elapsed: 262,
   playing: true,
+  axisValues: { L0: 0.32, L1: 0.45, L2: 0.58, L3: 0.71, L4: 0.84, L5: 0.39 },
+  scriptOffset: 0,
+  syncMode: 'engine',
   media: [
     { id: 'media-1', name: 'Local media library', kind: 'Folder watcher', endpoint: '/scripts', status: 'online', latency: 12, capabilities: ['TCode', 'Bookmarks', 'Chapters'] },
     { id: 'media-2', name: 'OFS relay', kind: 'WebSocket', endpoint: 'ws://localhost:8020', status: 'connecting', latency: 48, capabilities: ['Live sync', 'Position events'] },
@@ -199,6 +206,15 @@ export function createMockStore() {
         throw new Error('Position must be a non-negative number.');
       state.elapsed = positionSeconds;
       appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
+      notify();
+    },
+    setScriptOffset(offsetSeconds: number) {
+      if (!Number.isFinite(offsetSeconds)) return;
+      state.scriptOffset = offsetSeconds;
+      notify();
+    },
+    setSyncMode(mode: SyncMode) {
+      state.syncMode = mode;
       notify();
     },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
@@ -363,6 +379,8 @@ export function createMockStore() {
     tick() {
       if (!state.playing || !state.engineRunning) return;
       state.elapsed = (state.elapsed + 1) % 512;
+      for (const [index, axis] of Object.keys(state.axisValues).entries())
+        state.axisValues[axis] = (Math.sin((state.elapsed / 18) + index) + 1) / 2;
       notify();
     },
   };
@@ -438,6 +456,7 @@ export function createRemoteStore(client: MfpApiClient) {
     state.playing = playing;
     state.engineRunning = status.state.toLowerCase() !== 'stopped';
     state.elapsed = status.positionSeconds;
+    state.axisValues = { ...status.axes };
     state.nowPlaying = { ...script, name: status.script ?? script.name, duration: formatTime(status.durationSeconds), axes: Object.keys(status.axes).length };
     state.health = [
       { label: 'Engine loop', detail: `Server tick / revision ${status.revision}`, status: 'pass' },
@@ -484,6 +503,15 @@ export function createRemoteStore(client: MfpApiClient) {
       const status = await client.seek(positionSeconds);
       applyStatus(status);
       appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
+      notify();
+    },
+    setScriptOffset(offsetSeconds: number) {
+      if (!Number.isFinite(offsetSeconds)) return;
+      state.scriptOffset = offsetSeconds;
+      notify();
+    },
+    setSyncMode(mode: SyncMode) {
+      state.syncMode = mode;
       notify();
     },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {

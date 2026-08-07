@@ -559,6 +559,10 @@ Validated in the current Linux environment:
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
+- The script view binds its axis visualization to normalized `status.axes`
+  values (with a deterministic demo fallback); offset is applied to seek
+  requests and the selected clock mode is retained in SPA state. Full
+  media-clock arbitration and per-axis editing remain open P5 work.
 - The Infrastructure migration reader accepts the sanitized desktop JSON shape,
   emits versioned portable records, normalizes path separators, and omits
   secret fields without modifying the source document. An explicit
