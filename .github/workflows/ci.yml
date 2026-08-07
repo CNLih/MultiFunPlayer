@@ -251,6 +251,20 @@ jobs:
       run: |
         ./deploy/validate-fpk.sh artifacts/fnos/x86/multifunplayer.fpk x86
         ./deploy/validate-fpk.sh artifacts/fnos/arm/multifunplayer.fpk arm
+    - name: Generate FPK SBOM and license inventories
+      run: |
+        python tools/generate-fpk-sbom.py \
+          --input artifacts/fnos/x86/multifunplayer.fpk \
+          --output artifacts/fnos/x86/multifunplayer.fpk.cyclonedx.json
+        python tools/generate-license-report.py \
+          --input artifacts/fnos/x86/multifunplayer.fpk.cyclonedx.json \
+          --output artifacts/fnos/x86/THIRD_PARTY_LICENSES.md
+        python tools/generate-fpk-sbom.py \
+          --input artifacts/fnos/arm/multifunplayer.fpk \
+          --output artifacts/fnos/arm/multifunplayer.fpk.cyclonedx.json
+        python tools/generate-license-report.py \
+          --input artifacts/fnos/arm/multifunplayer.fpk.cyclonedx.json \
+          --output artifacts/fnos/arm/THIRD_PARTY_LICENSES.md
     - name: Upload packaging evidence
       uses: actions/upload-artifact@v4
       with:

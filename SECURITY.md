@@ -53,6 +53,8 @@ It does not replace external validation. A release must also run `dotnet list
 --audit-level=high` for the full documentation toolchain.
 Also run `python3 tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json`,
 `python3 tools/generate-license-report.py --input artifacts/sbom/multifunplayer.cyclonedx.json --output artifacts/sbom/THIRD_PARTY_LICENSES.md`,
+and `python3 tools/generate-fpk-sbom.py` plus the license report for each
+architecture-specific FPK,
 and a scanner such as Trivy against the exact multi-arch image. Record tool
 versions, findings, and accepted exceptions with the release candidate. fnOS
 schema validation and FPK signing must use the `fnpack` version provided by the

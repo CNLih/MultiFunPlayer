@@ -42,7 +42,7 @@ def render(document: dict) -> str:
     lines = [
         "# Third-party license inventory",
         "",
-        "Generated from the committed CycloneDX dependency SBOM. The exact "
+        "Generated from the supplied CycloneDX SBOM. The exact "
         "runtime image and fnOS FPK may add platform packages and require a "
         "separate release-environment review.",
         "",
