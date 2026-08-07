@@ -12,7 +12,10 @@ Production deployments must set either `MFP_AUTH_TOKEN` or the documented
 only for a local, isolated development run.
 
 The container listens on port `8080` and serves the SPA and `/api/v1` from one
-origin. Named volumes preserve `/config`, `/keys`, `/scripts`, and `/logs`.
+origin. Named volumes preserve `/config`, `/keys`, `/scripts`, and `/logs`
+across container replacement. The fnOS Compose project uses its separate
+`TRIM_PKGVAR` bind-root convention; see `deploy/fnos/README.md` for that
+package-specific setup.
 The default image is non-root and read-only; add a narrowly scoped serial device
 mapping only when a Linux output adapter is configured.
 
