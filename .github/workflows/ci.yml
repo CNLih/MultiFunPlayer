@@ -162,7 +162,7 @@ jobs:
         dotnet test Source/MultiFunPlayer.Core.Tests/MultiFunPlayer.Core.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
         dotnet test Source/MultiFunPlayer.Application.Tests/MultiFunPlayer.Application.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
         dotnet test Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
-        dotnet test Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true
+        dotnet test Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj --no-restore --configuration Release -p:EnableWindowsTargeting=true -- xunit.parallelizeTestCollections=false
     - name: Audit .NET dependencies
       run: dotnet list MultiFunPlayer.sln package --vulnerable --include-transitive --no-restore
     - name: Build solution

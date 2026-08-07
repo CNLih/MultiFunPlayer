@@ -555,8 +555,8 @@ Validated in the current Linux environment:
 - Core tests: 8/8; Application tests: 6/6; Infrastructure tests: 28/28;
   Server tests: 24/24.
 - Web `typecheck`, static contract check, and Vite production build pass.
-- Docusaurus migration documentation builds successfully; only the existing
-  Browserslist database freshness warning is reported.
+- Docusaurus migration documentation builds successfully with the upgraded
+  3.10.2 toolchain and no build warnings.
 - GitHub Actions now includes an Ubuntu portable job that performs locked
   restore, Core/Application/Infrastructure/Server tests, solution build, and
   SPA type/static/production checks. Windows runner execution remains required
@@ -653,7 +653,7 @@ Validated in the current Linux environment:
   candidate.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles; the
-  current workspace contains 1,325 deduplicated components and CI uploads the
+  current workspace contains 1,392 deduplicated components and CI uploads the
   artifact. The exact runtime image/FPK SBOM and license review remain open
   until those artifacts can be built in their target environments.
 - The output view now shows per-target sent/dropped/failed frame counts,
