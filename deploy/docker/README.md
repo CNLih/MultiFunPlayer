@@ -40,3 +40,13 @@ docker compose -f deploy/docker/compose.yaml --profile simulators up --build
 The TCP receiver is available to the application as `fake-tcp:18000`; the UDP
 receiver is `fake-udp:18001`. Both print bounded payload previews and have no
 device or filesystem access. This simulator profile is not enabled by default.
+
+Before invoking Docker, run the repository-owned static contract check:
+
+```sh
+./deploy/validate-packaging.sh
+```
+
+This verifies the Dockerfile, compose security defaults, persistent volume
+names, and the structural fnOS manifest. It does not build an image or replace
+Docker Compose, Buildx, Trivy, or fnOS/fnpack validation on a target host.
