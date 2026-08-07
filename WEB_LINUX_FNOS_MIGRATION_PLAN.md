@@ -718,6 +718,11 @@ Validated in the current Linux environment:
   evidence. A 5-second local smoke passed with 66 sent and 0 failed frames;
   CI runs a 10-second smoke and uploads the report. This does not replace the
   required eight-hour Linux/fnOS soak or target-device failure matrix.
+- `tools/run-portable-upgrade.py` now starts two independent Server processes
+  against the same four roots and verifies restoration of an uploaded script,
+  an axis policy, runtime logs, and all persistent directories. The local
+  rehearsal passed with graceful shutdown in both phases; Docker volume and
+  fnOS package upgrade/rollback evidence remains external.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
@@ -753,13 +758,12 @@ Still open and intentionally not advertised as complete:
   Emby/Jellyfin/Plex network media adapters are directly wired and
   capability-reported. The remaining CRUD/registry entries clearly report
   planned or blocked capabilities. Initial pairing is implemented, but
-  upgrade/backup rehearsal and
-  recovery documentation remain open. Serial discovery and open/write are
+  Docker/fnOS upgrade/rollback rehearsal and key rotation policy remain open.
+  Serial discovery and open/write are
   implemented, but physical reconnect and permission validation remain
   external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
-  key rotation policy and upgrade rehearsal remain open; removal of an explicit
-  key root is covered by a negative decryption test.
+  removal of an explicit key root is covered by a negative decryption test.
 - Full UI settings forms and the broader browser/device matrix. The focused
   Playwright harness and desktop/mobile screenshots are now validated.
 - Docker Buildx execution, physical amd64/arm64 NAS checks, serial hardware,

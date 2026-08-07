@@ -66,3 +66,15 @@ log roots, then records output sent/dropped/failed counts, reconnects, status
 revision intervals, process RSS, CPU time, and graceful shutdown. A short
 duration is suitable for CI smoke checks; only a target Linux/fnOS run can
 provide the release-required eight-hour evidence.
+
+To rehearse a process-level upgrade while preserving the same four roots, run:
+
+```sh
+python3 tools/run-portable-upgrade.py \
+  --dotnet /path/to/dotnet \
+  --output artifacts/upgrade/portable-upgrade.json
+```
+
+This starts two independent server instances and verifies scripts, device
+settings, logs, and all persistent root directories after the second start.
+It does not replace Docker volume migration or fnOS upgrade/rollback testing.
