@@ -49,6 +49,48 @@ export interface ApiLogsResponse {
   capacity: number;
 }
 
+export interface ApiMediaSource {
+  id: string;
+  name: string;
+  kind: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
+  integration: string;
+  implementationStatus: string;
+  connected: boolean;
+  lastError: string | null;
+}
+
+export interface ApiMediaSourceRequest {
+  id: string;
+  name: string;
+  kind: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
+}
+
+export interface ApiOutputTarget {
+  id: string;
+  name: string;
+  protocol: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
+  connected: boolean;
+  lastError: string | null;
+}
+
+export interface ApiOutputTargetRequest {
+  id: string;
+  name: string;
+  protocol: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
+}
+
 export type StateListener = (status: StatusResponse) => void;
 
 /** Same-origin client used by the SPA when it is served by the ASP.NET host. */
@@ -87,6 +129,66 @@ export class MfpApiClient {
 
   async listScripts(): Promise<ApiScriptDescriptor[]> {
     return this.request<ApiScriptDescriptor[]>('/scripts');
+  }
+
+  async listMediaSources(): Promise<ApiMediaSource[]> {
+    return this.request<ApiMediaSource[]>('/media-sources');
+  }
+
+  async createMediaSource(request: ApiMediaSourceRequest): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>('/media-sources', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateMediaSource(id: string, request: ApiMediaSourceRequest): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteMediaSource(id: string): Promise<void> {
+    await this.request<unknown>(`/media-sources/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async connectMediaSource(id: string): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/connect`, { method: 'POST' });
+  }
+
+  async disconnectMediaSource(id: string): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/disconnect`, { method: 'POST' });
+  }
+
+  async listOutputTargets(): Promise<ApiOutputTarget[]> {
+    return this.request<ApiOutputTarget[]>('/output-targets');
+  }
+
+  async createOutputTarget(request: ApiOutputTargetRequest): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>('/output-targets', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateOutputTarget(id: string, request: ApiOutputTargetRequest): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>(`/output-targets/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async deleteOutputTarget(id: string): Promise<void> {
+    await this.request<unknown>(`/output-targets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async connectOutputTarget(id: string): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>(`/output-targets/${encodeURIComponent(id)}/connect`, { method: 'POST' });
+  }
+
+  async disconnectOutputTarget(id: string): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>(`/output-targets/${encodeURIComponent(id)}/disconnect`, { method: 'POST' });
   }
 
   async uploadScript(id: string, content: string, overwrite = false): Promise<ApiScriptDescriptor> {

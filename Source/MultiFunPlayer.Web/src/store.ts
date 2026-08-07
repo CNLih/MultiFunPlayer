@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiLogsResponse, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
+import type { ApiCapabilities, ApiLogsResponse, ApiMediaSource, ApiOutputTarget, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
@@ -11,6 +11,7 @@ export interface MediaSource {
   status: Status;
   latency: number;
   capabilities: string[];
+  error?: string;
 }
 
 export interface ScriptResource {
@@ -32,6 +33,25 @@ export interface OutputTarget {
   rate: number;
   lastPacket: string;
   signal: number;
+  error?: string;
+}
+
+export interface MediaSourceInput {
+  id: string;
+  name: string;
+  kind: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
+}
+
+export interface OutputTargetInput {
+  id: string;
+  name: string;
+  protocol: string;
+  endpoint: string;
+  enabled: boolean;
+  autoConnect: boolean;
 }
 
 export interface ActivityLog {
@@ -187,6 +207,87 @@ export function createMockStore() {
       notify();
       return script;
     },
+    async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
+      if (state.media.some((source) => source.id === input.id)) throw new Error('A media source with that id already exists.');
+      const source: MediaSource = {
+        id: input.id,
+        name: input.name,
+        kind: input.kind,
+        endpoint: input.endpoint || '(internal)',
+        status: input.enabled && input.autoConnect ? 'online' : 'offline',
+        latency: input.enabled && input.autoConnect ? 18 : 0,
+        capabilities: ['Configured source'],
+      };
+      state.media = [source, ...state.media];
+      appendLog('info', `Added ${source.name}`, 'media');
+      notify();
+      return source;
+    },
+    async deleteMediaSource(id: string): Promise<void> {
+      state.media = state.media.filter((source) => source.id !== id);
+      appendLog('warn', 'Media source removed', id);
+      notify();
+    },
+    async connectMediaSource(id: string): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      source.status = 'online';
+      source.latency = 18;
+      appendLog('info', `${source.name} connected`, id);
+      notify();
+      return source;
+    },
+    async disconnectMediaSource(id: string): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      source.status = 'offline';
+      source.latency = 0;
+      appendLog('warn', `${source.name} disconnected`, id);
+      notify();
+      return source;
+    },
+    async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
+      if (state.outputs.some((output) => output.id === input.id)) throw new Error('An output target with that id already exists.');
+      const output: OutputTarget = {
+        id: input.id,
+        name: input.name,
+        protocol: input.protocol.toUpperCase(),
+        endpoint: input.endpoint,
+        status: input.enabled && input.autoConnect ? 'online' : 'offline',
+        rate: 60,
+        lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
+        signal: input.enabled && input.autoConnect ? 86 : 0,
+      };
+      state.outputs = [output, ...state.outputs];
+      appendLog('info', `Added ${output.name}`, 'outputs');
+      notify();
+      return output;
+    },
+    async deleteOutputTarget(id: string): Promise<void> {
+      state.outputs = state.outputs.filter((output) => output.id !== id);
+      appendLog('warn', 'Output target removed', id);
+      notify();
+    },
+    async connectOutputTarget(id: string): Promise<OutputTarget> {
+      const output = state.outputs.find((item) => item.id === id);
+      if (!output) throw new Error('Output target not found.');
+      output.status = 'online';
+      output.signal = 86;
+      output.lastPacket = 'Just now';
+      appendLog('info', `${output.name} connected`, id);
+      notify();
+      return output;
+    },
+    async disconnectOutputTarget(id: string): Promise<OutputTarget> {
+      const output = state.outputs.find((item) => item.id === id);
+      if (!output) throw new Error('Output target not found.');
+      output.status = 'offline';
+      output.signal = 0;
+      output.lastPacket = 'Never';
+      appendLog('warn', `${output.name} disconnected`, id);
+      notify();
+      return output;
+    },
     toggleMedia(id: string) {
       const item = state.media.find((source) => source.id === id);
       if (!item) return;
@@ -237,6 +338,28 @@ export function createRemoteStore(client: MfpApiClient) {
     size: `${Math.max(1, Math.round(descriptor.size / 1024))} KB`,
     axes: 0,
   });
+  const statusFromConnection = (connected: boolean, lastError: string | null): Status => connected ? 'online' : lastError ? 'warning' : 'offline';
+  const mediaFromResponse = (source: ApiMediaSource): MediaSource => ({
+    id: source.id,
+    name: source.name,
+    kind: source.kind,
+    endpoint: source.endpoint || '(internal)',
+    status: statusFromConnection(source.connected, source.lastError),
+    latency: source.connected ? 18 : 0,
+    capabilities: [source.implementationStatus, source.integration].filter(Boolean),
+    error: source.lastError ?? undefined,
+  });
+  const outputFromResponse = (target: ApiOutputTarget): OutputTarget => ({
+    id: target.id,
+    name: target.name,
+    protocol: target.protocol.toUpperCase(),
+    endpoint: target.endpoint,
+    status: statusFromConnection(target.connected, target.lastError),
+    rate: 60,
+    lastPacket: target.connected ? 'Just now' : target.lastError ?? 'Never',
+    signal: target.connected ? 86 : 0,
+    error: target.lastError ?? undefined,
+  });
   const logsFromResponse = (response: ApiLogsResponse): ActivityLog[] => response.items.map((item, index) => ({
     id: Date.parse(item.timestampUtc) || Date.now() + index,
     time: new Date(item.timestampUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -264,6 +387,11 @@ export function createRemoteStore(client: MfpApiClient) {
     state.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     notify();
   };
+  const refreshResources = async () => {
+    const [media, outputs] = await Promise.all([client.listMediaSources(), client.listOutputTargets()]);
+    state.media = media.map(mediaFromResponse);
+    state.outputs = outputs.map(outputFromResponse);
+  };
   const refresh = async () => {
     const [status, scripts, settings, serialDevices, logs] = await Promise.all([
       client.getStatus(), client.listScripts(), client.getSettings(), client.listSerialDevices(), client.getLogs(),
@@ -272,7 +400,12 @@ export function createRemoteStore(client: MfpApiClient) {
     state.serialDevices = serialDevices;
     state.logs = logsFromResponse(logs);
     state.scripts = scripts.map(scriptFromDescriptor);
+    await refreshResources();
     applyStatus(status);
+  };
+  const refreshResourcesAfter = async () => {
+    await refreshResources();
+    notify();
   };
   const command = (action: () => Promise<StatusResponse>, message: string) => {
     void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
@@ -293,8 +426,82 @@ export function createRemoteStore(client: MfpApiClient) {
       notify();
       return script;
     },
-    toggleMedia(_id: string) { appendLog('warn', 'Media source adapters are configured on the server'); notify(); },
-    toggleOutput(_id: string) { appendLog('warn', 'Output adapters are configured on the server'); notify(); },
+    async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
+      await client.createMediaSource(input);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === input.id);
+      if (!source) throw new Error('The server did not return the created media source.');
+      appendLog('info', `Added ${source.name}`, 'media');
+      notify();
+      return source;
+    },
+    async deleteMediaSource(id: string): Promise<void> {
+      await client.deleteMediaSource(id);
+      await refreshResourcesAfter();
+      appendLog('warn', 'Media source removed', id);
+      notify();
+    },
+    async connectMediaSource(id: string): Promise<MediaSource> {
+      await client.connectMediaSource(id);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('The server did not return the media source.');
+      appendLog('info', `${source.name} connected`, id);
+      notify();
+      return source;
+    },
+    async disconnectMediaSource(id: string): Promise<MediaSource> {
+      await client.disconnectMediaSource(id);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('The server did not return the media source.');
+      appendLog('warn', `${source.name} disconnected`, id);
+      notify();
+      return source;
+    },
+    async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
+      await client.createOutputTarget(input);
+      await refreshResourcesAfter();
+      const target = state.outputs.find((item) => item.id === input.id);
+      if (!target) throw new Error('The server did not return the created output target.');
+      appendLog('info', `Added ${target.name}`, 'outputs');
+      notify();
+      return target;
+    },
+    async deleteOutputTarget(id: string): Promise<void> {
+      await client.deleteOutputTarget(id);
+      await refreshResourcesAfter();
+      appendLog('warn', 'Output target removed', id);
+      notify();
+    },
+    async connectOutputTarget(id: string): Promise<OutputTarget> {
+      await client.connectOutputTarget(id);
+      await refreshResourcesAfter();
+      const target = state.outputs.find((item) => item.id === id);
+      if (!target) throw new Error('The server did not return the output target.');
+      appendLog('info', `${target.name} connected`, id);
+      notify();
+      return target;
+    },
+    async disconnectOutputTarget(id: string): Promise<OutputTarget> {
+      await client.disconnectOutputTarget(id);
+      await refreshResourcesAfter();
+      const target = state.outputs.find((item) => item.id === id);
+      if (!target) throw new Error('The server did not return the output target.');
+      appendLog('warn', `${target.name} disconnected`, id);
+      notify();
+      return target;
+    },
+    toggleMedia(id: string) {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) return;
+      void (source.status === 'online' ? this.disconnectMediaSource(id) : this.connectMediaSource(id));
+    },
+    toggleOutput(id: string) {
+      const target = state.outputs.find((item) => item.id === id);
+      if (!target) return;
+      void (target.status === 'online' ? this.disconnectOutputTarget(id) : this.connectOutputTarget(id));
+    },
     tick() { /* state arrives from the bounded WebSocket stream */ },
     async connect() {
       const capabilities: ApiCapabilities = await client.getCapabilities();
