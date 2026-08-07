@@ -777,10 +777,13 @@ Validated in the current Linux environment:
   build, so P6-06 remains pending until Docker Buildx or an equivalently
   privileged runner produces the amd64/arm64 artifacts.
 - A RID-specific framework-dependent Server publish for `linux-arm64` also
-  succeeds locally; its apphost and `System.IO.Ports` native library identify
-  as AArch64 ELF files. This proves the .NET cross-RID publish path only, not
-  container startup, ARM runtime dependencies, or physical fnOS ARM support;
-  P6-06 and the physical architecture acceptance gate remain open.
+  succeeds locally (using an explicit RID restore); its apphost and
+  `System.IO.Ports` native library identify as AArch64 ELF files. The default
+  locked restore remains host-neutral, while an ARM publish must use its
+  explicit RID restore/publish path. This proves the .NET cross-RID publish
+  path only, not container startup, ARM runtime dependencies, or physical fnOS
+  ARM support; P6-06 and the physical architecture acceptance gate remain
+  open.
 - The runtime Docker health check uses Debian's native `busybox-static` package.
   It no longer copies Alpine's musl-linked `busybox` into the Debian ASP.NET
   image, avoiding an architecture/runtime-loader mismatch that would make a
