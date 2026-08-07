@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,49 @@ REQUIRED_GATES = (
     "accept-wpf-rollback",
 )
 STATUSES = {"pass", "pending", "fail"}
+EVIDENCE_KINDS = {
+    "artifact",
+    "command",
+    "review",
+    "target-device",
+    "workflow-run",
+}
+EVIDENCE_PREFIXES = {
+    "artifact": ("artifact:", "path:", "https://"),
+    "command": ("command:",),
+    "review": ("review:",),
+    "target-device": ("device:", "artifact:", "https://"),
+    "workflow-run": ("run:", "https://"),
+}
+PLACEHOLDER_REFS = {"local-check", "pending", "todo", "replace-me"}
+
+
+def _validate_evidence(gate_id: str, index: int,
+                       item: Any, errors: list[str]) -> None:
+    prefix = f"{gate_id}.evidence[{index}]"
+    if not isinstance(item, dict):
+        errors.append(f"{prefix} must be an object")
+        return
+    kind = item.get("kind")
+    if kind not in EVIDENCE_KINDS:
+        errors.append(f"{prefix}.kind must be a supported evidence type")
+    ref = item.get("ref")
+    if not isinstance(ref, str) or not ref.strip():
+        errors.append(f"{prefix}.ref is required")
+    elif ref.strip().lower() in PLACEHOLDER_REFS:
+        errors.append(f"{prefix}.ref cannot be a placeholder")
+    elif kind in EVIDENCE_PREFIXES and not ref.startswith(EVIDENCE_PREFIXES[kind]):
+        errors.append(f"{prefix}.ref has an invalid prefix for {kind}")
+    observed = item.get("observedAtUtc")
+    if not isinstance(observed, str) or not observed.strip():
+        errors.append(f"{prefix}.observedAtUtc is required")
+    else:
+        try:
+            parsed = datetime.fromisoformat(observed.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError("timezone required")
+        except ValueError:
+            errors.append(f"{prefix}.observedAtUtc must be an ISO-8601 timestamp with timezone")
 
 
 def validate_manifest(data: Any, require_complete: bool = False) -> dict[str, Any]:
@@ -79,16 +123,7 @@ def validate_manifest(data: Any, require_complete: bool = False) -> dict[str, An
             errors.append(f"{gate_id}.evidence must be an array")
         else:
             for evidence_index, item in enumerate(evidence):
-                if not isinstance(item, dict):
-                    errors.append(
-                        f"{gate_id}.evidence[{evidence_index}] must be an object")
-                    continue
-                if not isinstance(item.get("kind"), str) or not item["kind"].strip():
-                    errors.append(
-                        f"{gate_id}.evidence[{evidence_index}].kind is required")
-                if not isinstance(item.get("ref"), str) or not item["ref"].strip():
-                    errors.append(
-                        f"{gate_id}.evidence[{evidence_index}].ref is required")
+                _validate_evidence(gate_id, evidence_index, item, errors)
         if status == "pass" and not evidence:
             errors.append(f"{gate_id}.pass requires at least one evidence item")
 

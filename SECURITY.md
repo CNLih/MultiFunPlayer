@@ -62,7 +62,8 @@ target firmware.
 
 For a machine-readable release gate, start from
 `deploy/release-evidence.example.json`, attach each runner or target-device
-artifact as an evidence object, and validate it with:
+artifact as an evidence object such as
+`{"kind":"workflow-run","ref":"run:12345","observedAtUtc":"2026-08-07T00:00:00Z"}`, and validate it with:
 
 ```sh
 python3 tools/validate-release-evidence.py deploy/release-evidence.json --json

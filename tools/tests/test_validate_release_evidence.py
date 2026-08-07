@@ -21,7 +21,11 @@ def manifest(status: str = "pending") -> dict:
             {
                 "id": gate_id,
                 "status": status,
-                "evidence": [{"kind": "test", "ref": "local-check"}]
+                "evidence": [{
+                    "kind": "command",
+                    "ref": "command:local-check",
+                    "observedAtUtc": "2026-08-07T00:00:00Z",
+                }]
                 if status == "pass" else [],
             }
             for gate_id in MODULE.REQUIRED_GATES
@@ -50,6 +54,16 @@ class ValidateReleaseEvidenceTests(unittest.TestCase):
         result = MODULE.validate_manifest(data)
         self.assertEqual("fail", result["result"])
         self.assertIn("pass requires at least one evidence item", " ".join(result["errors"]))
+
+    def test_evidence_rejects_placeholders_and_invalid_metadata(self):
+        data = manifest("pass")
+        evidence = data["gates"][0]["evidence"][0]
+        evidence["ref"] = "local-check"
+        evidence["observedAtUtc"] = "yesterday"
+        result = MODULE.validate_manifest(data)
+        self.assertEqual("fail", result["result"])
+        self.assertTrue(any("placeholder" in error for error in result["errors"]))
+        self.assertTrue(any("ISO-8601" in error for error in result["errors"]))
 
     def test_missing_duplicate_and_unknown_gates_are_rejected(self):
         data = manifest()
