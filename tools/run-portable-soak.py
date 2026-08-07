@@ -237,6 +237,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
         base_url = f"http://127.0.0.1:{port}"
         graceful_stop = False
+        started: float | None = None
         try:
             wait_for_live(base_url, args.startup_timeout_seconds)
             request_json(base_url, "/api/v1/output-targets", token, "POST", {
@@ -262,6 +263,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             request_json(base_url, "/api/v1/player/play", token, "POST", {})
 
             started = time.monotonic()
+            report["playbackStartedAtUtc"] = datetime.now(timezone.utc).isoformat()
             previous: tuple[float, int] | None = None
             revision_intervals: list[float] = []
             while time.monotonic() - started < args.duration_seconds:
@@ -321,6 +323,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             except (RuntimeError, KeyError, StopIteration, TypeError) as error:
                 report["finalSampleError"] = str(error)
 
+            report["playbackEndedAtUtc"] = datetime.now(timezone.utc).isoformat()
+            report["durationSeconds"] = round(time.monotonic() - started, 3)
             graceful_stop = stop_process(process)
             report["gracefulStop"] = graceful_stop
             output = report["samples"][-1] if report["samples"] else {}
@@ -356,6 +360,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             graceful_stop = stop_process(process)
             report["result"] = "error"
             report["error"] = str(error)
+            if started is not None:
+                report["playbackEndedAtUtc"] = datetime.now(timezone.utc).isoformat()
+                report["durationSeconds"] = round(time.monotonic() - started, 3)
             report["serverLogTail"] = server_log.read_text(encoding="utf-8", errors="replace")[-4000:]
         finally:
             report["gracefulStop"] = graceful_stop

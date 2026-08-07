@@ -893,7 +893,10 @@ Validated in the current Linux environment:
   `--max-coalesced-frames` and accepts the old `--max-dropped-frames` option as
   a compatibility alias. Transport failures remain in `failedFrames`. Each
   report also records the repository revision, Server assembly SHA-256, and
-  assembly size so long-running evidence can be tied to an exact build. The
+  assembly size so long-running evidence can be tied to an exact build. It
+  records playback start/end timestamps and the measured `durationSeconds`, so
+  the requested duration is independently reviewable instead of inferred from
+  the harness start/finish timestamps. The
   five-minute local smoke passed with 5,987 sent, 8 coalesced, 0 failed, and
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   coalescing budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
