@@ -197,6 +197,8 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             "interruption-process-restart-persistence",
             "interruption",
             _command(python, "tools/run-portable-upgrade.py",
+                     "--baseline-server", "Source/MultiFunPlayer.Server/bin/Release/net10.0/MultiFunPlayer.Server.dll",
+                     "--rollback-server", "Source/MultiFunPlayer.Server/bin/Release/net10.0/MultiFunPlayer.Server.dll",
                      "--output", "artifacts/validation/portable-upgrade.json"),
             root,
         ),

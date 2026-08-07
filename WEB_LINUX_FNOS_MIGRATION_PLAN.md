@@ -949,7 +949,9 @@ Validated in the current Linux environment:
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
-  container replacement. The Ubuntu CI job installs browser
+  container replacement. The process persistence check also exercises the
+  same-build baseline/rollback branch; it remains process-level evidence only.
+  The Ubuntu CI job installs browser
   dependencies and uploads the same artifact for each run. Command output is
   decoded as UTF-8 with replacement for malformed bytes, so a localized or
   binary diagnostic cannot abort evidence collection. When a local Playwright
