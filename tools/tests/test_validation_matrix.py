@@ -31,6 +31,12 @@ class ValidationMatrixTests(unittest.TestCase):
         self.assertEqual("pending", result["status"])
         self.assertEqual("requires runner", result["reason"])
 
+    def test_missing_local_executable_is_a_failure(self):
+        check = MODULE.Check("missing", "unit", ("mfp-command-that-does-not-exist",), ROOT)
+        result = MODULE.run_check(check, 1)
+        self.assertEqual("fail", result["status"])
+        self.assertIn("executable not found", result["reason"])
+
     def test_command_output_is_redacted_and_status_is_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             check = MODULE.Check("echo", "contract", (sys.executable, "-c",

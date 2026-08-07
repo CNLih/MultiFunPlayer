@@ -233,7 +233,8 @@ def run_check(check: Check, timeout_seconds: float) -> dict[str, Any]:
 
     executable = shutil.which(check.command[0])
     if executable is None and not Path(check.command[0]).is_file():
-        result.update({"status": "pending", "reason": f"executable not found: {check.command[0]}"})
+        result.update({"status": "fail", "returnCode": None,
+                       "reason": f"executable not found: {check.command[0]}"})
         return result
 
     try:
