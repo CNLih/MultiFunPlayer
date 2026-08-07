@@ -1,5 +1,7 @@
 using System.Text;
 using System.IO.Ports;
+using System.Net;
+using System.Net.Sockets;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Infrastructure.Configuration;
 using MultiFunPlayer.Infrastructure.Output;
@@ -124,6 +126,38 @@ public sealed class InfrastructureTests
         await transport.SendAsync(Encoding.UTF8.GetBytes("two"));
 
         Assert.Equal(["one", "two"], transport.Payloads);
+    }
+
+    [Fact]
+    public async Task TcpTransport_round_trips_a_payload()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var accepted = listener.AcceptTcpClientAsync();
+        await using var transport = new TcpOutputTransport("tcp-loopback", "127.0.0.1", port);
+        await transport.ConnectAsync();
+        using var server = await accepted.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await transport.SendAsync(Encoding.UTF8.GetBytes("L0500\n"));
+        var buffer = new byte[32];
+        var read = await server.GetStream().ReadAsync(buffer).AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("L0500\n", Encoding.UTF8.GetString(buffer, 0, read));
+    }
+
+    [Fact]
+    public async Task UdpTransport_round_trips_a_payload()
+    {
+        using var receiver = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var port = ((IPEndPoint)receiver.Client.LocalEndPoint!).Port;
+        await using var transport = new UdpOutputTransport("udp-loopback", "127.0.0.1", port);
+        await transport.ConnectAsync();
+
+        await transport.SendAsync(Encoding.UTF8.GetBytes("R20750\n"));
+        var packet = await receiver.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("R20750\n", Encoding.UTF8.GetString(packet.Buffer));
     }
 
     [Fact]

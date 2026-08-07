@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 13/13;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
   Server tests: 10/10.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
