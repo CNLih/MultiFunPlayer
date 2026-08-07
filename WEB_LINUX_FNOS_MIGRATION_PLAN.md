@@ -594,6 +594,10 @@ Validated in the current Linux environment:
   caller cancellation, send failure, explicit reconnect, and rate-limit/seek
   behavior; a TCP loopback test also closes and reopens the peer socket to
   simulate a player restart before sending the next frame.
+- Linux serial discovery is verified against stable `/dev/serial/by-id`
+  identities and re-enumerates cleanly after a device link is removed; actual
+  serial open/write permissions and hardware reconnect behavior remain
+  external validation gates.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or
@@ -734,8 +738,9 @@ Still open and intentionally not advertised as complete:
   capability-reported. The remaining CRUD/registry entries clearly report
   planned or blocked capabilities. Initial pairing is implemented, but
   upgrade/backup rehearsal and
-  recovery documentation remain open. Serial open/write is implemented, but
-  physical reconnect and permission validation remain external gates. Data
+  recovery documentation remain open. Serial discovery and open/write are
+  implemented, but physical reconnect and permission validation remain
+  external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   key rotation policy and upgrade rehearsal remain open; removal of an explicit
   key root is covered by a negative decryption test.

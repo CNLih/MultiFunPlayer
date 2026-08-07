@@ -296,6 +296,9 @@ public sealed class InfrastructureTests
         Assert.Equal("usb-MultiFunPlayer_0001-if00", port.StableId);
         Assert.Equal(link, port.DevicePath);
         Assert.Equal(device, port.LinkTarget);
+
+        File.Delete(link);
+        Assert.Empty(new LinuxSerialPortEnumerator(temp.Path).Enumerate());
     }
 
     [Fact]
