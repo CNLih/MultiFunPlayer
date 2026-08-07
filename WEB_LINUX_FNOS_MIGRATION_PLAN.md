@@ -917,6 +917,9 @@ Validated in the current Linux environment:
   coalesced-frame budget. Its detached process is still active; health and
   `Playing` status probes remain successful, but no final JSON evidence exists
   yet, so P7-02 remains unchecked until graceful completion and report review.
+  That process predates the new minimum-duration option; its final evidence
+  must therefore be checked against the measured timestamps/elapsed process
+  time, while subsequent runs use `--min-duration-seconds 28800` directly.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
