@@ -19,9 +19,18 @@ services:
       - "${TRIM_PKGVAR:?}/keys:/keys"
       - "${TRIM_PKGVAR:?}/scripts:/scripts"
       - "${TRIM_PKGVAR:?}/logs:/logs"
-    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=32m"
     security_opt:
       - no-new-privileges:true
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
       interval: 30s

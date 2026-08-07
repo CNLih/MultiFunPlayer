@@ -134,6 +134,16 @@ class Validator:
                            f"fnOS Compose contract contains {token}")
             self.check("fnpack:compose:no-privileged", "privileged:" not in fnpack_compose,
                        "fnOS Compose project does not request privileged mode")
+            self.check("fnpack:compose:read-only", "    read_only: true" in fnpack_compose,
+                       "fnOS main service filesystem is read-only")
+            self.check("fnpack:compose:tmpfs", "/tmp:rw,noexec,nosuid,size=32m" in fnpack_compose,
+                       "fnOS main service has a bounded non-executable temporary filesystem")
+            self.check("fnpack:compose:no-new-privileges", "no-new-privileges:true" in fnpack_compose,
+                       "fnOS main service disables privilege escalation")
+            self.check("fnpack:compose:graceful-stop", "stop_grace_period: 30s" in fnpack_compose,
+                       "fnOS main service has a graceful stop budget")
+            self.check("fnpack:compose:resource-limits", 'cpus: "2.0"' in fnpack_compose and "memory: 512M" in fnpack_compose,
+                       "fnOS main service declares CPU and memory limits")
             self.check("fnpack:compose:healthcheck", "/health/live" in fnpack_compose,
                        "fnOS Compose project has a liveness health check")
             self.check("fnpack:compose:volume-count", fnpack_compose.count("TRIM_PKGVAR") == 4,
