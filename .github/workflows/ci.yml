@@ -38,6 +38,7 @@ jobs:
           source:
             - 'Source/**'
             - 'MultiFunPlayer.sln'
+            - '.github/workflows/**'
           docs:
             - 'Docs/**'
   
