@@ -22,8 +22,16 @@ public sealed class LinuxSerialPortEnumerator : ISerialPortEnumerator
         if (!Directory.Exists(_byIdRoot))
             return [];
 
+        IEnumerable<string> entries;
+        try
+        {
+            entries = Directory.EnumerateFileSystemEntries(_byIdRoot);
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+
         var ports = new List<SerialPortDescriptor>();
-        foreach (var entry in Directory.EnumerateFileSystemEntries(_byIdRoot))
+        foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -41,6 +49,7 @@ public sealed class LinuxSerialPortEnumerator : ISerialPortEnumerator
             }
             catch (FileNotFoundException) { }
             catch (DirectoryNotFoundException) { }
+            catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
 
