@@ -941,6 +941,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 && item.GetProperty("connected").GetBoolean()
                 && item.GetProperty("sentFrames").GetInt64() >= 0
                 && item.GetProperty("droppedFrames").GetInt64() >= 0
+                && item.GetProperty("coalescedFrames").GetInt64()
+                    == item.GetProperty("droppedFrames").GetInt64()
                 && item.GetProperty("failedFrames").GetInt64() >= 0
                 && item.GetProperty("reconnects").GetInt64() == 0
                 && (item.GetProperty("lastSentAtUtc").ValueKind is JsonValueKind.Null

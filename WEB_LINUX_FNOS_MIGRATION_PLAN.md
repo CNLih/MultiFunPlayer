@@ -882,7 +882,9 @@ Validated in the current Linux environment:
   validates the harness path only, not a different-version upgrade. The
   forced-stop helper has a unit test. Docker volume and fnOS package
   upgrade/rollback evidence remains external.
-- The output view now shows per-target sent/coalesced/failed frame counts,
+- The output view and `GET /api/v1/output-targets` now show per-target
+  sent/coalesced/failed frame counts (`coalescedFrames` is canonical and
+  `droppedFrames` remains a historical response alias),
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
   serial, and log state with a real refresh action. Device-axis editing covers

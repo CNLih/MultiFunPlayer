@@ -44,6 +44,7 @@ export interface OutputTarget {
   lastPacket: string;
   sentFrames: number;
   droppedFrames: number;
+  coalescedFrames: number;
   failedFrames: number;
   reconnects: number;
   lastSentAt: string;
@@ -174,9 +175,9 @@ const initialState: AppState = {
     { id: 'script-slate', name: 'Slate / Device smoke test', format: 'JSON', duration: '01:00', updated: 'Aug 02', size: '84 KB', axes: 8 },
   ],
   outputs: [
-    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', sentFrames: 12840, droppedFrames: 312, failedFrames: 0, reconnects: 1, lastSentAt: '09:47:22', signal: 94 },
-    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
-    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', sentFrames: 0, droppedFrames: 0, failedFrames: 0, reconnects: 0, lastSentAt: 'Never', signal: 0 },
+    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', sentFrames: 12840, droppedFrames: 312, coalescedFrames: 312, failedFrames: 0, reconnects: 1, lastSentAt: '09:47:22', signal: 94 },
+    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, coalescedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
+    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', sentFrames: 0, droppedFrames: 0, coalescedFrames: 0, failedFrames: 0, reconnects: 0, lastSentAt: 'Never', signal: 0 },
   ],
   deviceAxes: [
     { axis: 'L0', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 },
@@ -385,6 +386,7 @@ export function createMockStore() {
         lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
         sentFrames: 0,
         droppedFrames: 0,
+        coalescedFrames: 0,
         failedFrames: 0,
         reconnects: 0,
         lastSentAt: 'Never',
@@ -551,6 +553,7 @@ export function createRemoteStore(client: MfpApiClient) {
     lastPacket: target.lastSentAtUtc ? new Date(target.lastSentAtUtc).toLocaleTimeString() : target.lastError ?? 'Never',
     sentFrames: target.sentFrames ?? 0,
     droppedFrames: target.droppedFrames ?? 0,
+    coalescedFrames: target.coalescedFrames ?? target.droppedFrames ?? 0,
     failedFrames: target.failedFrames ?? 0,
     reconnects: target.reconnects ?? 0,
     lastSentAt: target.lastSentAtUtc ? new Date(target.lastSentAtUtc).toLocaleTimeString() : 'Never',

@@ -168,6 +168,8 @@ export interface ApiOutputTarget {
   lastError: string | null;
   sentFrames: number;
   droppedFrames: number;
+  /** Canonical name for rate-limited samples; absent on older servers. */
+  coalescedFrames?: number;
   failedFrames: number;
   reconnects: number;
   lastSentAtUtc: string | null;
