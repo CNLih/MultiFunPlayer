@@ -18,7 +18,17 @@ PATH=/home/henry/.dotnet:$PATH dotnet test MultiFunPlayer.sln \
 PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run typecheck
 PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run check:static
 PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run build
+python tools/run-validation-matrix.py \
+  --output artifacts/validation/validation-matrix.json
 ```
+
+The validation matrix runs the Linux-portable unit, integration, contract,
+browser, and interruption checks and records Docker/fnOS/physical-device
+requirements as explicit pending entries. A Linux solution build can compile
+the retained WPF project with `EnableWindowsTargeting=true`, but its WPF
+testhost requires the WindowsDesktop runtime; run the full solution test
+command on the Windows CI runner instead of treating a Linux testhost failure
+as a product regression.
 
 Protocol work must include a simulator or deterministic contract test for
 connect, disconnect, timeout, cancellation, malformed/partial input, and
