@@ -643,6 +643,13 @@ Validated in the current Linux environment:
   The same validator runs in the packaging CI job. Docker Buildx, `fnpack`,
   official fnOS schema validation, image scanning, and target-NAS execution are
   intentionally still external gates.
+- Current dependency checks report no vulnerable .NET packages and no
+  production Web-package vulnerabilities. The Docs site still uses the locked
+  Docusaurus 3.1 dependency graph: its audit reports 62 development-only
+  findings (6 low, 33 moderate, 21 high, 2 critical). A lockfile-only update
+  was attempted but npm registry resolution timed out without changing the
+  lockfile, so P7-06 remains open for a controlled Docusaurus upgrade and
+  container scan before a release candidate.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
@@ -671,6 +678,9 @@ Still open and intentionally not advertised as complete:
 - Browser Playwright/screenshot tests and full UI settings forms.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
   amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.
+- Docs dependency remediation, SBOM/license generation, and Trivy or an
+  equivalent image scan remain release-environment work; the static packaging
+  contract is evidence of structure, not a substitute for those scans.
 
 These are external or higher-scope gates rather than reasons to roll back the
 portable foundation. The acceptance checklist below remains unchecked until
