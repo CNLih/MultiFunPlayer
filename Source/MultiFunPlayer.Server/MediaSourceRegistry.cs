@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MultiFunPlayer.Infrastructure.Media;
 using MultiFunPlayer.Infrastructure.Storage;
 
 namespace MultiFunPlayer.Server;
@@ -41,7 +42,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             ["emby"] = ("direct", "planned"),
             ["jellyfin"] = ("direct", "planned"),
             ["plex"] = ("direct", "planned"),
-            ["ofs"] = ("direct", "planned"),
+            ["ofs"] = ("direct", "ready"),
             ["mpv"] = ("external-proxy", "blocked"),
             ["vlc"] = ("external-proxy", "blocked"),
             ["mpc"] = ("external-proxy", "blocked"),
@@ -54,13 +55,16 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     private readonly Dictionary<string, RuntimeSource> _sources = new(StringComparer.OrdinalIgnoreCase);
     private readonly RootedFileStore? _config;
     private readonly ILogger<MediaSourceRegistry> _logger;
+    private readonly IOfsMediaSourceAdapterFactory _ofsFactory;
     private bool _started;
     private bool _stopped;
     private int _disposed;
 
-    public MediaSourceRegistry(StorageOptions storage, ILogger<MediaSourceRegistry> logger)
+    public MediaSourceRegistry(StorageOptions storage, ILogger<MediaSourceRegistry> logger,
+        IOfsMediaSourceAdapterFactory? ofsFactory = null)
     {
         _logger = logger;
+        _ofsFactory = ofsFactory ?? new OfsMediaSourceAdapterFactory();
         try
         {
             _config = new RootedFileStore(storage.ConfigRoot);
@@ -127,7 +131,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 var source = new RuntimeSource(definition);
                 _sources.Add(definition.Id, source);
                 if (definition.Enabled && definition.AutoConnect)
-                    ConnectLocked(source);
+                    await ConnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -145,7 +149,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         {
             _stopped = true;
             foreach (var source in _sources.Values)
-                source.Connected = false;
+                await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -170,8 +174,11 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             _sources.Add(definition.Id, source);
             await PersistLockedAsync(cancellationToken).ConfigureAwait(false);
             if (definition.Enabled && definition.AutoConnect)
-                ConnectLocked(source);
-            return new(MediaSourceOperationStatus.Success, ToResponse(source));
+                await ConnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+            // Persistence is successful even when an optional network adapter
+            // is unavailable. The lifecycle endpoint reports that connection
+            // failure separately without losing the configured source.
+            return new(MediaSourceOperationStatus.Success, ToResponse(source), source.LastError);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -199,12 +206,13 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
             if (_config is null)
                 return new(MediaSourceOperationStatus.Unavailable, Error: "The configured root is not writable.");
+            await DisconnectLockedAsync(_sources[id], cancellationToken).ConfigureAwait(false);
             var source = new RuntimeSource(definition);
             _sources[id] = source;
             await PersistLockedAsync(cancellationToken).ConfigureAwait(false);
             if (definition.Enabled && definition.AutoConnect)
-                ConnectLocked(source);
-            return new(MediaSourceOperationStatus.Success, ToResponse(source));
+                await ConnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+            return new(MediaSourceOperationStatus.Success, ToResponse(source), source.LastError);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -222,10 +230,12 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_sources.Remove(id))
+            if (!_sources.TryGetValue(id, out var source))
                 return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
             if (_config is null)
                 return new(MediaSourceOperationStatus.Unavailable, Error: "The configured root is not writable.");
+            await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+            _sources.Remove(id);
             await PersistLockedAsync(cancellationToken).ConfigureAwait(false);
             return new(MediaSourceOperationStatus.Success);
         }
@@ -268,9 +278,9 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             if (!_sources.TryGetValue(id, out var source))
                 return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
             if (connect)
-                ConnectLocked(source);
+                await ConnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
             else
-                source.Connected = false;
+                await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
             return new(source.LastError is null ? MediaSourceOperationStatus.Success : MediaSourceOperationStatus.Failed,
                 ToResponse(source), source.LastError);
         }
@@ -289,7 +299,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 return;
             _stopped = true;
             foreach (var source in _sources.Values)
-                source.Connected = false;
+                await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -297,11 +307,53 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         }
     }
 
-    private void ConnectLocked(RuntimeSource source)
+    private async Task ConnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
     {
         var capability = Kinds[source.Definition.Kind];
         if (capability.Implementation == "ready")
         {
+            if (source.Definition.Kind.Equals("ofs", StringComparison.OrdinalIgnoreCase))
+            {
+                await DisconnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+                OfsWebSocketMediaAdapter? adapter = null;
+                try
+                {
+                    adapter = _ofsFactory.Create(new Uri(source.Definition.Endpoint));
+                    source.Adapter = adapter;
+                    adapter.MessageReceived += message => HandleOfsMessage(source, message);
+                    adapter.ConnectionStateChanged += state =>
+                    {
+                        if (state == OfsConnectionState.Disconnected)
+                            source.Connected = false;
+                        else if (state == OfsConnectionState.Faulted)
+                            source.Connected = false;
+                    };
+                    await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    source.Connected = true;
+                    source.LastError = null;
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    source.Connected = false;
+                    source.LastError = exception is OfsAdapterException ofs
+                        ? $"OFS WebSocket {ofs.Operation} failed: {ofs.InnerException?.Message ?? ofs.Message}"
+                        : $"OFS WebSocket connection failed: {exception.Message}";
+                    _logger.LogWarning(exception, "OFS media source {SourceId} could not connect to {Endpoint}.",
+                        source.Definition.Id, source.Definition.Endpoint);
+                    source.Adapter = null;
+                    if (adapter is not null)
+                    {
+                        try { await adapter.DisposeAsync().ConfigureAwait(false); }
+                        catch (Exception disposeException)
+                        {
+                            _logger.LogDebug(disposeException, "OFS adapter cleanup failed for {SourceId}.",
+                                source.Definition.Id);
+                        }
+                    }
+                    return;
+                }
+            }
             source.Connected = true;
             source.LastError = null;
             return;
@@ -311,6 +363,30 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         source.LastError = capability.Implementation == "blocked"
             ? "This source requires an external player/proxy and is not available in the headless host."
             : "The network media adapter is described but not wired in this server version.";
+    }
+
+    private static void HandleOfsMessage(RuntimeSource source, OfsMediaEvent message)
+    {
+        if (message.Kind == OfsMediaEventKind.ProtocolError)
+        {
+            source.LastError = message.Error;
+            return;
+        }
+
+        source.LastError = null;
+        source.LastMediaState = message.State;
+    }
+
+    private static async Task DisconnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
+    {
+        source.Connected = false;
+        var adapter = source.Adapter;
+        source.Adapter = null;
+        if (adapter is not null)
+        {
+            try { await adapter.DisconnectAsync(cancellationToken).ConfigureAwait(false); }
+            finally { await adapter.DisposeAsync().ConfigureAwait(false); }
+        }
     }
 
     private async Task PersistLockedAsync(CancellationToken cancellationToken)
@@ -361,5 +437,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         public MediaSourceDefinition Definition { get; } = definition;
         public bool Connected { get; set; }
         public string? LastError { get; set; }
+        public OfsWebSocketMediaAdapter? Adapter { get; set; }
+        public OfsMediaState? LastMediaState { get; set; }
     }
 }

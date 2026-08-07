@@ -62,8 +62,8 @@ exists it is left untouched. `GET /api/v1/configuration/migration` reports
 `disabled`, `source-not-found`, `migrated`, `already-present`, or `failed`.
 
 `GET /api/v1/adapters` is a versioned, read-only capability inventory. It
-lists portable direct transport contracts (`tcp`, `udp`, `websocket`, `serial`,
-and `file`) separately from adapter implementation status. Entries marked
+lists portable direct transport contracts (`tcp`, `udp`, `websocket`,
+`ofs-websocket`, `serial`, and `file`) separately from adapter implementation status. Entries marked
 `planned` or `contract-only` describe migration boundaries, not active
 connections. Windows-player integrations are marked `external-proxy` or
 `unsupported` with required services; this endpoint does not create pretend
@@ -76,18 +76,29 @@ overwrite an existing file unless `overwrite: true` is supplied.
 
 Output targets are managed through `/api/v1/output-targets` and the
 `connect`, `disconnect`, update, and delete subroutes. The direct registry
-supports `tcp`, `udp`, `websocket`, `file`, and `serial`; definitions are
-stored as non-secret JSON below the config root. File endpoints are relative
+supports `tcp`, `udp`, `websocket`, `file`, `serial`, and `the-handy`; definitions
+are stored as non-secret JSON below the config root. File endpoints are relative
 to the logs root, while serial endpoints must use a stable Linux device path
-or a COM name. Connection failures remain visible as `lastError` and do not
-terminate the host.
+or a COM name. The Handy endpoints use the existing Handy HTTP API v2 and
+accept a `sourceAxis` (default `L0`). Set `MFP_THE_HANDY_CONNECTION_KEY` in the
+host environment; the key is sent as `X-Connection-Key` and is never persisted
+or returned by the API. Connection failures remain visible as `lastError` and
+do not terminate the host. A The Handy endpoint may point to a local HTTP
+simulator for integration testing, but production devices should use the
+official HTTPS API endpoint.
 
 Media sources are managed through `/api/v1/media-sources` and the matching
 `connect`, `disconnect`, update, and delete subroutes. The `internal` source
-is directly available to the headless timeline. Emby, Jellyfin, Plex, and OFS
-entries are persisted as `planned` network capabilities, while MPV, VLC, MPC,
-Whirligig, DeoVR, and HereSphere are reported as `blocked` external-proxy
-capabilities until a remote adapter or companion process is provided. Source
-endpoints accept only `http(s)` or `ws(s)` URLs and never accept embedded
-credentials; unsupported connections return a visible error rather than
-pretending to be connected.
+is directly available to the headless timeline. OFS is a direct WebSocket
+adapter implementing the event/command envelope observed in the desktop
+client: `media_change`, `play_change`, `duration_change`, `time_change`,
+`playbackspeed_change`, `funscript_change`, `funscript_remove`, and
+`project_change`, with `change_play`, `change_time`, and
+`change_playbackspeed` commands. OFS has no capability handshake in that
+protocol, so the server reports only a successful WebSocket upgrade and does
+not claim unobserved features. Emby, Jellyfin, and Plex remain `planned`,
+while MPV, VLC, MPC, Whirligig, DeoVR, and HereSphere are reported as
+`blocked` external-proxy capabilities until a remote adapter or companion
+process is provided. Source endpoints accept only `http(s)` or `ws(s)` URLs
+and never accept embedded credentials; unsupported connections return a
+visible error rather than pretending to be connected.

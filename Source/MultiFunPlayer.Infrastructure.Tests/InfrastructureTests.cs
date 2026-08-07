@@ -1,9 +1,16 @@
 using System.Text;
+using System.Text.Json;
 using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Infrastructure.Configuration;
+using MultiFunPlayer.Infrastructure.Media;
 using MultiFunPlayer.Infrastructure.Output;
 using MultiFunPlayer.Infrastructure.Serial;
 using MultiFunPlayer.Infrastructure.Storage;
@@ -207,6 +214,153 @@ public sealed class InfrastructureTests
         Assert.Equal(230400, transport.Settings.BaudRate);
         Assert.Equal(Parity.Even, transport.Settings.Parity);
         Assert.Throws<ArgumentOutOfRangeException>(() => new SerialPortSettings { DataBits = 9 }.Validate());
+    }
+
+    [Fact]
+    public async Task OfsWebSocketAdapter_round_trips_observed_events_and_commands()
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var commands = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.UseWebSockets();
+        app.Run(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var payload = "{\"type\":\"event\",\"name\":\"media_change\",\"data\":{\"path\":\"demo.mp4\"}}";
+            var bytes = Encoding.UTF8.GetBytes(payload);
+            var split = bytes.Length / 2;
+            await socket.SendAsync(bytes.AsMemory(0, split), WebSocketMessageType.Text, false, CancellationToken.None);
+            await socket.SendAsync(bytes.AsMemory(split), WebSocketMessageType.Text, true, CancellationToken.None);
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"play_change\",\"data\":{\"playing\":true}}");
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"duration_change\",\"data\":{\"duration\":12.5}}");
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"time_change\",\"data\":{\"time\":2.25}}");
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"playbackspeed_change\",\"data\":{\"speed\":1.25}}");
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"funscript_change\",\"data\":{\"name\":\"L0\",\"funscript\":{\"actions\":[]}}}");
+            await SendAsync(socket,
+                "{\"type\":\"event\",\"name\":\"unknown_future_event\",\"data\":{}}");
+
+            var buffer = new byte[4096];
+            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            commands.TrySetResult(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var adapter = new OfsWebSocketMediaAdapter(
+                new Uri($"ws://127.0.0.1:{port}/ofs"),
+                new OfsWebSocketAdapterOptions { ConnectTimeout = TimeSpan.FromSeconds(2) });
+            var events = new List<OfsMediaEvent>();
+            var allEvents = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            adapter.MessageReceived += message =>
+            {
+                lock (events)
+                {
+                    events.Add(message);
+                    if (events.Count >= 7)
+                        allEvents.TrySetResult();
+                }
+            };
+
+            await adapter.ConnectAsync();
+            await adapter.SendPlayAsync(false);
+            await allEvents.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            var state = adapter.Current;
+            Assert.Equal("demo.mp4", state.Path);
+            Assert.True(state.Playing);
+            Assert.Equal(TimeSpan.FromSeconds(12.5), state.Duration);
+            Assert.Equal(TimeSpan.FromSeconds(2.25), state.Position);
+            Assert.Equal(1.25, state.PlaybackSpeed);
+            Assert.Contains(events, message => message.Kind == OfsMediaEventKind.FunscriptChanged
+                && message.ScriptName == "L0.funscript"
+                && message.FunscriptJson == "{\"actions\":[]}");
+            Assert.Contains(events, message => message.Kind == OfsMediaEventKind.ProtocolError);
+
+            var command = await commands.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            using var commandDocument = JsonDocument.Parse(command);
+            Assert.Equal("command", commandDocument.RootElement.GetProperty("type").GetString());
+            Assert.Equal("change_play", commandDocument.RootElement.GetProperty("name").GetString());
+            Assert.False(commandDocument.RootElement.GetProperty("data").GetProperty("playing").GetBoolean());
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+
+        static Task SendAsync(WebSocket socket, string message)
+            => socket.SendAsync(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, true,
+                CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task OfsWebSocketAdapter_rejects_oversized_and_malformed_messages_without_throwing()
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
+        var app = builder.Build();
+        app.UseWebSockets();
+        app.Run(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            await socket.SendAsync(Encoding.UTF8.GetBytes("{not-json"), WebSocketMessageType.Text, true,
+                CancellationToken.None);
+            await socket.SendAsync(Encoding.UTF8.GetBytes(new string('x', 4097)), WebSocketMessageType.Text, true,
+                CancellationToken.None);
+            await Task.Delay(100);
+        });
+
+        await app.StartAsync();
+        try
+        {
+            await using var adapter = new OfsWebSocketMediaAdapter(
+                new Uri($"ws://127.0.0.1:{port}/ofs"),
+                new OfsWebSocketAdapterOptions
+                {
+                    ConnectTimeout = TimeSpan.FromSeconds(2),
+                    MaxMessageBytes = 4096,
+                    ReceiveBufferBytes = 1024
+                });
+            var errors = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            adapter.MessageReceived += message =>
+            {
+                if (message.Kind == OfsMediaEventKind.ProtocolError)
+                    errors.TrySetResult();
+            };
+
+            await adapter.ConnectAsync();
+            await errors.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.NotNull(adapter.LastError);
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
     }
 
     [Fact]

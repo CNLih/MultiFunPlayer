@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 19/19;
   Server tests: 21/21.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
@@ -565,21 +565,32 @@ Validated in the current Linux environment:
   `MFP_LEGACY_CONFIG_PATH` startup import writes the versioned record once under
   the config root and exposes a protected migration status endpoint.
 - The Server exposes a versioned read-only adapter capability inventory and
-  explicitly labels direct transports as planned until output registries are
-  wired. Browser WebSocket binary/invalid text frames are ignored without
-  affecting the playback API.
+  explicitly labels each transport by implementation status. Browser
+  WebSocket binary/invalid text frames are ignored without affecting the
+  playback API.
 - Script repository reads and uploads reject traversal and reparse points;
   uploads are JSON-validated, bounded, atomic, and opt-in overwrite only.
 - A persistent output-target registry now exposes CRUD and lifecycle routes for
-  direct TCP, UDP, WebSocket, File, and Serial transports. File and serial
+  direct TCP, UDP, WebSocket, File, Serial, and The Handy HTTP HDSP v2 output.
+  The Handy uses the existing desktop API contract, takes a configured
+  `sourceAxis`, reads its connection key only from
+  `MFP_THE_HANDY_CONNECTION_KEY`, and never persists the key. File and serial
   endpoint constraints are validated before persistence; connection failures
-  are represented in the target state.
+  are represented in the target state. Simulator tests cover handshake,
+  malformed/timeout responses, send failure, and explicit reconnect.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  21/21, including redacted JSONL log persistence and download.
+  22/22, including The Handy registry integration and redacted JSONL log
+  persistence/download.
+- The OFS portion of P4-01 is now a portable Infrastructure WebSocket adapter
+  wired into the media-source registry. It implements only the event/command
+  envelope observed in the desktop adapter, handles fragmented text frames,
+  malformed/oversized payloads, cancellation, and explicit connection errors,
+  and has a local Kestrel loopback simulator test. OFS is reported `ready`;
+  Emby/Jellyfin/Plex and the other network-player adapters remain pending.
 - `MultiFunPlayer.Application` now exposes platform-neutral ports for media
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be
@@ -599,9 +610,10 @@ Validated in the current Linux environment:
 
 Still open and intentionally not advertised as complete:
 
-- Functional media-source network adapters and The Handy/Buttplug output
-  adapters remain open; the CRUD/registry contracts now exist and clearly
-  report planned or blocked capabilities. Initial pairing is implemented, but
+- Functional media-source network adapters and Buttplug output remain open;
+  The Handy HTTP adapter is now directly wired and capability-reported. The
+  CRUD/registry contracts now exist and clearly report planned or blocked
+  capabilities. Initial pairing is implemented, but
   upgrade/backup rehearsal and
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data
