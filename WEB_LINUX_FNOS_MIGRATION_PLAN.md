@@ -711,6 +711,13 @@ Validated in the current Linux environment:
   and uploads a JSON vulnerability report before smoke testing. This is an
   executable release gate, but it remains unchecked here until an Ubuntu runner
   produces both build, scan, and smoke results.
+- Each container matrix leg now also mounts independent `/config`, `/keys`,
+  `/scripts`, and `/logs` volumes, pairs once to persist an authentication hash,
+  writes an axis policy and script, restarts the same image, and verifies the
+  authenticated state, resources, volume markers, and all four mount points
+  after restart. It also rejects plaintext bearer-token storage in `/config`.
+  This supplies executable persistence evidence in CI; local Docker-volume and
+  fnOS upgrade/rollback evidence remains external.
 - The Windows build matrix now uses the same non-parallel xUnit collection
   setting as the portable job, and the temporary-directory helper retries only
   transient cleanup races. A Windows runner result is still required before

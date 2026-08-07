@@ -396,3 +396,78 @@ jobs:
         done
         docker logs "$CONTAINER_NAME"
         exit 1
+    - name: Restart ${{ matrix.arch }} image with persistent volumes
+      env:
+        IMAGE_TAG: multifunplayer:ci-${{ matrix.arch }}
+        CONTAINER_NAME: mfp-persist-${{ matrix.arch }}
+        MFP_TEST_TOKEN: ci-persistent-token-1234567890
+        MFP_PAIRING_TOKEN: ci-pairing-token-1234567890
+      run: |
+        set -euo pipefail
+        volume_prefix="mfp-ci-persist-${{ matrix.arch }}"
+        config_volume="${volume_prefix}-config"
+        keys_volume="${volume_prefix}-keys"
+        scripts_volume="${volume_prefix}-scripts"
+        logs_volume="${volume_prefix}-logs"
+        cleanup() {
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          docker volume rm "$config_volume" "$keys_volume" "$scripts_volume" "$logs_volume" >/dev/null 2>&1 || true
+        }
+        trap cleanup EXIT
+        docker volume create "$config_volume" >/dev/null
+        docker volume create "$keys_volume" >/dev/null
+        docker volume create "$scripts_volume" >/dev/null
+        docker volume create "$logs_volume" >/dev/null
+        docker run --detach --name "$CONTAINER_NAME" \
+          --publish 18081:8080 \
+          --read-only \
+          --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+          --volume "$config_volume:/config" \
+          --volume "$keys_volume:/keys" \
+          --volume "$scripts_volume:/scripts" \
+          --volume "$logs_volume:/logs" \
+          --env MFP_PAIRING_TOKEN="$MFP_PAIRING_TOKEN" \
+          "$IMAGE_TAG"
+        wait_ready() {
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:18081/health/live >/dev/null; then
+              return 0
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]; then
+              docker logs "$CONTAINER_NAME"
+              return 1
+            fi
+            sleep 2
+          done
+          docker logs "$CONTAINER_NAME"
+          return 1
+        }
+        wait_ready
+        curl --fail --silent --show-error \
+          -H 'Content-Type: application/json' \
+          --data "{\"pairingToken\":\"$MFP_PAIRING_TOKEN\",\"authToken\":\"$MFP_TEST_TOKEN\"}" \
+          -X POST http://127.0.0.1:18081/api/v1/auth/pair >/dev/null
+        curl --fail --silent --show-error \
+          -H "Authorization: Bearer $MFP_TEST_TOKEN" \
+          -H 'Content-Type: application/json' \
+          --data '{"axis":"L0","minimum":0.2,"maximum":0.8,"inverted":true,"interpolation":"Linear","limitEnabled":true,"limitMinimum":0.3,"limitMaximum":0.7}' \
+          -X PUT http://127.0.0.1:18081/api/v1/device-axes/L0 >/dev/null
+        curl --fail --silent --show-error \
+          -H "Authorization: Bearer $MFP_TEST_TOKEN" \
+          -H 'Content-Type: application/json' \
+          --data '{"id":"ci-persistent.funscript","content":"{\"actions\":[{\"at\":0,\"pos\":25},{\"at\":1000,\"pos\":75}]}"}' \
+          -X POST http://127.0.0.1:18081/api/v1/scripts >/dev/null
+        docker exec "$CONTAINER_NAME" sh -c 'test -d /config && test -d /keys && test -d /scripts && test -d /logs && printf marker > /keys/ci-key-marker && printf marker > /logs/ci-log-marker'
+        if docker exec "$CONTAINER_NAME" sh -c "grep -R -F -- '$MFP_TEST_TOKEN' /config"; then
+          echo 'The bearer token was written in plaintext to /config.' >&2
+          exit 1
+        fi
+        docker restart "$CONTAINER_NAME" >/dev/null
+        wait_ready
+        curl --fail --silent --show-error \
+          -H "Authorization: Bearer $MFP_TEST_TOKEN" \
+          http://127.0.0.1:18081/api/v1/device-axes | grep -Eq '"axis"[[:space:]]*:[[:space:]]*"L0"'
+        curl --fail --silent --show-error \
+          -H "Authorization: Bearer $MFP_TEST_TOKEN" \
+          http://127.0.0.1:18081/api/v1/scripts | grep -Eq 'ci-persistent\.funscript'
+        docker exec "$CONTAINER_NAME" sh -c 'test "$(cat /keys/ci-key-marker)" = marker && test "$(cat /logs/ci-log-marker)" = marker'
