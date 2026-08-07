@@ -128,11 +128,11 @@ function renderMedia(state: AppState): string {
   return `${pageHeading('Inputs', 'Media sources', 'Connect local folders and live relays. Capabilities are advertised before a source is enabled.', '<button class="button button-primary" data-action="focus-media-form">Add source</button>')}
     <div class="notice notice-info"><strong>Server-managed resources.</strong><span>Changes are persisted by the API; unsupported integrations remain visible with their implementation status.</span></div>
     ${renderMediaForm()}
-    <section class="source-grid" aria-label="Media source list">${state.media.length === 0 ? '<div class="empty-state panel">No media sources configured.</div>' : state.media.map((source) => `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`).join('')}</section>`;
+    <section class="source-grid" aria-label="Media source list">${state.media.length === 0 ? '<div class="empty-state panel">No media sources configured.</div>' : state.media.map((source) => `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-media-edit="${escapeHtml(source.id)}">Edit</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`).join('')}</section>`;
 }
 
 function renderMediaForm(): string {
-  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label>Name<input name="name" required placeholder="Main media library" /></label><label>Kind<select name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label>Endpoint<input name="endpoint" placeholder="https://media.example/api" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label>Name<input name="name" required placeholder="Main media library" /></label><label>Kind<select name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option><option value="vlc">VLC proxy</option></select></label><label>Endpoint<input name="endpoint" placeholder="https://media.example/api" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
 }
 
 function renderScripts(state: AppState): string {
@@ -144,11 +144,11 @@ function renderOutputs(state: AppState): string {
   return `${pageHeading('Devices', 'Output targets', 'Keep protocol connections visible, bounded, and easy to recover.', '<button class="button button-primary" data-action="focus-output-form">Add target</button>')}
     <div class="notice notice-info"><strong>Bounded transports.</strong><span>TCP, UDP, WebSocket, file, and serial targets use the server transport registry.</span></div>
     ${renderOutputForm()}
-    <section class="panel table-panel" aria-labelledby="targets-title"><div class="panel-heading"><div><p class="eyebrow">Configured targets</p><h2 id="targets-title">All outputs</h2></div><span class="result-count">${state.outputs.length} targets</span></div><div class="responsive-table"><table><thead><tr><th scope="col">Target</th><th scope="col">Protocol</th><th scope="col">Status</th><th scope="col">Rate</th><th scope="col">Signal</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.outputs.length === 0 ? '<tr><td colspan="6">No output targets configured.</td></tr>' : state.outputs.map((output) => `<tr><td><strong>${escapeHtml(output.name)}</strong><span class="table-subtext">${escapeHtml(output.endpoint)}</span>${output.error ? `<span class="table-subtext resource-error">${escapeHtml(output.error)}</span>` : ''}</td><td>${escapeHtml(output.protocol)}</td><td><span class="status-badge ${statusClass(output.status)}">${statusDot(output.status)}${statusLabel(output.status)}</span></td><td><input class="rate-input" type="number" value="${output.rate}" min="1" max="120" aria-label="${escapeHtml(output.name)} update rate" /> Hz</td><td><div class="signal-cell"><div class="signal-meter"><span style="width:${output.signal}%"></span></div><span>${output.signal}%</span></div></td><td><div class="resource-actions"><button class="button button-secondary" data-output-toggle="${escapeHtml(output.id)}">${output.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-danger" data-output-delete="${escapeHtml(output.id)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>`;
+    <section class="panel table-panel" aria-labelledby="targets-title"><div class="panel-heading"><div><p class="eyebrow">Configured targets</p><h2 id="targets-title">All outputs</h2></div><span class="result-count">${state.outputs.length} targets</span></div><div class="responsive-table"><table><thead><tr><th scope="col">Target</th><th scope="col">Protocol</th><th scope="col">Status</th><th scope="col">Rate</th><th scope="col">Signal</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.outputs.length === 0 ? '<tr><td colspan="6">No output targets configured.</td></tr>' : state.outputs.map((output) => `<tr><td><strong>${escapeHtml(output.name)}</strong><span class="table-subtext">${escapeHtml(output.endpoint)}</span>${output.error ? `<span class="table-subtext resource-error">${escapeHtml(output.error)}</span>` : ''}</td><td>${escapeHtml(output.protocol)}</td><td><span class="status-badge ${statusClass(output.status)}">${statusDot(output.status)}${statusLabel(output.status)}</span></td><td><input class="rate-input" type="number" value="${output.rate}" min="1" max="120" aria-label="${escapeHtml(output.name)} update rate" /> Hz</td><td><div class="signal-cell"><div class="signal-meter"><span style="width:${output.signal}%"></span></div><span>${output.signal}%</span></div></td><td><div class="resource-actions"><button class="button button-secondary" data-output-toggle="${escapeHtml(output.id)}">${output.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-output-edit="${escapeHtml(output.id)}">Edit</button><button class="button button-danger" data-output-delete="${escapeHtml(output.id)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
 function renderOutputForm(): string {
-  return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label>Name<input name="name" required placeholder="Studio bridge" /></label><label>Protocol<select name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option></select></label><label>Endpoint<input name="endpoint" required placeholder="127.0.0.1:8000" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label>Id<input name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label>Name<input name="name" required placeholder="Studio bridge" /></label><label>Protocol<select name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option></select></label><label>Endpoint<input name="endpoint" required placeholder="127.0.0.1:8000" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
 }
 
 function renderLogs(state: AppState): string {
@@ -218,6 +218,55 @@ function handleClick(event: MouseEvent) {
   if (action === 'focus-output-form') {
     document.querySelector<HTMLInputElement>('[data-resource-form="output"] input[name="id"]')?.focus();
   }
+  const mediaEditId = target.closest<HTMLElement>('[data-media-edit]')?.dataset.mediaEdit;
+  if (mediaEditId) {
+    const source = store.getState().media.find((item) => item.id === mediaEditId);
+    const form = document.querySelector<HTMLFormElement>('[data-resource-form="media"]');
+    if (source && form) {
+      form.dataset.editingId = source.id;
+      (form.elements.namedItem('id') as HTMLInputElement).value = source.id;
+      (form.elements.namedItem('id') as HTMLInputElement).readOnly = true;
+      (form.elements.namedItem('name') as HTMLInputElement).value = source.name;
+      (form.elements.namedItem('kind') as HTMLSelectElement).value = source.kind.toLowerCase();
+      (form.elements.namedItem('endpoint') as HTMLInputElement).value = source.endpoint === '(internal)' ? '' : source.endpoint;
+      (form.elements.namedItem('enabled') as HTMLInputElement).checked = source.enabled ?? true;
+      (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
+      const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (submit) submit.textContent = 'Save source';
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (form.elements.namedItem('name') as HTMLInputElement).focus();
+    }
+  }
+  const outputEditId = target.closest<HTMLElement>('[data-output-edit]')?.dataset.outputEdit;
+  if (outputEditId) {
+    const output = store.getState().outputs.find((item) => item.id === outputEditId);
+    const form = document.querySelector<HTMLFormElement>('[data-resource-form="output"]');
+    if (output && form) {
+      form.dataset.editingId = output.id;
+      (form.elements.namedItem('id') as HTMLInputElement).value = output.id;
+      (form.elements.namedItem('id') as HTMLInputElement).readOnly = true;
+      (form.elements.namedItem('name') as HTMLInputElement).value = output.name;
+      (form.elements.namedItem('protocol') as HTMLSelectElement).value = output.protocol.toLowerCase();
+      (form.elements.namedItem('endpoint') as HTMLInputElement).value = output.endpoint;
+      (form.elements.namedItem('enabled') as HTMLInputElement).checked = output.enabled ?? true;
+      (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = output.autoConnect ?? true;
+      const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (submit) submit.textContent = 'Save target';
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (form.elements.namedItem('name') as HTMLInputElement).focus();
+    }
+  }
+  const cancelKind = target.closest<HTMLElement>('[data-resource-cancel]')?.dataset.resourceCancel;
+  if (cancelKind) {
+    const form = document.querySelector<HTMLFormElement>(`[data-resource-form="${cancelKind}"]`);
+    if (form) {
+      delete form.dataset.editingId;
+      form.reset();
+      (form.elements.namedItem('id') as HTMLInputElement).readOnly = false;
+      const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : 'Create target';
+    }
+  }
   if (action === 'import-script') importInput.click();
   if (action === 'download-logs') showToast('Diagnostic snapshot prepared (demo only)');
   if (action === 'load-next') {
@@ -270,14 +319,30 @@ async function handleSubmit(event: SubmitEvent) {
   try {
     if (kind === 'media') {
       const input: MediaSourceInput = { id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'), enabled: checked('enabled'), autoConnect: checked('autoConnect') };
-      await store.createMediaSource(input);
-      showToast('Media source created');
+      const editingId = form.dataset.editingId;
+      if (editingId) {
+        await store.updateMediaSource(editingId, input);
+        showToast('Media source updated');
+      } else {
+        await store.createMediaSource(input);
+        showToast('Media source created');
+      }
     } else {
       const input: OutputTargetInput = { id: value('id'), name: value('name'), protocol: value('protocol'), endpoint: value('endpoint'), enabled: checked('enabled'), autoConnect: checked('autoConnect') };
-      await store.createOutputTarget(input);
-      showToast('Output target created');
+      const editingId = form.dataset.editingId;
+      if (editingId) {
+        await store.updateOutputTarget(editingId, input);
+        showToast('Output target updated');
+      } else {
+        await store.createOutputTarget(input);
+        showToast('Output target created');
+      }
     }
+    delete form.dataset.editingId;
     form.reset();
+    (form.elements.namedItem('id') as HTMLInputElement).readOnly = false;
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) submit.textContent = kind === 'media' ? 'Create source' : 'Create target';
   } catch (error) {
     showToast(error instanceof Error ? error.message : 'Resource creation failed.', 'error');
   }

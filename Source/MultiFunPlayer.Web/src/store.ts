@@ -12,6 +12,8 @@ export interface MediaSource {
   latency: number;
   capabilities: string[];
   error?: string;
+  enabled?: boolean;
+  autoConnect?: boolean;
 }
 
 export interface ScriptResource {
@@ -34,6 +36,8 @@ export interface OutputTarget {
   lastPacket: string;
   signal: number;
   error?: string;
+  enabled?: boolean;
+  autoConnect?: boolean;
 }
 
 export interface MediaSourceInput {
@@ -217,9 +221,26 @@ export function createMockStore() {
         status: input.enabled && input.autoConnect ? 'online' : 'offline',
         latency: input.enabled && input.autoConnect ? 18 : 0,
         capabilities: ['Configured source'],
+        enabled: input.enabled,
+        autoConnect: input.autoConnect,
       };
       state.media = [source, ...state.media];
       appendLog('info', `Added ${source.name}`, 'media');
+      notify();
+      return source;
+    },
+    async updateMediaSource(id: string, input: MediaSourceInput): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source) throw new Error('Media source not found.');
+      if (input.id !== id) throw new Error('A media source id cannot be changed while editing.');
+      source.name = input.name;
+      source.kind = input.kind;
+      source.endpoint = input.endpoint || '(internal)';
+      source.enabled = input.enabled;
+      source.autoConnect = input.autoConnect;
+      source.status = input.enabled && input.autoConnect ? 'online' : 'offline';
+      source.latency = source.status === 'online' ? 18 : 0;
+      appendLog('info', `Updated ${source.name}`, 'media');
       notify();
       return source;
     },
@@ -257,9 +278,27 @@ export function createMockStore() {
         rate: 60,
         lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
         signal: input.enabled && input.autoConnect ? 86 : 0,
+        enabled: input.enabled,
+        autoConnect: input.autoConnect,
       };
       state.outputs = [output, ...state.outputs];
       appendLog('info', `Added ${output.name}`, 'outputs');
+      notify();
+      return output;
+    },
+    async updateOutputTarget(id: string, input: OutputTargetInput): Promise<OutputTarget> {
+      const output = state.outputs.find((item) => item.id === id);
+      if (!output) throw new Error('Output target not found.');
+      if (input.id !== id) throw new Error('An output target id cannot be changed while editing.');
+      output.name = input.name;
+      output.protocol = input.protocol.toUpperCase();
+      output.endpoint = input.endpoint;
+      output.enabled = input.enabled;
+      output.autoConnect = input.autoConnect;
+      output.status = input.enabled && input.autoConnect ? 'online' : 'offline';
+      output.signal = output.status === 'online' ? 86 : 0;
+      output.lastPacket = output.status === 'online' ? 'Just now' : 'Never';
+      appendLog('info', `Updated ${output.name}`, 'outputs');
       notify();
       return output;
     },
@@ -348,6 +387,8 @@ export function createRemoteStore(client: MfpApiClient) {
     latency: source.connected ? 18 : 0,
     capabilities: [source.implementationStatus, source.integration].filter(Boolean),
     error: source.lastError ?? undefined,
+    enabled: source.enabled,
+    autoConnect: source.autoConnect,
   });
   const outputFromResponse = (target: ApiOutputTarget): OutputTarget => ({
     id: target.id,
@@ -359,6 +400,8 @@ export function createRemoteStore(client: MfpApiClient) {
     lastPacket: target.connected ? 'Just now' : target.lastError ?? 'Never',
     signal: target.connected ? 86 : 0,
     error: target.lastError ?? undefined,
+    enabled: target.enabled,
+    autoConnect: target.autoConnect,
   });
   const logsFromResponse = (response: ApiLogsResponse): ActivityLog[] => response.items.map((item, index) => ({
     id: Date.parse(item.timestampUtc) || Date.now() + index,
@@ -435,6 +478,15 @@ export function createRemoteStore(client: MfpApiClient) {
       notify();
       return source;
     },
+    async updateMediaSource(id: string, input: MediaSourceInput): Promise<MediaSource> {
+      await client.updateMediaSource(id, input);
+      await refreshResourcesAfter();
+      const source = state.media.find((item) => item.id === input.id);
+      if (!source) throw new Error('The server did not return the updated media source.');
+      appendLog('info', `Updated ${source.name}`, 'media');
+      notify();
+      return source;
+    },
     async deleteMediaSource(id: string): Promise<void> {
       await client.deleteMediaSource(id);
       await refreshResourcesAfter();
@@ -465,6 +517,15 @@ export function createRemoteStore(client: MfpApiClient) {
       const target = state.outputs.find((item) => item.id === input.id);
       if (!target) throw new Error('The server did not return the created output target.');
       appendLog('info', `Added ${target.name}`, 'outputs');
+      notify();
+      return target;
+    },
+    async updateOutputTarget(id: string, input: OutputTargetInput): Promise<OutputTarget> {
+      await client.updateOutputTarget(id, input);
+      await refreshResourcesAfter();
+      const target = state.outputs.find((item) => item.id === input.id);
+      if (!target) throw new Error('The server did not return the updated output target.');
+      appendLog('info', `Updated ${target.name}`, 'outputs');
       notify();
       return target;
     },
