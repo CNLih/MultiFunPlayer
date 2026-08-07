@@ -143,7 +143,8 @@ def stop_process(process: subprocess.Popen[Any]) -> bool:
 def evaluate_acceptance(report: dict[str, Any],
                         max_revision_interval_ms: float | None = None,
                         max_dropped_frames: int | None = None,
-                        *, max_coalesced_frames: int | None = None) -> dict[str, Any]:
+                        *, max_coalesced_frames: int | None = None,
+                        min_duration_seconds: float | None = None) -> dict[str, Any]:
     """Evaluate only observable soak invariants; keep performance budgets explicit."""
     if (max_coalesced_frames is not None and max_dropped_frames is not None
             and max_coalesced_frames != max_dropped_frames):
@@ -165,6 +166,13 @@ def evaluate_acceptance(report: dict[str, Any],
         )
     if report.get("gracefulStop") is not True:
         failures.append("server did not stop gracefully")
+    duration_seconds = report.get("durationSeconds")
+    if (min_duration_seconds is not None
+            and (duration_seconds is None or duration_seconds < min_duration_seconds)):
+        failures.append(
+            f"playback duration {duration_seconds!r} seconds is below "
+            f"minimum {min_duration_seconds:g} seconds"
+        )
 
     interval = report.get("revisionIntervalMilliseconds", {})
     p95 = interval.get("p95") if isinstance(interval, dict) else None
@@ -182,6 +190,8 @@ def evaluate_acceptance(report: dict[str, Any],
         "maxDroppedFrames": coalescing_budget,
         "observedDroppedFrames": output.get("droppedFrames", coalesced_frames),
         "observedCoalescedFrames": coalesced_frames,
+        "minDurationSeconds": min_duration_seconds,
+        "observedDurationSeconds": duration_seconds,
     }
 
 
@@ -205,6 +215,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "maxDroppedFrames": (args.max_coalesced_frames
                               if args.max_coalesced_frames is not None
                               else args.max_dropped_frames),
+        "minDurationSeconds": args.min_duration_seconds,
         "server": str(server),
         "buildEvidence": {
             "repositoryRevision": repository_revision(repository_root),
@@ -354,7 +365,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report["acceptance"] = evaluate_acceptance(
                 report, args.max_revision_interval_ms,
                 max_dropped_frames=args.max_dropped_frames,
-                max_coalesced_frames=args.max_coalesced_frames)
+                max_coalesced_frames=args.max_coalesced_frames,
+                min_duration_seconds=args.min_duration_seconds)
             report["result"] = "pass" if report["acceptance"]["passed"] else "fail"
         except Exception as error:
             graceful_stop = stop_process(process)
@@ -385,6 +397,8 @@ def main() -> int:
                         help="optional rate-limited/coalesced sample budget")
     parser.add_argument("--max-dropped-frames", type=int,
                         help="deprecated alias for --max-coalesced-frames")
+    parser.add_argument("--min-duration-seconds", type=float,
+                        help="optional minimum measured playback duration")
     parser.add_argument("--startup-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--output", type=Path, default=Path("artifacts/soak/portable-soak.json"))
@@ -393,6 +407,8 @@ def main() -> int:
         parser.error("duration and poll intervals must be positive")
     if args.max_revision_interval_ms is not None and args.max_revision_interval_ms <= 0:
         parser.error("revision interval budget must be positive")
+    if args.min_duration_seconds is not None and args.min_duration_seconds <= 0:
+        parser.error("minimum duration must be positive")
     if args.max_coalesced_frames is not None and args.max_coalesced_frames < 0:
         parser.error("coalesced-frame budget must not be negative")
     if args.max_dropped_frames is not None and args.max_dropped_frames < 0:

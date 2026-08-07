@@ -84,6 +84,7 @@ harness from the repository root:
 python3 tools/run-portable-soak.py \
   --dotnet /path/to/dotnet \
   --duration-seconds 28800 \
+  --min-duration-seconds 28800 \
   --max-revision-interval-ms 100 \
   --output artifacts/soak/portable-soak.json
 ```

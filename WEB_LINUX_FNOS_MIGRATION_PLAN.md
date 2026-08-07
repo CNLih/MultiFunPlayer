@@ -896,7 +896,9 @@ Validated in the current Linux environment:
   assembly size so long-running evidence can be tied to an exact build. It
   records playback start/end timestamps and the measured `durationSeconds`, so
   the requested duration is independently reviewable instead of inferred from
-  the harness start/finish timestamps. The
+  the harness start/finish timestamps. The optional
+  `--min-duration-seconds` acceptance budget turns an early stop into a failed
+  report; the documented eight-hour command sets it to `28800`. The
   five-minute local smoke passed with 5,987 sent, 8 coalesced, 0 failed, and
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   coalescing budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak

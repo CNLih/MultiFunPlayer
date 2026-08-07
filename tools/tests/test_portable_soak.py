@@ -78,6 +78,14 @@ class PortableSoakTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("p95 exceeds", result["failures"][0])
 
+    def test_minimum_playback_duration_is_enforced(self):
+        evidence = report()
+        evidence["durationSeconds"] = 9.5
+        result = MODULE.evaluate_acceptance(evidence, min_duration_seconds=10)
+        self.assertFalse(result["passed"])
+        self.assertEqual(9.5, result["observedDurationSeconds"])
+        self.assertIn("below minimum", result["failures"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
