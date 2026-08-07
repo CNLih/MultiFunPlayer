@@ -345,6 +345,24 @@ def summarize(results: Iterable[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
+def repository_revision(root: Path) -> str | None:
+    """Return the checked-out commit so matrix results are auditable."""
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip()
+    return revision or None
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     root = args.root.resolve()
     checks = build_checks(root, include_browser=not args.skip_browser)
@@ -353,6 +371,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "schemaVersion": 1,
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "root": str(root),
+        "repositoryRevision": repository_revision(root),
         "summary": summarize(results),
         "checks": results,
         "result": "pass" if all(item["status"] != "fail" for item in results) else "fail",

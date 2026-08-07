@@ -90,6 +90,11 @@ class ValidationMatrixTests(unittest.TestCase):
         ])
         self.assertEqual({"pass": 2, "pending": 1, "fail": 1}, summary)
 
+    def test_repository_revision_is_available_for_auditable_reports(self):
+        revision = MODULE.repository_revision(ROOT)
+        self.assertIsNotNone(revision)
+        self.assertRegex(revision or "", r"^[0-9a-f]{40}$")
+
 
 if __name__ == "__main__":
     unittest.main()
