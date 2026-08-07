@@ -40,6 +40,17 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task OpenApi_document_describes_versioned_surface()
+    {
+        using var client = _factory.CreateClient();
+        var document = await client.GetFromJsonAsync<JsonElement>("/openapi/v1.json");
+
+        Assert.Equal("3.0.3", document.GetProperty("openapi").GetString());
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/status", out _));
+        Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
+    }
+
+    [Fact]
     public async Task Load_play_pause_seek_and_axes_are_operational()
     {
         using var client = _factory.CreateClient();
@@ -59,6 +70,21 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         var axes = await client.GetAsync("/api/v1/axes");
         Assert.Equal(HttpStatusCode.OK, axes.StatusCode);
         Assert.Contains("default", await axes.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Multi_axis_funscript_uses_portable_default_axis_catalog()
+    {
+        using var client = _factory.CreateClient();
+        var load = await client.PostAsync("/api/v1/scripts/load", new StringContent(
+            "{\"name\":\"multi.funscript\",\"content\":{\"actions\":[{\"at\":0,\"pos\":25}],\"axes\":[{\"id\":\"R2\",\"actions\":[{\"at\":1000,\"pos\":75}]}]}}",
+            Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, load.StatusCode);
+        var status = await load.Content.ReadFromJsonAsync<JsonElement>();
+        var axes = status.GetProperty("axes");
+        Assert.True(axes.TryGetProperty("L0", out _));
+        Assert.True(axes.TryGetProperty("R2", out _));
     }
 
     [Fact]

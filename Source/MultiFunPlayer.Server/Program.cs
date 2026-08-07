@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Http.Json;
 using MultiFunPlayer.Application;
+using MultiFunPlayer.Common;
 using MultiFunPlayer.Script;
 
 namespace MultiFunPlayer.Server;
@@ -13,6 +14,7 @@ public static class ServerProgram
 {
     public static void Configure(WebApplicationBuilder builder)
     {
+        DeviceAxis.InitializeDefaults();
         builder.Services.AddProblemDetails();
         builder.Services.Configure<JsonOptions>(options =>
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
@@ -67,6 +69,7 @@ public static class ServerProgram
                 ["play", "pause", "stop", "seek", "load"], ["funscript", "websocket"],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
         });
+        app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
 
         app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
@@ -219,6 +222,44 @@ public static class ServerProgram
     private static IResult Problem(int statusCode, string title, string detail, string code)
         => Results.Problem(statusCode: statusCode, title: title, detail: detail,
             extensions: new Dictionary<string, object?> { ["code"] = code });
+}
+
+internal static class OpenApiDocument
+{
+    public static readonly object Value = new
+    {
+        openapi = "3.0.3",
+        info = new { title = "MultiFunPlayer Server API", version = "1.0.0" },
+        paths = new Dictionary<string, object>
+        {
+            ["/health/live"] = new { get = Operation("Liveness") },
+            ["/health/ready"] = new { get = Operation("Readiness") },
+            ["/api/v1/status"] = new { get = Operation("Current player status") },
+            ["/api/v1/capabilities"] = new { get = Operation("Server capabilities") },
+            ["/api/v1/scripts"] = new { get = Operation("List scripts") },
+            ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
+            ["/api/v1/player/play"] = new { post = Operation("Play") },
+            ["/api/v1/player/pause"] = new { post = Operation("Pause") },
+            ["/api/v1/player/stop"] = new { post = Operation("Stop") },
+            ["/api/v1/player/seek"] = new { post = Operation("Seek") },
+            ["/api/v1/axes"] = new { get = Operation("Current axes") },
+            ["/hubs/state"] = new { get = Operation("WebSocket state stream") }
+        },
+        components = new
+        {
+            securitySchemes = new
+            {
+                bearerAuth = new { type = "http", scheme = "bearer" },
+                tokenHeader = new { type = "apiKey", name = "X-MFP-Token", @in = "header" }
+            }
+        }
+    };
+
+    private static object Operation(string summary) => new
+    {
+        summary,
+        responses = new Dictionary<string, object> { ["200"] = new { description = "Success" } }
+    };
 }
 
 public partial class Program { }
