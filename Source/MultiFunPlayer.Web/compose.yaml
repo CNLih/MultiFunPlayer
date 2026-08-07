@@ -1,0 +1,27 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    environment:
+      # Reserved for a future API endpoint; the demo remains usable when unset.
+      MFP_API_BASE_URL: ${MFP_API_BASE_URL:-}
+    volumes:
+      - mfp_config:/config
+      - mfp_keys:/keys
+      - mfp_scripts:/scripts
+      - mfp_logs:/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  mfp_config:
+  mfp_keys:
+  mfp_scripts:
+  mfp_logs:

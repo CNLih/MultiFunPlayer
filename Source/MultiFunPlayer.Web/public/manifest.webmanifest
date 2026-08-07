@@ -1,0 +1,15 @@
+{
+  "name": "MultiFunPlayer Control Room",
+  "short_name": "MFP Control",
+  "description": "Runtime dashboard for media sources, scripts, and output targets.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#10171e",
+  "theme_color": "#24c6b5",
+  "icons": [{
+    "src": "./icon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
