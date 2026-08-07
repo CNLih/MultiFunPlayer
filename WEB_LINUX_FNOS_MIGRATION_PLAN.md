@@ -952,7 +952,7 @@ The community MVP is complete only when all of the following are true:
 - [x] First-run authentication/pairing is enabled and documented.
 - [x] A user can configure at least one supported remote media source.
 - [x] A user can load a local-volume Funscript and observe correct multi-axis state.
-- [ ] Serial and at least TCP, UDP, and WebSocket outputs pass integration tests.
+- [x] Serial and at least TCP, UDP, and WebSocket outputs pass integration tests.
 - [x] Backend playback/output continues when all browsers disconnect.
 - [ ] Configuration and keys survive restart and upgrade.
 - [x] Existing supported desktop configuration has a tested migration or a documented safe re-entry path.
@@ -961,6 +961,11 @@ The community MVP is complete only when all of the following are true:
 - [ ] Tier 1-4 evidence is complete for the published compatibility matrix.
 - [x] Installation, backup, restore, upgrade, rollback, security, and troubleshooting documents are published.
 - [ ] Existing WPF release remains available as rollback during the beta period.
+
+The output-protocol acceptance item is backed by the Linux pseudo-terminal serial
+test, TCP/UDP/WebSocket transport loopback tests, and the Server output-registry
+integration that sends a multi-axis frame to all three network transports. This
+does not replace physical device, permission, or reconnect acceptance on a NAS.
 
 ## 14. First Execution Slice
 
