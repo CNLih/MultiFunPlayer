@@ -140,7 +140,7 @@ internal sealed class StyletApplicationMessageBus(IEventAggregator eventAggregat
 }
 
 /// <summary>WPF-only presentation adapter for portable operation failures.</summary>
-internal sealed class DialogApplicationErrorSink : IOperationErrorSink
+internal sealed class DialogApplicationErrorSink : IApplicationErrorSink
 {
     public void Report(ApplicationError error)
     {

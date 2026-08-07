@@ -60,6 +60,7 @@ internal sealed class Bootstrapper : Bootstrapper<RootViewModel>
         builder.Bind<ISnackbarMessageQueue>().To<SnackbarMessageQueue>().InSingletonScope();
         builder.Bind<IApplicationMessageBus>().To<StyletApplicationMessageBus>().InSingletonScope();
         builder.Bind<IOperationErrorSink>().To<DialogApplicationErrorSink>().InSingletonScope();
+        builder.Bind<IApplicationErrorSink>().To<DialogApplicationErrorSink>().InSingletonScope();
         builder.Bind<IApplicationPrompt>().To<DialogApplicationPrompt>().InSingletonScope();
 
         builder.Bind<JsonConverter>().ToAllImplementations();
