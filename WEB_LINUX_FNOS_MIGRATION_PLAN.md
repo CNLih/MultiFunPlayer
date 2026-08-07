@@ -732,9 +732,10 @@ Validated in the current Linux environment:
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
   axis policy, runtime logs, and all persistent directories. The local
-  rehearsal provides process-level restart evidence, and the forced-stop helper
-  has a unit test. Docker volume and fnOS package upgrade/rollback evidence
-  remains external.
+  rehearsal provides process-level restart evidence, and optional baseline and
+  rollback DLL arguments allow a versioned upgrade rehearsal. The forced-stop
+  helper has a unit test. Docker volume and fnOS package upgrade/rollback
+  evidence remains external.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,

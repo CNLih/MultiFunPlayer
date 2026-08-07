@@ -79,4 +79,6 @@ This starts independent server instances, performs a graceful stop and a
 forced process interruption, then verifies scripts, device settings, logs, and
 all persistent root directories after restart. It is process-level evidence
 only; it does not replace Docker volume migration or fnOS upgrade/rollback
-testing.
+testing. To compare separate builds and exercise rollback, add
+`--baseline-server /path/to/previous/Server.dll` and
+`--rollback-server /path/to/rollback/Server.dll`.

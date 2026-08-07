@@ -2,10 +2,11 @@
 """Rehearse a portable host upgrade across independent server processes.
 
 The harness shares the four configured roots between independent server
-instances, verifies both graceful and interrupted process restarts, then checks
-that scripts, device settings, and persisted logs remain available. It is useful
-in Linux CI and local development, but does not claim a Docker image, fnOS
-package, filesystem snapshot, or target-device upgrade.
+instances, verifies both graceful and interrupted process restarts, and can
+optionally launch a separate rollback build. It then checks that scripts, device
+settings, and persisted logs remain available. It is useful in Linux CI and
+local development, but does not claim a Docker image, fnOS package, filesystem
+snapshot, or target-device upgrade.
 """
 
 from __future__ import annotations
@@ -89,14 +90,41 @@ def interrupt_server(process: subprocess.Popen[Any], log: Any) -> bool:
         log.close()
 
 
+def verify_persistent_state(base_url: str, root: Path) -> dict[str, Any]:
+    scripts = request_json(base_url, "/api/v1/scripts", TOKEN)
+    axes = request_json(base_url, "/api/v1/device-axes", TOKEN)
+    state = {
+        "scriptRestored": any(
+            item.get("id") == "upgrade-rehearsal.funscript"
+            for item in scripts if isinstance(item, dict)
+        ),
+        "axisRestored": any(
+            item.get("axis") == "L0" and item.get("inverted") is True
+            for item in axes if isinstance(item, dict)
+        ),
+        "logRestored": (root / "logs" / "runtime.log").is_file(),
+        "volumeRootsPresent": {
+            name: (root / name).is_dir()
+            for name in ("config", "keys", "scripts", "logs")
+        },
+    }
+    return state
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     server = Path(args.server).resolve()
-    if not server.is_file():
-        raise FileNotFoundError(f"server DLL does not exist: {server}")
+    baseline_server = Path(args.baseline_server or args.server).resolve()
+    rollback_server = Path(args.rollback_server).resolve() if args.rollback_server else None
+    for label, candidate in (("upgrade", server), ("baseline", baseline_server),
+                             ("rollback", rollback_server)):
+        if candidate is not None and not candidate.is_file():
+            raise FileNotFoundError(f"{label} server DLL does not exist: {candidate}")
 
     report: dict[str, Any] = {
         "schemaVersion": 1,
         "server": str(server),
+        "baselineServer": str(baseline_server),
+        "rollbackServer": str(rollback_server) if rollback_server is not None else None,
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "phases": [],
     }
@@ -108,7 +136,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         process: subprocess.Popen[Any] | None = None
         log: Any | None = None
         try:
-            process, log = launch_server(server, args.dotnet, port, root, log_path)
+            process, log = launch_server(baseline_server, args.dotnet, port, root, log_path)
             wait_for_live(base_url, args.startup_timeout_seconds)
             request_json(base_url, "/api/v1/scripts", TOKEN, "POST", {
                 "id": "upgrade-rehearsal.funscript",
@@ -144,36 +172,46 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
             process, log = launch_server(server, args.dotnet, port, root, log_path)
             wait_for_live(base_url, args.startup_timeout_seconds)
-            scripts = request_json(base_url, "/api/v1/scripts", TOKEN)
-            axes = request_json(base_url, "/api/v1/device-axes", TOKEN)
-            script_restored = any(
-                item.get("id") == "upgrade-rehearsal.funscript"
-                for item in scripts if isinstance(item, dict)
-            )
-            axis_restored = any(
-                item.get("axis") == "L0" and item.get("inverted") is True
-                for item in axes if isinstance(item, dict)
-            )
-            log_restored = (root / "logs" / "runtime.log").is_file()
-            volume_roots = {
-                name: (root / name).is_dir()
-                for name in ("config", "keys", "scripts", "logs")
-            }
+            upgrade_state = verify_persistent_state(base_url, root)
             second_stop = stop_server(process, log)
             process = None
             log = None
             report["phases"].append({
                 "name": "after-upgrade",
                 "gracefulStop": second_stop,
-                "scriptRestored": script_restored,
-                "axisRestored": axis_restored,
-                "logRestored": log_restored,
-                "volumeRootsPresent": volume_roots,
+                **upgrade_state,
             })
+            rollback_state: dict[str, Any] | None = None
+            rollback_stop = True
+            if rollback_server is not None:
+                process, log = launch_server(rollback_server, args.dotnet, port, root, log_path)
+                wait_for_live(base_url, args.startup_timeout_seconds)
+                rollback_state = verify_persistent_state(base_url, root)
+                rollback_stop = stop_server(process, log)
+                process = None
+                log = None
+                report["phases"].append({
+                    "name": "after-rollback",
+                    "gracefulStop": rollback_stop,
+                    **rollback_state,
+                })
+
+            state_checks = [
+                upgrade_state["scriptRestored"],
+                upgrade_state["axisRestored"],
+                upgrade_state["logRestored"],
+                *upgrade_state["volumeRootsPresent"].values(),
+            ]
+            if rollback_state is not None:
+                state_checks.extend([
+                    rollback_state["scriptRestored"],
+                    rollback_state["axisRestored"],
+                    rollback_state["logRestored"],
+                    *rollback_state["volumeRootsPresent"].values(),
+                ])
             report["result"] = "pass" if all((
                 first_stop, interrupted_stop, second_stop,
-                script_restored, axis_restored,
-                log_restored, *volume_roots.values(),
+                rollback_stop, *state_checks,
             )) else "fail"
         except Exception as error:
             if process is not None and log is not None:
@@ -194,6 +232,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", default="Source/MultiFunPlayer.Server/bin/Release/net10.0/MultiFunPlayer.Server.dll")
+    parser.add_argument("--baseline-server",
+                        help="optional previous-build Server DLL; defaults to --server")
+    parser.add_argument("--rollback-server",
+                        help="optional rollback-build Server DLL to verify after upgrade")
     parser.add_argument("--dotnet", default="dotnet")
     parser.add_argument("--startup-timeout-seconds", type=float, default=30.0)
     parser.add_argument("--port", type=int, default=0)
