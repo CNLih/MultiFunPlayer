@@ -393,7 +393,7 @@ Tasks:
 - [x] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
 - [x] P4-07 Restrict filesystem browsing to administrator-configured roots and prevent path traversal/symlink escape.
 - [x] P4-08 Define Linux and Windows path normalization rules for existing settings.
-- [ ] P4-09 Replace UI file dialogs with server-side directory selection, upload, or repository operations.
+- [x] P4-09 Replace UI file dialogs with server-side directory selection, upload, or repository operations.
 - [ ] P4-10 Validate reconnect, timeout, cancellation, partial message, and malformed message handling.
 
 MVP media compatibility matrix:
