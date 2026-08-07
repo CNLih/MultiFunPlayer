@@ -6,7 +6,7 @@
       "protocol": "tcode",
       "transport": "tcp",
       "direction": "output",
-      "payload": "L05000I100"
+      "payload": "L05000I100\n"
     },
     {
       "protocol": "tcode",
@@ -18,14 +18,15 @@
       "protocol": "vlc-http",
       "transport": "http",
       "direction": "response",
+      "request": "GET /requests/status.json",
       "status": 200,
-      "payload": "{\"state\":\"playing\",\"time\":12}"
+      "payload": "{\"apiversion\":3,\"state\":\"playing\",\"time\":12,\"length\":60,\"currentplid\":1}"
     },
     {
       "protocol": "ofs-websocket",
       "transport": "websocket",
       "direction": "input",
-      "payload": "{\"type\":\"time\",\"value\":12}"
+      "payload": "{\"type\":\"event\",\"name\":\"time_change\",\"data\":{\"time\":12}}"
     }
   ]
 }
