@@ -147,6 +147,7 @@ def run_acceptance(base_url: str, token: str | None, pairing_token: str | None,
     check("capabilities", lambda: _capabilities(client))
     check("adapter-inventory", lambda: _adapters(client))
     check("serial-discovery", lambda: _serial(client))
+    check("media-source-configuration", lambda: _media_source_configuration(client))
 
     playback_started = False
     try:
@@ -256,6 +257,51 @@ def _serial(client: TargetClient) -> str:
     if not isinstance(payload, list):
         raise AcceptanceError("serial discovery response is not an array")
     return f"{len(payload)} stable serial entries returned"
+
+
+def _media_source_configuration(client: TargetClient) -> str:
+    # Use an id derived from the monotonic clock so repeated acceptance runs
+    # cannot collide with a previous temporary resource. Auto-connect stays
+    # disabled: this validates persistence/redaction without requiring a real
+    # Jellyfin/Emby/Plex endpoint on the target.
+    media_id = f"acceptance-media-{int(monotonic() * 1000)}"
+    secret_ref = "MFP_ACCEPTANCE_MEDIA_TOKEN"
+    create_payload = {
+        "id": media_id,
+        "name": "Acceptance media source",
+        "kind": "jellyfin",
+        "endpoint": "https://media.example.invalid",
+        "enabled": False,
+        "autoConnect": False,
+        "deviceId": "acceptance-device",
+        "secretRef": secret_ref,
+    }
+    created = False
+    try:
+        response = client.request("POST", "/api/v1/media-sources", create_payload)
+        require_status(response, 201)
+        payload = require_object(response)
+        created = True
+        if payload.get("deviceId") != create_payload["deviceId"]:
+            raise AcceptanceError("media source response did not preserve deviceId")
+        if "secretRef" in payload or secret_ref.encode("utf-8") in response.body:
+            raise AcceptanceError("media source response exposed secretRef")
+
+        update_payload = {key: create_payload[key] for key in
+                          ("id", "name", "kind", "endpoint", "enabled", "autoConnect", "deviceId")}
+        update_payload["name"] = "Acceptance media source edited"
+        updated = client.request("PUT", f"/api/v1/media-sources/{media_id}", update_payload)
+        require_status(updated, 200)
+        updated_payload = require_object(updated)
+        if updated_payload.get("deviceId") != create_payload["deviceId"]:
+            raise AcceptanceError("media source update lost deviceId")
+        if "secretRef" in updated_payload or secret_ref.encode("utf-8") in updated.body:
+            raise AcceptanceError("media source update exposed secretRef")
+        return "media deviceId persisted and secretRef remained redacted"
+    finally:
+        if created:
+            deleted = client.request("DELETE", f"/api/v1/media-sources/{media_id}")
+            require_status(deleted, 204)
 
 
 def _upload(client: TargetClient, script_id: str) -> str:

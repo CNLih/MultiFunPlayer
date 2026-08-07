@@ -838,16 +838,18 @@ Validated in the current Linux environment:
 - `tools/run-target-acceptance.py` provides a dependency-free black-box HTTP
   acceptance harness for an installed Linux/fnOS Web endpoint. It checks
   authentication, health, SPA fallback, capabilities, adapter/serial
-  discovery, script upload/load, playback commands, and log redaction without
-  placing bearer tokens in the report. The container CI job runs it for both
+  discovery, media-source device/session configuration and secret redaction,
+  script upload/load, playback commands, and log redaction without placing
+  bearer tokens in the report. The container CI job runs it for both
   architectures and uploads the report; physical output and firmware checks
   remain target-specific.
-- The current local Release Server build passed that target harness 14/14 on
+- The current local Release Server build passed that target harness 15/15 on
   an isolated port with separate config, key, script, and log roots. The run
   verified liveness/readiness, SPA fallback, authentication, redacted settings,
-  capabilities, adapter/serial discovery, multi-axis script upload/load,
-  seek/play/stop, and bounded redacted logs; it is local evidence only, not a
-  Docker, fnOS, or physical-device acceptance.
+  capabilities, adapter/serial discovery, media-source create/update/delete
+  with `deviceId` retention and `secretRef` redaction, multi-axis script
+  upload/load, seek/play/stop, and bounded redacted logs; it is local evidence
+  only, not a Docker, fnOS, or physical-device acceptance.
 
 Still open and intentionally not advertised as complete:
 

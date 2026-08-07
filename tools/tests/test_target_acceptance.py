@@ -25,6 +25,7 @@ PAIRING = "target-pairing-secret"
 
 class FakeTargetHandler(BaseHTTPRequestHandler):
     paired = False
+    media_sources = {}
 
     def log_message(self, format, *args):  # noqa: A002 - BaseHTTPRequestHandler API
         return
@@ -64,6 +65,8 @@ class FakeTargetHandler(BaseHTTPRequestHandler):
                                      "transports": [{"id": "tcp"}]})
         if path == "/api/v1/devices/serial":
             return self._write(200, [])
+        if path == "/api/v1/media-sources":
+            return self._write(200, list(FakeTargetHandler.media_sources.values()))
         if path == "/api/v1/logs":
             return self._write(200, {"items": [{"message": "safe"}]})
         return self._write(404, {"title": "Not found"})
@@ -71,7 +74,7 @@ class FakeTargetHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
         path = urlsplit(self.path).path
         length = int(self.headers.get("Content-Length", "0"))
-        self.rfile.read(length)
+        body = self.rfile.read(length)
         if path == "/api/v1/auth/pair":
             FakeTargetHandler.paired = True
             return self._write(200, {"status": "paired"})
@@ -79,16 +82,55 @@ class FakeTargetHandler(BaseHTTPRequestHandler):
             return self._write(401, {"title": "Authentication required"})
         if path == "/api/v1/scripts":
             return self._write(201, {"id": "target-acceptance.funscript"})
+        if path == "/api/v1/media-sources":
+            payload = json.loads(body.decode("utf-8"))
+            source = {key: payload[key] for key in
+                      ("id", "name", "kind", "endpoint", "enabled", "autoConnect", "deviceId")}
+            source.update({"integration": "direct", "implementationStatus": "ready",
+                           "connected": False, "lastError": None})
+            FakeTargetHandler.media_sources[payload["id"]] = source
+            return self._write(201, source)
         if path == "/api/v1/scripts/load":
             return self._write(200, {"axes": {"L0": 0.5, "R2": 0.5}})
         if path in {"/api/v1/player/seek", "/api/v1/player/play", "/api/v1/player/stop"}:
             return self._write(200, {"status": "ok"})
         return self._write(404, {"title": "Not found"})
 
+    def do_PUT(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        path = urlsplit(self.path).path
+        if not self._authorized():
+            return self._write(401, {"title": "Authentication required"})
+        prefix = "/api/v1/media-sources/"
+        if not path.startswith(prefix):
+            return self._write(404, {"title": "Not found"})
+        media_id = path[len(prefix):]
+        if media_id not in FakeTargetHandler.media_sources:
+            return self._write(404, {"title": "Not found"})
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        source = FakeTargetHandler.media_sources[media_id]
+        source.update({key: payload[key] for key in
+                       ("id", "name", "kind", "endpoint", "enabled", "autoConnect", "deviceId")})
+        return self._write(200, source)
+
+    def do_DELETE(self):  # noqa: N802 - BaseHTTPRequestHandler API
+        path = urlsplit(self.path).path
+        if not self._authorized():
+            return self._write(401, {"title": "Authentication required"})
+        prefix = "/api/v1/media-sources/"
+        if path.startswith(prefix) and path[len(prefix):] in FakeTargetHandler.media_sources:
+            del FakeTargetHandler.media_sources[path[len(prefix):]]
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        return self._write(404, {"title": "Not found"})
+
 
 class FakeTarget:
     def __enter__(self):
         FakeTargetHandler.paired = False
+        FakeTargetHandler.media_sources = {}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeTargetHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
