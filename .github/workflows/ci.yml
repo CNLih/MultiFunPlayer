@@ -82,7 +82,7 @@ jobs:
       run: npm audit --omit=dev --audit-level=high
       working-directory: ./Docs
     - name: Record documentation toolchain audit
-      run: npm audit --json > ../docs-audit.json || true
+      run: npm audit --audit-level=high --json > ../docs-audit.json
       working-directory: ./Docs
     - name: Build website
       run: npm run build

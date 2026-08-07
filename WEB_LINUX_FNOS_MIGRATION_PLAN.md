@@ -690,17 +690,15 @@ Validated in the current Linux environment:
   transient cleanup races. A Windows runner result is still required before
   P0-04 is marked complete.
 - Current dependency checks report no vulnerable .NET packages, no production
-  Web-package vulnerabilities, and no production Docs-package vulnerabilities.
-  The Docs toolchain is now pinned to Docusaurus 3.10.2 and builds cleanly;
-  its full development audit still reports 21 upstream findings (1 high, 20
-  moderate) in the webpack/serialize-javascript/sockjs chain. CI records that
-  full report while enforcing the zero-production-vulnerability gate, so P7-06
-  remains open for upstream remediation and a container scan before a release
-  candidate.
+  Web-package vulnerabilities, and no Docs-package vulnerabilities. The Docs
+  toolchain remains on Docusaurus 3.10.2, pins safe `serialize-javascript` and
+  `uuid` overrides, requires Node 20+, and builds cleanly. CI now fails on a
+  high/critical full Docs audit instead of swallowing the result; P7-06 remains
+  open only for the exact runtime-image scan and release-environment review.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
   falling back to the integrity-pinned npm package manifests and unambiguous
-  license files for legacy metadata. The current workspace contains 1,396
+  license files for legacy metadata. The current workspace contains 1,395
   deduplicated components and the generated inventory reports zero components
   without a license declaration. The container matrix now requests a separate
   CycloneDX SBOM for each loaded runtime image and uploads it beside the Trivy

@@ -48,8 +48,10 @@ The repository-owned static gate is:
 ```
 
 It does not replace external validation. A release must also run `dotnet list
-<solution> package --vulnerable --include-transitive`, `npm audit --omit=dev`,
-`python3 tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json`,
+<solution> package --vulnerable --include-transitive`, `npm audit --omit=dev
+--audit-level=high` for runtime Web assets, and `npm --prefix Docs audit
+--audit-level=high` for the full documentation toolchain.
+Also run `python3 tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json`,
 `python3 tools/generate-license-report.py --input artifacts/sbom/multifunplayer.cyclonedx.json --output artifacts/sbom/THIRD_PARTY_LICENSES.md`,
 and a scanner such as Trivy against the exact multi-arch image. Record tool
 versions, findings, and accepted exceptions with the release candidate. fnOS
