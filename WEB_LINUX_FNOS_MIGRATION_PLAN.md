@@ -566,6 +566,11 @@ Validated in the current Linux environment:
   result that has not yet been attached to a WPF event aggregator. The test
   assembly compiles on Linux, but execution remains part of the WindowsDesktop
   P1-05 gate.
+- `Source/MultiFunPlayer.Tests/WpfXamlTests.cs` now loads every compiled view
+  and resource dictionary on a dedicated STA thread after creating the WPF
+  application resource tree. The test compiles with the portable solution and
+  is explicitly invoked by the Windows CI Release job; its runtime result is
+  still required before P1-04/P0-04 can be checked off.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
   Server tests: 39/39, including the Data Protection service wiring test.
 - Web `typecheck`, static contract check, and Vite production build pass.
