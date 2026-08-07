@@ -48,6 +48,30 @@ public sealed record LoadScriptRequest(
 
 public sealed record ScriptUploadRequest(string? Id, string? Content, bool Overwrite = false);
 
+public sealed record OutputTargetResponse(
+    string Id,
+    string Name,
+    string Protocol,
+    string Endpoint,
+    bool Enabled,
+    bool AutoConnect,
+    bool Connected,
+    string? LastError);
+
+public sealed record OutputTargetRequest(
+    string? Id,
+    string? Name,
+    string? Protocol,
+    string? Endpoint,
+    bool Enabled = true,
+    bool AutoConnect = true,
+    int BaudRate = 115200,
+    string Parity = "None",
+    int DataBits = 8,
+    string StopBits = "One",
+    bool DtrEnable = false,
+    bool RtsEnable = false);
+
 public sealed record SeekRequest(double PositionSeconds);
 
 public static class ApiModelMapper

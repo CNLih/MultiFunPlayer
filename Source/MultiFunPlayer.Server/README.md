@@ -70,3 +70,11 @@ media/output CRUD resources.
 and writes only valid JSON below the configured scripts root. Uploads are
 limited to 8 MiB, reject path traversal and symbolic links, and do not
 overwrite an existing file unless `overwrite: true` is supplied.
+
+Output targets are managed through `/api/v1/output-targets` and the
+`connect`, `disconnect`, update, and delete subroutes. The direct registry
+supports `tcp`, `udp`, `websocket`, `file`, and `serial`; definitions are
+stored as non-secret JSON below the config root. File endpoints are relative
+to the logs root, while serial endpoints must use a stable Linux device path
+or a COM name. Connection failures remain visible as `lastError` and do not
+terminate the host.

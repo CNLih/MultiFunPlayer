@@ -205,6 +205,88 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Output_target_registry_persists_and_manages_file_transport()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var registry = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await registry.StartAsync(CancellationToken.None);
+
+        var invalid = await registry.CreateAsync(new OutputTargetDefinition(
+            "outside", "Outside", "file", "../outside.tcode"));
+        Assert.Equal(OutputTargetOperationStatus.Invalid, invalid.Status);
+
+        var created = await registry.CreateAsync(new OutputTargetDefinition(
+            "file-1", "File target", "file", "runtime.tcode"));
+        Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
+        Assert.True(created.Target!.Connected);
+        Assert.True(File.Exists(Path.Combine(storage.LogsRoot, "runtime.tcode")));
+
+        var duplicate = await registry.CreateAsync(new OutputTargetDefinition(
+            "file-1", "Duplicate", "file", "duplicate.tcode"));
+        Assert.Equal(OutputTargetOperationStatus.Conflict, duplicate.Status);
+        Assert.Equal("file-1", Assert.Single(registry.List()).Id);
+
+        await registry.DisconnectAsync("file-1");
+        Assert.False(Assert.Single(registry.List()).Connected);
+        await registry.StopAsync(CancellationToken.None);
+
+        await using var restarted = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await restarted.StartAsync(CancellationToken.None);
+        Assert.Equal("file-1", Assert.Single(restarted.List()).Id);
+        Assert.Equal(OutputTargetOperationStatus.Success,
+            (await restarted.DeleteAsync("file-1")).Status);
+        Assert.Empty(restarted.List());
+    }
+
+    [Fact]
+    public async Task Output_target_http_contract_supports_create_connect_and_delete()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        var previousLogs = Environment.GetEnvironmentVariable("MFP_LOGS_ROOT");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+        Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", Path.Combine(temp.Path, "logs"));
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var create = await client.PostAsJsonAsync("/api/v1/output-targets", new
+            {
+                id = "http-file",
+                name = "HTTP file",
+                protocol = "file",
+                endpoint = "http.tcode",
+                enabled = false,
+                autoConnect = false
+            });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+
+            var connect = await client.PostAsync("/api/v1/output-targets/http-file/connect", null);
+            Assert.Equal(HttpStatusCode.OK, connect.StatusCode);
+            var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/output-targets");
+            Assert.Contains(list.EnumerateArray(), item =>
+                item.GetProperty("id").GetString() == "http-file"
+                && item.GetProperty("connected").GetBoolean());
+
+            var delete = await client.DeleteAsync("/api/v1/output-targets/http-file");
+            Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", previousLogs);
+        }
+    }
+
+    [Fact]
     public async Task Environment_tick_rate_overrides_configuration_section()
     {
         var previous = Environment.GetEnvironmentVariable("MFP_TICK_HZ");
@@ -262,6 +344,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/settings", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/configuration/migration", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/scripts", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }

@@ -36,6 +36,9 @@ public static class ServerProgram
         builder.Services.AddSingleton<ConfigurationMigrationHostedService>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<ConfigurationMigrationHostedService>());
+        builder.Services.AddSingleton<OutputTargetRegistry>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<OutputTargetRegistry>());
         builder.Services.AddSingleton<StateBroadcaster>();
         var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
         builder.Services.AddSingleton(runtimeLogStore);
@@ -135,6 +138,28 @@ public static class ServerProgram
         });
         app.MapGet("/api/v1/configuration/migration",
             (ConfigurationMigrationHostedService migration) => Results.Ok(migration.Status));
+        app.MapGet("/api/v1/output-targets", (OutputTargetRegistry registry) =>
+            Results.Ok(registry.List()));
+        app.MapPost("/api/v1/output-targets", async (OutputTargetRequest request,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.CreateAsync(ToDefinition(request.Id, request), cancellationToken)
+                .ConfigureAwait(false), created: true));
+        app.MapPut("/api/v1/output-targets/{id}", async (string id, OutputTargetRequest request,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.UpdateAsync(id, ToDefinition(id, request), cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapDelete("/api/v1/output-targets/{id}", async (string id,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.DeleteAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/output-targets/{id}/connect", async (string id,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.ConnectAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/output-targets/{id}/disconnect", async (string id,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.DisconnectAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
         app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
         {
             var root = Environment.GetEnvironmentVariable("MFP_SERIAL_BY_ID_ROOT");
@@ -235,6 +260,31 @@ public static class ServerProgram
         action();
         return Results.Ok(ApiModelMapper.ToStatus(engine.Current));
     }
+
+    private static OutputTargetDefinition ToDefinition(string? id, OutputTargetRequest request)
+        => new(id ?? string.Empty, request.Name ?? string.Empty, request.Protocol ?? string.Empty,
+            request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
+            request.BaudRate, request.Parity, request.DataBits, request.StopBits,
+            request.DtrEnable, request.RtsEnable);
+
+    private static IResult MapOutputTargetOperation(OutputTargetOperation operation, bool created)
+        => operation.Status switch
+        {
+            OutputTargetOperationStatus.Success when created
+                => Results.Created($"/api/v1/output-targets/{Uri.EscapeDataString(operation.Target!.Id)}", operation.Target),
+            OutputTargetOperationStatus.Success when operation.Target is null => Results.NoContent(),
+            OutputTargetOperationStatus.Success => Results.Ok(operation.Target),
+            OutputTargetOperationStatus.Invalid => Problem(StatusCodes.Status400BadRequest,
+                "Invalid output target", operation.Error ?? "The output target is invalid.", "invalid_output_target"),
+            OutputTargetOperationStatus.NotFound => Problem(StatusCodes.Status404NotFound,
+                "Output target not found", operation.Error ?? "The output target does not exist.", "output_target_not_found"),
+            OutputTargetOperationStatus.Conflict => Problem(StatusCodes.Status409Conflict,
+                "Output target already exists", operation.Error ?? "The output target id is already in use.", "output_target_conflict"),
+            OutputTargetOperationStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                "Output target storage unavailable", operation.Error ?? "The output target could not be persisted.", "output_target_unavailable"),
+            _ => Problem(StatusCodes.Status502BadGateway,
+                "Output target connection failed", operation.Error ?? "The output target could not connect.", "output_target_failed")
+        };
 
     private static async Task HandleWebSocket(HttpContext context)
     {
@@ -366,6 +416,10 @@ internal static class OpenApiDocument
             ["/api/v1/adapters"] = new { get = Operation("Adapter and integration capabilities") },
             ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
             ["/api/v1/configuration/migration"] = new { get = Operation("Legacy configuration migration status") },
+            ["/api/v1/output-targets"] = new { get = Operation("List output targets"), post = Operation("Create output target") },
+            ["/api/v1/output-targets/{id}"] = new { put = Operation("Update output target"), delete = Operation("Delete output target") },
+            ["/api/v1/output-targets/{id}/connect"] = new { post = Operation("Connect output target") },
+            ["/api/v1/output-targets/{id}/disconnect"] = new { post = Operation("Disconnect output target") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
