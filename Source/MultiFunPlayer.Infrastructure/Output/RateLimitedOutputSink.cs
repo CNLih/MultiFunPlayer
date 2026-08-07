@@ -6,7 +6,8 @@ namespace MultiFunPlayer.Infrastructure.Output;
 /// Samples engine frames for a target without moving timing responsibility into
 /// the engine. The wrapped sink still owns transport backpressure and errors.
 /// </summary>
-public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics, IDisposable, IAsyncDisposable
+public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
+    IOutputSinkErrorDiagnostics, IDisposable, IAsyncDisposable
 {
     private readonly IOutputSink _inner;
     private readonly TimeSpan _minimumInterval;

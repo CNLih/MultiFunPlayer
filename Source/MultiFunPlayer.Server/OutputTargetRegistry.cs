@@ -622,6 +622,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     private static OutputTargetResponse ToResponse(RuntimeTarget target)
     {
         var diagnostics = target.Sink as IOutputSinkDiagnostics;
+        var errorDiagnostics = target.Sink as IOutputSinkErrorDiagnostics;
         var sentFrames = target.SentFrames + (diagnostics?.SentFrames ?? 0);
         var droppedFrames = target.DroppedFrames + (diagnostics?.DroppedFrames ?? 0);
         var failedFrames = target.FailedFrames + (diagnostics?.FailedFrames ?? 0);
@@ -634,7 +635,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             target.Definition.UpdateRateHz,
             target.Definition.Enabled, target.Definition.AutoConnect,
             target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
-            target.Adapter?.LastError ?? diagnostics?.LastError ?? target.LastError,
+            target.Adapter?.LastError ?? errorDiagnostics?.LastError ?? target.LastError,
             sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc,
             target.Definition.DeviceName, target.Definition.DeviceIndex,
             target.Definition.ActuatorType, target.Definition.ActuatorIndex,
@@ -644,14 +645,20 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     private static void CaptureDiagnostics(RuntimeTarget target)
     {
         if (target.Sink is not IOutputSinkDiagnostics diagnostics)
+        {
+            if (target.Sink is IOutputSinkErrorDiagnostics errorOnly
+                && errorOnly.LastError is { } error)
+                target.LastError = error;
             return;
+        }
         target.SentFrames += diagnostics.SentFrames;
         target.DroppedFrames += diagnostics.DroppedFrames;
         target.FailedFrames += diagnostics.FailedFrames;
         if (diagnostics.LastSentAtUtc is { } lastSent
             && (target.LastSentAtUtc is null || lastSent > target.LastSentAtUtc.Value))
             target.LastSentAtUtc = lastSent;
-        if (diagnostics.LastError is { } lastError)
+        if (target.Sink is IOutputSinkErrorDiagnostics errorDiagnostics
+            && errorDiagnostics.LastError is { } lastError)
             target.LastError = lastError;
     }
 

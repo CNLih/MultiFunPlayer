@@ -24,6 +24,11 @@ public interface IOutputSinkDiagnostics
     long DroppedFrames { get; }
     long FailedFrames { get; }
     DateTimeOffset? LastSentAtUtc { get; }
+}
+
+/// <summary>Optional failure detail for sinks that can expose the latest write error.</summary>
+public interface IOutputSinkErrorDiagnostics
+{
     string? LastError { get; }
 }
 
