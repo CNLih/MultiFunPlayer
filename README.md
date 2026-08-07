@@ -10,6 +10,23 @@
 
 MultiFunPlayer synchronizes your devices with video files using scripts. The player has the ability to synchronize multiple devices with multiple scripts at the same time enabling enhanced experience.
 
+## Web/Linux/fnOS migration
+
+The migration branch retains the Windows/WPF host while adding a headless
+ASP.NET Core server and a same-origin Web SPA. The portable path preserves the
+Core/Application timing and TCode logic, exposes versioned REST/WebSocket
+contracts, and currently wires Internal media time plus TCP, UDP, WebSocket,
+File, and Serial output registries. Network media integrations and Windows
+player integrations are reported as planned, external-proxy, or unsupported
+until their adapters are validated; the Web host does not claim the complete
+Windows feature list above.
+
+See [`WEB_LINUX_FNOS_MIGRATION_PLAN.md`](WEB_LINUX_FNOS_MIGRATION_PLAN.md),
+[`Source/MultiFunPlayer.Server/README.md`](Source/MultiFunPlayer.Server/README.md),
+and [`deploy/docker/README.md`](deploy/docker/README.md) for the compatibility
+matrix, API contract, storage volumes, authentication, and target-environment
+validation gates.
+
 # Downloads
 
 * [![release](https://img.shields.io/github/v/release/Yoooi0/MultiFunPlayer?logo=github&label=latest%20release&labelColor=blue&color=blue)](https://github.com/Yoooi0/MultiFunPlayer/releases/latest)
