@@ -115,6 +115,17 @@ public sealed class InfrastructureTests
         Assert.Equal(0, sink.DroppedFrames);
         Assert.Equal(1, sink.FailedFrames);
         Assert.Null(sink.LastSentAtUtc);
+        Assert.Equal("sink failure", sink.LastError);
+
+        var recoverableInner = new RecoverableSink { Fail = true };
+        using var recovered = new RateLimitedOutputSink(recoverableInner, 20);
+        Assert.Throws<InvalidOperationException>(() => recovered.Publish(
+            new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 })));
+        Assert.Equal("recoverable failure", recovered.LastError);
+        recoverableInner.Fail = false;
+        recovered.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0.5 }));
+        Assert.Null(recovered.LastError);
     }
 
     [Fact]
@@ -775,6 +786,17 @@ public sealed class InfrastructureTests
     private sealed class ThrowingSink : IOutputSink
     {
         public void Publish(OutputFrame frame) => throw new InvalidOperationException("sink failure");
+    }
+
+    private sealed class RecoverableSink : IOutputSink
+    {
+        public bool Fail { get; set; }
+
+        public void Publish(OutputFrame frame)
+        {
+            if (Fail)
+                throw new InvalidOperationException("recoverable failure");
+        }
     }
 
     private sealed class RecordingTransport(string id) : BoundedOutputTransport(id)

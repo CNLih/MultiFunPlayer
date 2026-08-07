@@ -15,6 +15,7 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     private long _droppedFrames;
     private long _failedFrames;
     private long _lastSentAtUtcTicks;
+    private string? _lastError;
     private int _disposed;
 
     public RateLimitedOutputSink(IOutputSink inner, int updateRateHz)
@@ -39,6 +40,7 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
             return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
         }
     }
+    public string? LastError => Volatile.Read(ref _lastError);
 
     public void Publish(OutputFrame frame)
     {
@@ -57,10 +59,12 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
             _inner.Publish(frame);
             Interlocked.Increment(ref _sentFrames);
             Interlocked.Exchange(ref _lastSentAtUtcTicks, DateTimeOffset.UtcNow.Ticks);
+            Volatile.Write(ref _lastError, null);
         }
-        catch
+        catch (Exception exception)
         {
             Interlocked.Increment(ref _failedFrames);
+            Volatile.Write(ref _lastError, exception.Message);
             throw;
         }
         _lastPosition = frame.Position;

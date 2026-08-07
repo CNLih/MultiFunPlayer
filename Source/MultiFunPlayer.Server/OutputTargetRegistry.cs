@@ -634,7 +634,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             target.Definition.UpdateRateHz,
             target.Definition.Enabled, target.Definition.AutoConnect,
             target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
-            target.Adapter?.LastError ?? target.LastError,
+            target.Adapter?.LastError ?? diagnostics?.LastError ?? target.LastError,
             sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc,
             target.Definition.DeviceName, target.Definition.DeviceIndex,
             target.Definition.ActuatorType, target.Definition.ActuatorIndex,
@@ -651,6 +651,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         if (diagnostics.LastSentAtUtc is { } lastSent
             && (target.LastSentAtUtc is null || lastSent > target.LastSentAtUtc.Value))
             target.LastSentAtUtc = lastSent;
+        if (diagnostics.LastError is { } lastError)
+            target.LastError = lastError;
     }
 
     private sealed class RuntimeTarget(OutputTargetDefinition definition)

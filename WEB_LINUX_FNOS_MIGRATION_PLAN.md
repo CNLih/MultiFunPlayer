@@ -743,7 +743,10 @@ Validated in the current Linux environment:
   adapter capability endpoints and exposes repository, general, security,
   serial, and log state with a real refresh action. Device-axis editing covers
   range, inversion, interpolation, and optional limits with persisted REST
-  settings and Application-level evaluation tests.
+  settings and Application-level evaluation tests. Failed sink writes now
+  expose a transient `lastError` in the output-target contract and clear it
+  after a successful write, with Infrastructure coverage for failure and
+  recovery.
 - P4-03 now includes the direct Buttplug protocol-v3 WebSocket output adapter.
   It performs server-info negotiation, current-device enumeration, scanning,
   strict device selection, Scalar/Linear/Rotate/Stop commands, bounded queue

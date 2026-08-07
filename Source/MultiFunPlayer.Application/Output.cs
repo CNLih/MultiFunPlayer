@@ -24,6 +24,7 @@ public interface IOutputSinkDiagnostics
     long DroppedFrames { get; }
     long FailedFrames { get; }
     DateTimeOffset? LastSentAtUtc { get; }
+    string? LastError { get; }
 }
 
 public sealed record OutputSinkError(IOutputSink Sink, OutputFrame Frame, Exception Exception);

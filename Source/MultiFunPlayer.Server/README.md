@@ -99,9 +99,12 @@ official HTTPS API endpoint.
 
 `GET /api/v1/output-targets` also returns bounded diagnostics for each target:
 `sentFrames`, `droppedFrames`, `failedFrames`, `reconnects`, and
-`lastSentAtUtc`. A sent frame means the sink accepted it; a transport may
+`lastSentAtUtc`, plus the latest `lastError` from a failed sink write. A sent
+frame means the sink accepted it; a transport may
 complete the physical write asynchronously. Counters accumulate for the
-current server process across disconnect/reconnect and reset on restart.
+current server process across disconnect/reconnect and reset on restart. A
+successful later write clears the transient `lastError`; reconnect remains an
+explicit lifecycle operation.
 
 Media sources are managed through `/api/v1/media-sources` and the matching
 `connect`, `disconnect`, update, and delete subroutes. The `internal` source
