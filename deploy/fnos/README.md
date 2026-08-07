@@ -45,4 +45,9 @@ After building, verify the archive contents before transferring it to fnOS:
 ```sh
 ./deploy/validate-fpk.sh artifacts/fnos/x86/multifunplayer.fpk x86
 ./deploy/validate-fpk.sh artifacts/fnos/arm/multifunplayer.fpk arm
+(cd artifacts/fnos/x86 && sha256sum --check multifunplayer.fpk.sha256)
+(cd artifacts/fnos/arm && sha256sum --check multifunplayer.fpk.sha256)
 ```
+
+`build-fpk.sh` writes the matching `multifunplayer.fpk.sha256` sidecar next to
+each package so the archive can be verified after transfer.

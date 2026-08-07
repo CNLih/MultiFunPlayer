@@ -268,6 +268,13 @@ jobs:
       uses: docker/setup-buildx-action@v3
     - name: Build ${{ matrix.arch }} image
       run: docker buildx build --platform linux/${{ matrix.arch }} --tag multifunplayer:ci-${{ matrix.arch }} --load .
+    - name: Verify loaded image architecture
+      env:
+        EXPECTED_ARCH: ${{ matrix.arch }}
+      run: |
+        set -euo pipefail
+        actual_arch="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "multifunplayer:ci-${{ matrix.arch }}")"
+        test "$actual_arch" = "linux/$EXPECTED_ARCH"
     - name: Generate ${{ matrix.arch }} runtime CycloneDX SBOM
       uses: anchore/sbom-action@4a30bbadbe35d73a1729ee95a9196544192d905e
       with:

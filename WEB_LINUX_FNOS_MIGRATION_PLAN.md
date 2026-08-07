@@ -671,7 +671,7 @@ Validated in the current Linux environment:
   `fnpack` 1.2.3. Docker Buildx, image scanning, official target-firmware
   validation, and target-NAS execution remain external gates.
 - CI now contains a separate amd64/arm64 Buildx matrix that builds each image,
-  starts it with temporary persistent roots, checks anonymous liveness,
+  verifies the loaded image OS/architecture, starts it with temporary persistent roots, checks anonymous liveness,
   authenticated adapter access, and SPA fallback, then removes the container.
   Each matrix leg now also runs the pinned Trivy action against the loaded image
   and uploads a JSON vulnerability report before smoke testing. This is an

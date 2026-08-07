@@ -179,6 +179,10 @@ class Validator:
         if fnpack_build is not None:
             self.check("fnpack:build-wrapper", "build --directory" in fnpack_build and "--platform" in fnpack_build,
                        "repository wrapper exposes explicit architecture builds")
+            self.check("fnpack:build-relative-output", "output_dir=$(CDPATH= cd -- \"$output_dir\"" in fnpack_build,
+                       "FPK output directory is normalized before fnpack runs")
+            self.check("fnpack:build-checksum", "sha256sum" in fnpack_build and "checksum_file=" in fnpack_build,
+                       "FPK build writes a portable SHA-256 sidecar")
 
         if fnpack_validate is not None:
             self.check("fnpack:validation-wrapper", "app.tgz" in fnpack_validate and "service_port" in fnpack_validate,

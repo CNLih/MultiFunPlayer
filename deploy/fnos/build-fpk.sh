@@ -70,6 +70,7 @@ if ! command -v "$fnpack_cmd" >/dev/null 2>&1 && ! test -x "$fnpack_cmd"; then
 fi
 
 mkdir -p "$output_dir"
+output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
 output_file="$output_dir/multifunplayer.fpk"
 if test -e "$output_file" && [[ "$force" != true ]]; then
     printf 'refusing to overwrite %s; pass --force to replace it\n' "$output_file" >&2
@@ -87,10 +88,12 @@ cp -a "$project_dir" "$tmp_project"
 sed -i -E "s/^platform[[:space:]]*=.*/platform              = $platform/" "$tmp_project/manifest"
 find "$tmp_project/cmd" -type f -exec chmod 0755 {} +
 
-build_dir=$(CDPATH= cd -- "$output_dir" && pwd)
+build_dir="$output_dir"
 cd "$build_dir"
 "$fnpack_cmd" build --directory "$tmp_project"
 
 test -f "$output_file" || { printf 'fnpack did not create %s\n' "$output_file" >&2; exit 1; }
 printf 'Built %s (%s)\n' "$output_file" "$(du -h "$output_file" | cut -f1)"
-sha256sum "$output_file"
+checksum_file="$output_file.sha256"
+(cd "$output_dir" && sha256sum "$(basename "$output_file")") | tee "$checksum_file"
+printf 'Checksum: %s\n' "$checksum_file"
