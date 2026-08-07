@@ -102,8 +102,13 @@ public sealed class AuthTokenStore
             }
             finally
             {
-                if (File.Exists(temporary))
-                    File.Delete(temporary);
+                try
+                {
+                    if (File.Exists(temporary))
+                        File.Delete(temporary);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
     }

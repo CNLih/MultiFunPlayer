@@ -66,8 +66,13 @@ public sealed class RootedFileStore
         }
         finally
         {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
+            try
+            {
+                if (File.Exists(temporary))
+                    File.Delete(temporary);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 

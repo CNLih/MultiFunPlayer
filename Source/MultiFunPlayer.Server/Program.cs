@@ -33,6 +33,9 @@ public static class ServerProgram
         ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
+        builder.Services.AddSingleton<ConfigurationMigrationHostedService>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<ConfigurationMigrationHostedService>());
         builder.Services.AddSingleton<StateBroadcaster>();
         var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
         builder.Services.AddSingleton(runtimeLogStore);
@@ -121,6 +124,7 @@ public static class ServerProgram
                 ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
         });
+        app.MapGet("/api/v1/adapters", () => Results.Ok(AdapterCapabilityCatalog.Current));
         app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage) =>
         {
             var tickHz = ServerOptions.ResolveTickHz(config);
@@ -129,6 +133,8 @@ public static class ServerProgram
                 storage.ScriptsRoot, storage.LogsRoot, storage.KeysRoot,
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"))));
         });
+        app.MapGet("/api/v1/configuration/migration",
+            (ConfigurationMigrationHostedService migration) => Results.Ok(migration.Status));
         app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
         {
             var root = Environment.GetEnvironmentVariable("MFP_SERIAL_BY_ID_ROOT");
@@ -343,7 +349,9 @@ internal static class OpenApiDocument
             ["/api/v1/status"] = new { get = Operation("Current player status") },
             ["/api/v1/auth/pair"] = new { post = Operation("Initial administrator pairing") },
             ["/api/v1/capabilities"] = new { get = Operation("Server capabilities") },
+            ["/api/v1/adapters"] = new { get = Operation("Adapter and integration capabilities") },
             ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
+            ["/api/v1/configuration/migration"] = new { get = Operation("Legacy configuration migration status") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts") },

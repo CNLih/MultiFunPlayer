@@ -554,14 +554,20 @@ Validated in the current Linux environment:
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 15/15;
-  Server tests: 11/11.
+  Server tests: 14/14.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
 - The Infrastructure migration reader accepts the sanitized desktop JSON shape,
   emits versioned portable records, normalizes path separators, and omits
-  secret fields without modifying the source document.
+  secret fields without modifying the source document. An explicit
+  `MFP_LEGACY_CONFIG_PATH` startup import writes the versioned record once under
+  the config root and exposes a protected migration status endpoint.
+- The Server exposes a versioned read-only adapter capability inventory and
+  explicitly labels direct transports as planned until output registries are
+  wired. Browser WebSocket binary/invalid text frames are ignored without
+  affecting the playback API.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -569,8 +575,7 @@ Validated in the current Linux environment:
 
 Still open and intentionally not advertised as complete:
 
-- Full media-source and output-target CRUD/adapters and startup integration of
-  the desktop migration reader. Initial pairing is implemented, but
+- Full media-source and output-target CRUD/adapters remain open. Initial pairing is implemented, but
   upgrade/backup rehearsal and
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data

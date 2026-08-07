@@ -50,3 +50,18 @@ serial device view is available at `GET /api/v1/devices/serial`; it enumerates
 stable `/dev/serial/by-id` links (or `MFP_SERIAL_BY_ID_ROOT`) and never opens a
 device. Serial output uses the separate bounded `SerialOutputTransport` and
 requires an explicit device mapping and permissions in a container.
+
+To import an existing desktop JSON once, set `MFP_LEGACY_CONFIG_PATH` to an
+explicitly mounted file before starting the server. The server reads at most
+4 MiB, omits secret-like fields, writes `migrated-configuration.json` under
+the config volume, and never modifies the source. If that target already
+exists it is left untouched. `GET /api/v1/configuration/migration` reports
+`disabled`, `source-not-found`, `migrated`, `already-present`, or `failed`.
+
+`GET /api/v1/adapters` is a versioned, read-only capability inventory. It
+lists portable direct transport contracts (`tcp`, `udp`, `websocket`, `serial`,
+and `file`) separately from adapter implementation status. Entries marked
+`planned` or `contract-only` describe migration boundaries, not active
+connections. Windows-player integrations are marked `external-proxy` or
+`unsupported` with required services; this endpoint does not create pretend
+media/output CRUD resources.

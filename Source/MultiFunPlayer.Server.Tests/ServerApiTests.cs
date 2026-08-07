@@ -1,10 +1,14 @@
 using System.Net;
+using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using MultiFunPlayer.Infrastructure.Storage;
 
 namespace MultiFunPlayer.Server.Tests;
 
@@ -42,6 +46,55 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Adapter_capabilities_are_versioned_and_do_not_claim_unwired_crud()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/adapters");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("v1", payload.GetProperty("apiVersion").GetString());
+        Assert.Equal("1.0", payload.GetProperty("schemaVersion").GetString());
+        var transports = payload.GetProperty("transports").EnumerateArray()
+            .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
+        foreach (var id in new[] { "tcp", "udp", "websocket", "serial", "file" })
+        {
+            Assert.True(transports.ContainsKey(id));
+            Assert.Equal("direct", transports[id].GetProperty("integration").GetString());
+        }
+
+        var adapters = payload.GetProperty("adapters").EnumerateArray()
+            .ToDictionary(item => item.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal("planned", adapters["output.tcp"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("external-proxy", adapters["output.buttplug"].GetProperty("integration").GetString());
+        Assert.Equal("unsupported", adapters["output.pipe"].GetProperty("implementationStatus").GetString());
+        Assert.Equal("blocked", adapters["media.mpv"].GetProperty("implementationStatus").GetString());
+    }
+
+    [Fact]
+    public async Task State_websocket_ignores_malformed_client_frames()
+    {
+        var websocketClient = _factory.Server.CreateWebSocketClient();
+        using var socket = await websocketClient.ConnectAsync(new Uri("ws://localhost/hubs/state"),
+            CancellationToken.None);
+        var buffer = new byte[4096];
+        var initial = await socket.ReceiveAsync(buffer, CancellationToken.None);
+
+        Assert.Equal(WebSocketMessageType.Text, initial.MessageType);
+        Assert.Contains("state", Encoding.UTF8.GetString(buffer, 0, initial.Count), StringComparison.Ordinal);
+
+        await socket.SendAsync(new byte[] { 0xff, 0x00 }, WebSocketMessageType.Binary, true,
+            CancellationToken.None);
+        await socket.SendAsync(Encoding.UTF8.GetBytes("{not-json"), WebSocketMessageType.Text, true,
+            CancellationToken.None);
+
+        using var http = _factory.CreateClient();
+        Assert.Equal(HttpStatusCode.OK, (await http.GetAsync("/api/v1/status")).StatusCode);
+        Assert.Equal(WebSocketState.Open, socket.State);
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Settings_and_serial_device_contracts_are_available_without_secrets()
     {
         using var client = _factory.CreateClient();
@@ -52,6 +105,42 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(settings.GetProperty("scriptsRoot").GetString()!.Length > 0);
         Assert.False(settings.TryGetProperty("authToken", out _));
         Assert.Equal(JsonValueKind.Array, serial.ValueKind);
+    }
+
+    [Fact]
+    public async Task Legacy_configuration_is_imported_once_without_overwriting_source()
+    {
+        var previous = Environment.GetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable);
+        using var temp = new TemporaryDirectory();
+        var source = Path.Combine(temp.Path, "desktop.json");
+        var configRoot = Path.Combine(temp.Path, "config");
+        await File.WriteAllTextAsync(source,
+            "{\"ConfigVersion\":7,\"OutputTarget\":{\"Items\":[]},\"ApiKey\":\"omit-me\"}");
+        Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, source);
+        try
+        {
+            var service = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+            await service.StartAsync(CancellationToken.None);
+
+            Assert.Equal("migrated", service.Status.State);
+            var migrated = await File.ReadAllTextAsync(Path.Combine(configRoot,
+                ConfigurationMigrationHostedService.TargetFile));
+            Assert.Contains("sourceConfigVersion", migrated, StringComparison.Ordinal);
+            Assert.DoesNotContain("omit-me", migrated, StringComparison.Ordinal);
+            Assert.Contains("ApiKey", await File.ReadAllTextAsync(source), StringComparison.Ordinal);
+
+            var second = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+            await second.StartAsync(CancellationToken.None);
+            Assert.Equal("already-present", second.Status.State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
     }
 
     [Fact]
@@ -108,7 +197,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         Assert.Equal("3.0.3", document.GetProperty("openapi").GetString());
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/status", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/adapters", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/settings", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/configuration/migration", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }
@@ -202,5 +293,22 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         Assert.Equal(store.Capacity, store.Count);
         Assert.True(store.DroppedCount > 0);
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public TemporaryDirectory()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mfp-server-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+                Directory.Delete(Path, recursive: true);
+        }
     }
 }
