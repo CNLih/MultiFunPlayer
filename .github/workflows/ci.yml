@@ -140,6 +140,13 @@ jobs:
         dotnet test Source/MultiFunPlayer.Tests/MultiFunPlayer.Tests.csproj --no-restore --configuration Release --filter FullyQualifiedName~PluginTests -- xunit.parallelizeTestCollections=false
     - name: Build ${{ matrix.build_type }}
       run: dotnet publish --no-restore --configuration ${{ matrix.build_type }}
+    - name: Run framework-dependent Windows smoke
+      if: ${{ matrix.build_type == 'Release' }}
+      shell: pwsh
+      run: >-
+        ./tools/run-windows-framework-dependent-smoke.ps1
+        -ExecutablePath
+        Source/MultiFunPlayer/bin/${{ matrix.build_type }}/win-x64/publish/MultiFunPlayer.exe
     - name: Upload ${{ matrix.build_type }} artifact
       uses: actions/upload-artifact@v4
       with:

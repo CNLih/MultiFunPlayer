@@ -45,6 +45,12 @@ jobs:
       run: dotnet test --no-restore --configuration Release -- xunit.parallelizeTestCollections=false
     - name: Build Framework Dependent
       run: dotnet publish --no-restore --self-contained false --configuration Release --property:PublishDir=.\bin\Release\win-x64\publish\framework-dependent
+    - name: Run framework-dependent Windows smoke
+      shell: pwsh
+      run: >-
+        ./tools/run-windows-framework-dependent-smoke.ps1
+        -ExecutablePath
+        Source/MultiFunPlayer/bin/Release/win-x64/publish/framework-dependent/MultiFunPlayer.exe
     - name: Build Self Contained
       run: dotnet publish --no-restore --self-contained true --configuration Release --property:PublishDir=.\bin\Release\win-x64\publish\self-contained
     - name: Setup NetBeauty
