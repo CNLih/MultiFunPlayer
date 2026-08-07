@@ -694,7 +694,9 @@ Validated in the current Linux environment:
   policies. These panels are deliberately read-only because root paths,
   cadence, and authentication bootstrap are process-bound settings; the
   remote browser journey asserts all four panels without moving ownership of
-  restart-required configuration into the SPA.
+  restart-required configuration into the SPA. The mobile journey also checks
+  page-level width on media, output, and logs routes while allowing intentional
+  table-local horizontal scrolling.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

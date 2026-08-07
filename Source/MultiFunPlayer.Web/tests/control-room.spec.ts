@@ -41,6 +41,15 @@ test.describe('control room demo journey', () => {
     await page.getByRole('button', { name: 'Save axis policy' }).click();
     await expect(page.getByText('Axis policy saved')).toBeVisible();
     await expect(page.getByText('L9')).toBeVisible();
+
+    for (const route of ['media', 'outputs', 'logs']) {
+      await page.locator(`button.nav-item[data-route="${route}"]`).click();
+      await expect.poll(() => page.evaluate(() => {
+        const main = document.querySelector<HTMLElement>('.main-content')?.getBoundingClientRect();
+        return document.body.scrollWidth <= window.innerWidth + 1
+          && (main?.right ?? window.innerWidth) <= window.innerWidth + 1;
+      })).toBeTruthy();
+    }
   });
 
   test('completes media, output, axis, and diagnostics CRUD journeys', async ({ page }) => {
