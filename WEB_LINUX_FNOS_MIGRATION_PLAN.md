@@ -596,6 +596,9 @@ Validated in the current Linux environment:
 - The change-detection job now reruns the pinned actionlint binary (SHA-256
   verified) before fan-out, so future workflow edits cannot bypass this syntax
   check.
+- All third-party GitHub Actions used by CI and publishing are now pinned to
+  full commit SHAs with their human-readable release tags retained in comments;
+  this prevents a mutable tag from silently changing the release pipeline.
 - CI now grants Pages write and OIDC token permissions only to the Docs job;
   build, portable, packaging, and container jobs inherit read-only repository
   access. This keeps the workflow security boundary least-privilege while

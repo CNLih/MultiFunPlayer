@@ -13,11 +13,11 @@ jobs:
     runs-on: windows-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
           fetch-depth: 0
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: '3.x'
     - name: Verify release evidence
@@ -25,20 +25,20 @@ jobs:
         test -f deploy/release-evidence.json
         python tools/validate-release-evidence.py deploy/release-evidence.json --require-complete
     - name: Setup .NET 9 SDK
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: '9.0.x'
     - name: Setup .NET 10 SDK
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
       with:
         dotnet-version: '10.0.302'
     - name: Setup GitVersion
-      uses: gittools/actions/gitversion/setup@v1.1.1
+      uses: gittools/actions/gitversion/setup@8d68520cde93ca9226ee0e09870caaca033d2cd2 # v1.1.1
       with:
         versionSpec: '5.x'
     - name: Run GitVersion
       id:   gitversion
-      uses: gittools/actions/gitversion/execute@v1.1.1
+      uses: gittools/actions/gitversion/execute@8d68520cde93ca9226ee0e09870caaca033d2cd2 # v1.1.1
     - name: Install Dependencies (locked)
       run: dotnet restore --locked-mode
     - name: Test
@@ -63,7 +63,7 @@ jobs:
       run: 7z a MultiFunPlayer-${{ steps.gitversion.outputs.semVer }}-SelfContained.$(dotnet --version).zip .\Source\MultiFunPlayer\bin\Release\win-x64\publish\self-contained\*
     - name: Create Release
       id: create-release
-      uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
       with:
         draft: false
         prerelease: false
