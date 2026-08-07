@@ -7,6 +7,10 @@ export MFP_AUTH_TOKEN='replace-with-a-long-random-token'
 docker compose -f deploy/docker/compose.yaml up --build -d
 ```
 
+Production deployments must set either `MFP_AUTH_TOKEN` or the documented
+`MFP_PAIRING_TOKEN` before exposing the port. Leaving both empty is intended
+only for a local, isolated development run.
+
 The container listens on port `8080` and serves the SPA and `/api/v1` from one
 origin. Named volumes preserve `/config`, `/keys`, `/scripts`, and `/logs`.
 The default image is non-root and read-only; add a narrowly scoped serial device

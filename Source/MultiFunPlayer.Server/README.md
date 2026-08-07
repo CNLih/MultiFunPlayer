@@ -24,6 +24,11 @@ Set `MFP_KEYS_PATH` (or `MFP_KEYS_ROOT`) to enable persistent ASP.NET Data
 Protection keys in a mounted volume; without it, local development uses the
 framework's ephemeral key repository.
 
+For first-run pairing, set `MFP_PAIRING_TOKEN` and leave `MFP_AUTH_TOKEN` unset.
+POST a JSON body containing `pairingToken` and a new `authToken` (at least 16
+characters) to `/api/v1/auth/pair`. The server stores only a SHA-256 hash under
+`/config/auth-token.json`; pairing is rejected after the first successful run.
+
 `/hubs/state` is a text WebSocket stream of the same status shape returned by
 `/api/v1/status`. Each subscriber has a one-item latest-value queue, so a slow
 browser cannot retain unbounded snapshots or stop the player.

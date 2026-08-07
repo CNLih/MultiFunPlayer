@@ -8,7 +8,8 @@ services:
       - "${MFP_HTTP_PORT:-8080}:8080"
     environment:
       ASPNETCORE_URLS: http://+:8080
-      MFP_AUTH_TOKEN: ${MFP_AUTH_TOKEN:?set MFP_AUTH_TOKEN in the environment}
+      MFP_AUTH_TOKEN: ${MFP_AUTH_TOKEN:-}
+      MFP_PAIRING_TOKEN: ${MFP_PAIRING_TOKEN:-}
       MFP_SCRIPTS_PATH: /scripts
       MFP_CONFIG_PATH: /config
       MFP_KEYS_PATH: /keys
@@ -33,6 +34,17 @@ services:
         limits:
           cpus: "2.0"
           memory: 512M
+    networks:
+      - mfp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # Compose bridge networking is the default. For protocols that require
+    # host discovery, copy this setting into a deployment-specific override:
+    # network_mode: host
 
   fake-tcp:
     profiles: ["simulators"]
@@ -59,15 +71,10 @@ services:
     networks:
       - mfp
     restart: "no"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    # Compose bridge networking is the default. For protocols that require
-    # host discovery, copy this setting into a deployment-specific override:
-    # network_mode: host
+
+networks:
+  mfp:
+    driver: bridge
 
 volumes:
   mfp-config:

@@ -3,6 +3,6 @@
   "slug": "aspnet-server-api",
   "status": "completed-with-adapter-scope-pending",
   "branch": "feature/web-linux-fnos-migration",
-  "evidence": ["Server tests 9/9", "REST v1", "OpenAPI", "bounded WebSocket", "auth smoke", "redacted bounded runtime logs", "settings and serial discovery endpoints"],
-  "pending": ["full media/output CRUD and registries", "pairing flow", "desktop configuration migration", "persistent log file export"]
+  "evidence": ["Server tests 10/10", "REST v1", "OpenAPI", "bounded WebSocket", "auth smoke", "redacted bounded runtime logs", "settings and serial discovery endpoints", "one-time pairing with persisted token hash"],
+  "pending": ["full media/output CRUD and registries", "desktop configuration migration", "persistent log file export"]
 }

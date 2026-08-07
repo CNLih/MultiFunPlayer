@@ -342,7 +342,7 @@ Tasks:
 - [x] P3-05 Coalesce UI updates to a configurable maximum of 10-20 Hz without changing backend output rates.
 - [x] P3-06 Add OpenAPI generation and checked-in API examples.
 - [x] P3-07 Add health, readiness, version, runtime, and capability endpoints.
-- [ ] P3-08 Implement initial-admin setup or pairing-token authentication.
+- [x] P3-08 Implement initial-admin setup or pairing-token authentication.
 - [x] P3-09 Protect WebSocket/SignalR, configuration changes, file access, and secret fields.
 - [x] P3-10 Add structured logs with secret redaction and bounded retention.
 
@@ -554,7 +554,7 @@ Validated in the current Linux environment:
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 8/8;
-  Server tests: 9/9.
+  Server tests: 10/10.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
@@ -566,8 +566,9 @@ Validated in the current Linux environment:
 
 Still open and intentionally not advertised as complete:
 
-- Full media-source and output-target CRUD/adapters, first-admin pairing, and
-  desktop configuration migration. Serial open/write is implemented, but
+- Full media-source and output-target CRUD/adapters and desktop configuration
+  migration. Initial pairing is implemented, but upgrade/backup rehearsal and
+  recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   key rotation/removal and upgrade rehearsal remain open.

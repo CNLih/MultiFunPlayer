@@ -31,6 +31,7 @@ public static class ServerProgram
         builder.Services.AddSingleton<HeadlessPlayerEngine>();
         builder.Services.AddSingleton(storage);
         ConfigureKeyPersistence(builder, storage);
+        builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
         builder.Services.AddSingleton<StateBroadcaster>();
         var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
@@ -63,21 +64,22 @@ public static class ServerProgram
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
         app.Use(async (context, next) =>
         {
-            if (IsHealthPath(context.Request.Path) || IsPublicAsset(context.Request.Path))
+            if (IsHealthPath(context.Request.Path) || IsPublicAsset(context.Request.Path)
+                || IsPairingPath(context.Request.Path))
             {
                 await next(context);
                 return;
             }
 
-            var expected = Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN");
-            if (string.IsNullOrEmpty(expected))
+            var auth = context.RequestServices.GetRequiredService<AuthTokenStore>();
+            if (!auth.IsConfigured)
             {
                 await next(context);
                 return;
             }
 
             var actual = ReadToken(context.Request);
-            if (string.IsNullOrEmpty(actual) || !CryptographicEquals(actual, expected))
+            if (!auth.Validate(actual))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await Results.Problem(statusCode: StatusCodes.Status401Unauthorized,
@@ -95,6 +97,22 @@ public static class ServerProgram
 
         app.MapGet("/api/v1/status", (HeadlessPlayerEngine engine) =>
             Results.Ok(ApiModelMapper.ToStatus(engine.Current)));
+        app.MapPost("/api/v1/auth/pair", (PairRequest request, AuthTokenStore auth) =>
+        {
+            return auth.TryPair(request.PairingToken, request.AuthToken) switch
+            {
+                PairingResult.Paired => Results.Ok(new { status = "paired" }),
+                PairingResult.PairingUnavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                    "Pairing unavailable", "Configure a pairing token and writable configuration root.", "pairing_unavailable"),
+                PairingResult.AlreadyConfigured => Problem(StatusCodes.Status409Conflict,
+                    "Already configured", "The server already has an authentication token.", "already_configured"),
+                PairingResult.InvalidPairingToken => Problem(StatusCodes.Status401Unauthorized,
+                    "Invalid pairing token", "The pairing token was not accepted.", "invalid_pairing_token"),
+                PairingResult.InvalidAuthToken => Problem(StatusCodes.Status400BadRequest,
+                    "Invalid auth token", "The new auth token must be at least 16 characters.", "invalid_auth_token"),
+                _ => Problem(StatusCodes.Status400BadRequest, "Pairing failed", "The pairing request was rejected.", "pairing_failed")
+            };
+        });
         app.MapGet("/api/v1/capabilities", (IConfiguration config) =>
         {
             var hz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
@@ -260,6 +278,8 @@ public static class ServerProgram
     }
 
     private static bool IsHealthPath(PathString path) => path.StartsWithSegments("/health");
+    private static bool IsPairingPath(PathString path)
+        => path.Equals("/api/v1/auth/pair", StringComparison.OrdinalIgnoreCase);
     private static bool IsPublicAsset(PathString path)
         => path == "/" || path.StartsWithSegments("/public") || path.StartsWithSegments("/assets")
             || path.Equals("/index.html", StringComparison.OrdinalIgnoreCase)
@@ -321,6 +341,7 @@ internal static class OpenApiDocument
             ["/health/live"] = new { get = Operation("Liveness") },
             ["/health/ready"] = new { get = Operation("Readiness") },
             ["/api/v1/status"] = new { get = Operation("Current player status") },
+            ["/api/v1/auth/pair"] = new { post = Operation("Initial administrator pairing") },
             ["/api/v1/capabilities"] = new { get = Operation("Server capabilities") },
             ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },

@@ -34,6 +34,8 @@ public sealed record SerialDeviceResponse(
     string DevicePath,
     string? LinkTarget);
 
+public sealed record PairRequest(string? PairingToken, string? AuthToken);
+
 public sealed record ScriptDescriptor(string Id, string Name, long Size, DateTimeOffset LastModifiedUtc);
 
 public sealed record ScriptContentResponse(ScriptDescriptor Script, string Content);

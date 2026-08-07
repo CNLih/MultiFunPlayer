@@ -55,6 +55,35 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public void Auth_token_store_persists_only_a_hash_and_rejects_repairing()
+    {
+        var previousPairing = Environment.GetEnvironmentVariable("MFP_PAIRING_TOKEN");
+        var previousAuth = Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN");
+        var root = Path.Combine(Path.GetTempPath(), "mfp-auth-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Environment.SetEnvironmentVariable("MFP_PAIRING_TOKEN", "pairing-token");
+            Environment.SetEnvironmentVariable("MFP_AUTH_TOKEN", null);
+            var options = new MultiFunPlayer.Infrastructure.Storage.StorageOptions { ConfigRoot = root };
+            var store = new AuthTokenStore(options);
+
+            Assert.Equal(PairingResult.Paired, store.TryPair("pairing-token", "a-new-token-that-is-long"));
+            Assert.True(store.Validate("a-new-token-that-is-long"));
+            Assert.False(store.Validate("pairing-token"));
+            Assert.Equal(PairingResult.AlreadyConfigured, store.TryPair("pairing-token", "another-token-that-is-long"));
+            var persisted = File.ReadAllText(Path.Combine(root, "auth-token.json"));
+            Assert.DoesNotContain("a-new-token-that-is-long", persisted, StringComparison.Ordinal);
+            Assert.True(new AuthTokenStore(options).Validate("a-new-token-that-is-long"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_PAIRING_TOKEN", previousPairing);
+            Environment.SetEnvironmentVariable("MFP_AUTH_TOKEN", previousAuth);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task OpenApi_document_describes_versioned_surface()
     {
         using var client = _factory.CreateClient();
