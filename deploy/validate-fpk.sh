@@ -65,4 +65,22 @@ for entry in docker/docker-compose.yaml ui/config ui/images/icon_64.png ui/image
     app_contains "$entry" || { printf 'FPK app.tgz missing entry: %s\n' "$entry" >&2; exit 1; }
 done
 
+app_compose=$(tar -xOzf "$app_archive" docker/docker-compose.yaml)
+for required in \
+    'read_only: true' \
+    '/tmp:rw,noexec,nosuid,size=32m' \
+    'no-new-privileges:true' \
+    'stop_grace_period: 30s' \
+    'cpus: "2.0"' \
+    'memory: 512M'; do
+    printf '%s\n' "$app_compose" | grep -Fq -- "$required" || {
+        printf 'FPK Compose security check failed: %s\n' "$required" >&2
+        exit 1
+    }
+done
+if printf '%s\n' "$app_compose" | grep -Eq '^[[:space:]]*privileged:'; then
+    printf '%s\n' 'FPK Compose security check failed: privileged mode is enabled' >&2
+    exit 1
+fi
+
 printf 'FPK valid: %s\n' "$package"
