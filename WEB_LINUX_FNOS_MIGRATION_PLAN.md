@@ -826,6 +826,13 @@ Validated in the current Linux environment:
   explicitly pending, and the Ubuntu CI job uploads the same artifact for each
   run. Command output is decoded as UTF-8 with replacement for malformed bytes,
   so a localized or binary diagnostic cannot abort evidence collection.
+- `tools/run-target-acceptance.py` provides a dependency-free black-box HTTP
+  acceptance harness for an installed Linux/fnOS Web endpoint. It checks
+  authentication, health, SPA fallback, capabilities, adapter/serial
+  discovery, script upload/load, playback commands, and log redaction without
+  placing bearer tokens in the report. The container CI job runs it for both
+  architectures and uploads the report; physical output and firmware checks
+  remain target-specific.
 
 Still open and intentionally not advertised as complete:
 

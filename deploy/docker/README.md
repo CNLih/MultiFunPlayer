@@ -51,6 +51,24 @@ This verifies the Dockerfile, compose security defaults, persistent volume
 names, and the structural fnOS manifest. It does not build an image or replace
 Docker Compose, Buildx, Trivy, or fnOS/fnpack validation on a target host.
 
+For a running Linux or fnOS Web endpoint, the repository-owned black-box
+acceptance harness can produce a redacted JSON artifact:
+
+```sh
+export MFP_ACCEPTANCE_TOKEN='the-target-bearer-token'
+python3 tools/run-target-acceptance.py \
+  --base-url http://nas-or-host:8080 \
+  --output artifacts/target/target-acceptance.json
+```
+
+For a fresh pairing flow, also set `MFP_PAIRING_TOKEN`; the harness will pair
+once and then use the supplied acceptance token. The checks cover liveness,
+readiness, SPA fallback, authenticated settings/capabilities, adapter and
+serial discovery, server-side script upload/load, seek/play/stop, and log
+redaction, including a check that protected API routes reject anonymous
+requests. The report deliberately does not claim physical serial/output or
+fnOS firmware compatibility; attach those target-specific results separately.
+
 For a headless Linux soak, build the Release server first and run the portable
 harness from the repository root:
 

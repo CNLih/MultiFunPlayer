@@ -386,6 +386,11 @@ jobs:
               -H "Authorization: Bearer $MFP_TEST_TOKEN" \
               http://127.0.0.1:18080/api/v1/adapters >/dev/null
             curl --fail --silent --show-error http://127.0.0.1:18080/ | grep -q "MultiFunPlayer"
+            mkdir -p artifacts/target
+            python tools/run-target-acceptance.py \
+              --base-url http://127.0.0.1:18080 \
+              --token "$MFP_TEST_TOKEN" \
+              --output "artifacts/target/container-${{ matrix.arch }}.json"
             exit 0
           fi
           if [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME")" != "true" ]; then
@@ -396,6 +401,13 @@ jobs:
         done
         docker logs "$CONTAINER_NAME"
         exit 1
+    - name: Upload ${{ matrix.arch }} black-box acceptance evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: container-target-acceptance-${{ matrix.arch }}
+        path: artifacts/target/container-${{ matrix.arch }}.json
+        if-no-files-found: ignore
     - name: Restart ${{ matrix.arch }} image with persistent volumes
       env:
         IMAGE_TAG: multifunplayer:ci-${{ matrix.arch }}
