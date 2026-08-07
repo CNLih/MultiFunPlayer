@@ -81,6 +81,24 @@ public sealed class TheHandyOutputAdapterTests
         Assert.Contains("malformed JSON", malformed.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Preserves_caller_cancellation_during_handshake()
+    {
+        using var simulator = new HandyProtocolSimulator { DelayResponses = true };
+        await using var adapter = new TheHandyOutputAdapter("handy-cancel",
+            simulator.Endpoint, "test-key", handler: simulator.Handler,
+            options: new OutputTransportOptions
+            {
+                ConnectTimeout = TimeSpan.FromSeconds(5),
+                SendTimeout = TimeSpan.FromSeconds(5)
+            });
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => adapter.ConnectAsync(cancellation.Token).AsTask());
+        Assert.False(adapter.IsConnected);
+        Assert.Null(adapter.LastError);
+    }
+
     private sealed class HandyProtocolSimulator : IDisposable
     {
         private readonly HttpMessageHandler _handler;

@@ -394,7 +394,7 @@ Tasks:
 - [x] P4-07 Restrict filesystem browsing to administrator-configured roots and prevent path traversal/symlink escape.
 - [x] P4-08 Define Linux and Windows path normalization rules for existing settings.
 - [x] P4-09 Replace UI file dialogs with server-side directory selection, upload, or repository operations.
-- [ ] P4-10 Validate reconnect, timeout, cancellation, partial message, and malformed message handling.
+- [x] P4-10 Validate reconnect, timeout, cancellation, partial message, and malformed message handling.
 
 MVP media compatibility matrix:
 
@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 20/20;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 21/21;
   Server tests: 22/22.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
@@ -583,7 +583,8 @@ Validated in the current Linux environment:
   an `updateRateHz` from 1 to 20 and samples frames independently before
   formatting transport output. Connection failures are represented in the
   target state. Simulator tests cover handshake, malformed/timeout responses,
-  send failure, explicit reconnect, and rate-limit/seek behavior.
+  caller cancellation, send failure, explicit reconnect, and rate-limit/seek
+  behavior.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or
