@@ -882,8 +882,10 @@ Still open and intentionally not advertised as complete:
   external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
   removal of an explicit key root is covered by a negative decryption test.
-- Full UI settings forms and the broader browser/device matrix. The focused
-  Playwright harness and desktop/mobile screenshots are now validated.
+- Host-level restart-required settings forms and the broader browser/device
+  matrix remain open. The resource/axis forms, protected-server bootstrap, and
+  focused Playwright harness are implemented; desktop/mobile screenshots still
+  depend on the CI browser environment.
 - The local validation matrix is now reproducible and machine-readable, but its
   four target-environment entries remain pending until Docker/Buildx, fnOS,
   physical output, and container restart evidence is attached.
