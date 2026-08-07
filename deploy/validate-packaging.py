@@ -17,6 +17,23 @@ import sys
 from pathlib import Path
 
 
+def validate_shell_syntax(path: Path, root: Path) -> tuple[bool, str]:
+    shell = shutil.which("sh")
+    if not shell:
+        return False, "POSIX sh is required for lifecycle script syntax validation"
+    syntax = subprocess.run(
+        [shell, "-n", str(path)],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if syntax.returncode == 0:
+        return True, "lifecycle script passes POSIX shell syntax validation"
+    return False, syntax.stderr.strip() or "POSIX shell syntax validation failed"
+
+
 class Validator:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -48,7 +65,6 @@ class Validator:
             return None
         self.check(f"directory:{relative}", True, "present")
         return path
-
     def run(self) -> int:
         dockerfile = self.file("Dockerfile")
         compose = self.file("deploy/docker/compose.yaml")
@@ -99,22 +115,11 @@ class Validator:
             path = self.root / relative
             self.check(f"fnpack:cmd:{name}", path.is_file() and bool(path.stat().st_mode & 0o111),
                        "lifecycle script is present and executable")
-            shell = shutil.which("sh")
-            if path.is_file() and shell:
-                syntax = subprocess.run(
-                    [shell, "-n", str(path)],
-                    cwd=self.root,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=False,
-                )
-                self.check(f"fnpack:cmd-syntax:{name}", syntax.returncode == 0,
-                           "lifecycle script passes POSIX shell syntax validation"
-                           if syntax.returncode == 0 else syntax.stderr.strip())
+            if path.is_file():
+                syntax_ok, syntax_detail = validate_shell_syntax(path, self.root)
+                self.check(f"fnpack:cmd-syntax:{name}", syntax_ok, syntax_detail)
             else:
-                self.check(f"fnpack:cmd-syntax:{name}", False,
-                           "POSIX sh is required for lifecycle script syntax validation")
+                self.check(f"fnpack:cmd-syntax:{name}", False, "lifecycle script is missing")
             if name.startswith("uninstall_") and path.is_file():
                 uninstall_script = path.read_text(encoding="utf-8")
                 self.check(f"fnpack:uninstall-preserves-data:{name}", not re.search(r"rm\s+-r[fF]", uninstall_script),
