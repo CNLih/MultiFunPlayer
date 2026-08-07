@@ -697,6 +697,10 @@ Validated in the current Linux environment:
   restart-required configuration into the SPA. The mobile journey also checks
   page-level width on media, output, and logs routes while allowing intentional
   table-local horizontal scrolling.
+- The remote store now turns a state-WebSocket close/error into an explicit API
+  connection warning, records a reconnect-required activity event, and keeps
+  the engine-loop check green with the backend-output-independent message;
+  the authenticated browser journey covers this visible disconnect state.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs

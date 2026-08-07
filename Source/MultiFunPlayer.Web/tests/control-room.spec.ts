@@ -153,10 +153,18 @@ test.describe('control room demo journey', () => {
     await page.addInitScript(() => {
       class MockWebSocket extends EventTarget {
         static readonly OPEN = 1;
+        static latest: MockWebSocket | undefined;
         readyState = MockWebSocket.OPEN;
+        private closeListener: EventListener | null = null;
+
+        addEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+          if (type === 'close' && typeof listener === 'function') this.closeListener = listener;
+          super.addEventListener(type, listener, options);
+        }
 
         constructor() {
           super();
+          MockWebSocket.latest = this;
           window.setTimeout(() => this.dispatchEvent(new MessageEvent('message', {
             data: JSON.stringify({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 }),
           })), 0);
@@ -164,11 +172,19 @@ test.describe('control room demo journey', () => {
 
         close() {
           this.readyState = 3;
-          this.dispatchEvent(new Event('close'));
+          this.closeListener?.(new Event('close'));
         }
       }
 
       Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
+      Object.defineProperty(window, 'disconnectStateStream', {
+        configurable: true,
+        value: () => {
+          if (!MockWebSocket.latest) return { closed: false };
+          MockWebSocket.latest.close();
+          return { closed: true };
+        },
+      });
     });
     await page.route('**/api/v1/**', async (route) => {
       const request = route.request();
@@ -207,6 +223,10 @@ test.describe('control room demo journey', () => {
     await expect(page.getByRole('heading', { name: 'Effective runtime' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Access policy' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Legacy configuration' })).toBeVisible();
+    const disconnectResult = await page.evaluate(() => (window as Window & { disconnectStateStream?: () => { closed: boolean } }).disconnectStateStream?.());
+    expect(disconnectResult?.closed).toBeTruthy();
+    await page.getByRole('button', { name: 'Runtime' }).click();
+    await expect(page.getByLabel('Health', { exact: true }).getByText('State stream disconnected; reconnect required', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();

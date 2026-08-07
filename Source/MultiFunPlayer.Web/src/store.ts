@@ -618,6 +618,15 @@ export function createRemoteStore(client: MfpApiClient) {
   const command = (action: () => Promise<StatusResponse>, message: string) => {
     void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
   };
+  const handleStateDisconnect = () => {
+    state.health = [
+      { label: 'Engine loop', detail: 'Backend output continues independently', status: 'pass' },
+      { label: 'API connection', detail: 'State stream disconnected; reconnect required', status: 'warn' },
+      { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
+    ];
+    appendLog('warn', 'State stream disconnected; reconnect required', 'server');
+    notify();
+  };
 
   return {
     getState: () => state,
@@ -778,7 +787,7 @@ export function createRemoteStore(client: MfpApiClient) {
     tick() { /* state arrives from the bounded WebSocket stream */ },
     async connect() {
       const capabilities: ApiCapabilities = await client.getCapabilities();
-      socket = client.connectState(capabilities.webSocketPath, applyStatus, () => appendLog('warn', 'State stream disconnected'));
+      socket = client.connectState(capabilities.webSocketPath, applyStatus, handleStateDisconnect);
       await refresh();
     },
     close() { socket?.close(); },
