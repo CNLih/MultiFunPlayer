@@ -190,6 +190,37 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task TcpTransport_reconnects_after_peer_socket_restart()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        await using var transport = new TcpOutputTransport("tcp-player-restart", "127.0.0.1", port);
+
+        var firstAccepted = listener.AcceptTcpClientAsync();
+        await transport.ConnectAsync();
+        using var firstPeer = await firstAccepted.WaitAsync(TimeSpan.FromSeconds(2));
+        await transport.SendAsync(Encoding.UTF8.GetBytes("first\n"));
+        var firstBuffer = new byte[32];
+        var firstRead = await firstPeer.GetStream().ReadAsync(firstBuffer).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("first\n", Encoding.UTF8.GetString(firstBuffer, 0, firstRead));
+
+        firstPeer.Client.LingerState = new LingerOption(true, 0);
+        firstPeer.Close();
+        await transport.DisconnectAsync();
+
+        var secondAccepted = listener.AcceptTcpClientAsync();
+        await transport.ConnectAsync();
+        using var secondPeer = await secondAccepted.WaitAsync(TimeSpan.FromSeconds(2));
+        await transport.SendAsync(Encoding.UTF8.GetBytes("second\n"));
+        var secondBuffer = new byte[32];
+        var secondRead = await secondPeer.GetStream().ReadAsync(secondBuffer).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("second\n", Encoding.UTF8.GetString(secondBuffer, 0, secondRead));
+    }
+
+    [Fact]
     public async Task UdpTransport_round_trips_a_payload()
     {
         using var receiver = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));

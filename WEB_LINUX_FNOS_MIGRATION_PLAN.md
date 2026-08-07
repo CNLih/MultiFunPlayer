@@ -552,7 +552,7 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 33/33;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 34/34;
   Server tests: 32/32.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
@@ -592,7 +592,8 @@ Validated in the current Linux environment:
   formatting transport output. Connection failures are represented in the
   target state. Simulator tests cover handshake, malformed/timeout responses,
   caller cancellation, send failure, explicit reconnect, and rate-limit/seek
-  behavior.
+  behavior; a TCP loopback test also closes and reopens the peer socket to
+  simulate a player restart before sending the next frame.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or
@@ -616,7 +617,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 33/33). Registry
+  simulator tests cover all three sources (Infrastructure 34/34). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -715,7 +716,8 @@ Validated in the current Linux environment:
   by multi-axis load, legacy configuration migration, the Core/Application
   desktop-reference scan, backend playback/output after browser disconnect,
   including a state-WebSocket connect/close followed by continued file-output
-  frames, and the published operations/security documentation.
+  frames, TCP peer restart/reconnect simulation, and the published
+  operations/security documentation.
 - Configuration migration acceptance now rejects non-object JSON roots,
   preserves the source byte-for-byte, rejects missing/oversized/reparse-point
   sources and targets, honors cancellation, and proves the explicit Data
