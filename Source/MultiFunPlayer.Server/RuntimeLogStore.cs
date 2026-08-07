@@ -65,6 +65,23 @@ public sealed class RuntimeLogStore
 
     public string? FilePath => _filePath;
 
+    public byte[]? ReadPersistedSnapshot()
+    {
+        if (_filePath is null)
+            return null;
+        lock (_gate)
+        {
+            if (!File.Exists(_filePath))
+                return null;
+            try
+            {
+                return File.ReadAllBytes(_filePath);
+            }
+            catch (IOException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+        }
+    }
+
     public void Add(LogLevel level, string category, EventId eventId, string message,
         IReadOnlyDictionary<string, object?>? properties = null, Exception? exception = null)
     {

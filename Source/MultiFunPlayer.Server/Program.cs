@@ -206,9 +206,10 @@ public static class ServerProgram
         });
         app.MapGet("/api/v1/logs/file", (RuntimeLogStore store) =>
         {
-            if (store.FilePath is null || !File.Exists(store.FilePath))
+            var snapshot = store.ReadPersistedSnapshot();
+            if (snapshot is null)
                 return Results.NotFound();
-            return Results.File(store.FilePath, "application/x-ndjson", "runtime.log");
+            return Results.File(snapshot, "application/x-ndjson", "runtime.log");
         });
 
         app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
