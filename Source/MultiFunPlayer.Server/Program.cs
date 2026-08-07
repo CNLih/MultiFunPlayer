@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Infrastructure.Capabilities;
+using MultiFunPlayer.Infrastructure.Serial;
 using MultiFunPlayer.Infrastructure.Storage;
 using MultiFunPlayer.Script;
 
@@ -101,6 +102,24 @@ public static class ServerProgram
                 ["play", "pause", "stop", "seek", "load"],
                 ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
+        });
+        app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage) =>
+        {
+            var tickHz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
+            var maxClients = Math.Clamp(config.GetValue("MultiFunPlayer:MaxWebSocketClients", 16), 1, 128);
+            return Results.Ok(new SettingsResponse(1, tickHz, maxClients, storage.ConfigRoot,
+                storage.ScriptsRoot, storage.LogsRoot, storage.KeysRoot,
+                !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"))));
+        });
+        app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
+        {
+            var root = Environment.GetEnvironmentVariable("MFP_SERIAL_BY_ID_ROOT");
+            var ports = new LinuxSerialPortEnumerator(string.IsNullOrWhiteSpace(root)
+                    ? "/dev/serial/by-id"
+                    : root)
+                .Enumerate(context.RequestAborted)
+                .Select(port => new SerialDeviceResponse(port.StableId, port.DevicePath, port.LinkTarget));
+            return Results.Ok(ports);
         });
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
@@ -303,6 +322,9 @@ internal static class OpenApiDocument
             ["/health/ready"] = new { get = Operation("Readiness") },
             ["/api/v1/status"] = new { get = Operation("Current player status") },
             ["/api/v1/capabilities"] = new { get = Operation("Server capabilities") },
+            ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
+            ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
+            ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts") },
             ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
             ["/api/v1/player/play"] = new { post = Operation("Play") },

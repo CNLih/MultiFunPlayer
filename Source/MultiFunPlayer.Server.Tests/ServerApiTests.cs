@@ -42,6 +42,19 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Settings_and_serial_device_contracts_are_available_without_secrets()
+    {
+        using var client = _factory.CreateClient();
+        var settings = await client.GetFromJsonAsync<JsonElement>("/api/v1/settings");
+        var serial = await client.GetFromJsonAsync<JsonElement>("/api/v1/devices/serial");
+
+        Assert.Equal(1, settings.GetProperty("schemaVersion").GetInt32());
+        Assert.True(settings.GetProperty("scriptsRoot").GetString()!.Length > 0);
+        Assert.False(settings.TryGetProperty("authToken", out _));
+        Assert.Equal(JsonValueKind.Array, serial.ValueKind);
+    }
+
+    [Fact]
     public async Task OpenApi_document_describes_versioned_surface()
     {
         using var client = _factory.CreateClient();
@@ -49,6 +62,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         Assert.Equal("3.0.3", document.GetProperty("openapi").GetString());
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/status", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/settings", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }
 

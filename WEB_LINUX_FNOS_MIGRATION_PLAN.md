@@ -344,7 +344,7 @@ Tasks:
 - [x] P3-07 Add health, readiness, version, runtime, and capability endpoints.
 - [ ] P3-08 Implement initial-admin setup or pairing-token authentication.
 - [x] P3-09 Protect WebSocket/SignalR, configuration changes, file access, and secret fields.
-- [ ] P3-10 Add structured logs with secret redaction and bounded retention.
+- [x] P3-10 Add structured logs with secret redaction and bounded retention.
 
 Suggested API surface:
 
@@ -389,7 +389,7 @@ Tasks:
 - [x] P4-02 Add capability reporting for sources that require remote player configuration.
 - [ ] P4-03 Port TCP, UDP, WebSocket, The Handy, Buttplug, and File outputs.
 - [x] P4-04 Implement Linux serial enumeration using stable `/dev/serial/by-id` paths when available.
-- [ ] P4-05 Keep serial open/write behavior behind an adapter and preserve TCode timing semantics.
+- [x] P4-05 Keep serial open/write behavior behind an adapter and preserve TCode timing semantics.
 - [x] P4-06 Replace DPAPI with ASP.NET Data Protection or an explicit key-store abstraction backed by a persistent volume.
 - [x] P4-07 Restrict filesystem browsing to administrator-configured roots and prevent path traversal/symlink escape.
 - [x] P4-08 Define Linux and Windows path normalization rules for existing settings.
@@ -553,18 +553,21 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 6/6;
-  Server tests: 6/6.
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 8/8;
+  Server tests: 9/9.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
-  multi-axis Funscript load, play, seek, SPA fallback, and authenticated
-  WebSocket snapshot all pass. WebSocket snapshots use camelCase to match REST.
+  multi-axis Funscript load, play, seek, SPA fallback, authenticated
+  WebSocket snapshot, settings, serial discovery, and redacted bounded logs
+  all pass. WebSocket snapshots use camelCase to match REST.
 
 Still open and intentionally not advertised as complete:
 
-- Full media-source and output-target CRUD/adapters, Linux serial, Data
-  Protection key migration, first-admin pairing, bounded structured log storage,
-  and desktop configuration migration.
+- Full media-source and output-target CRUD/adapters, first-admin pairing, and
+  desktop configuration migration. Serial open/write is implemented, but
+  physical reconnect and permission validation remain external gates. Data
+  Protection persistence is implemented for an explicitly mounted key root;
+  key rotation/removal and upgrade rehearsal remain open.
 - Browser Playwright/screenshot tests and full UI settings forms.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
   amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.

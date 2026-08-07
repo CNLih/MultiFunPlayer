@@ -39,3 +39,9 @@ full, oldest entries are discarded and the response marks `truncated: true`.
 Message fields and structured properties matching token, secret, password,
 authorization, cookie, API key, or credential names are replaced with
 `[REDACTED]` before retention.
+
+`GET /api/v1/settings` exposes only non-secret effective server settings. The
+serial device view is available at `GET /api/v1/devices/serial`; it enumerates
+stable `/dev/serial/by-id` links (or `MFP_SERIAL_BY_ID_ROOT`) and never opens a
+device. Serial output uses the separate bounded `SerialOutputTransport` and
+requires an explicit device mapping and permissions in a container.

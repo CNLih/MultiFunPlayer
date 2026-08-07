@@ -2,10 +2,122 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
+      "System.IO.Ports": {
+        "type": "Direct",
+        "requested": "[9.0.18, )",
+        "resolved": "9.0.18",
+        "contentHash": "KWiq+ghnZNIYN6P2jLFz6gNWHfjdHrXrs/mmmsEgFRjrTZmLOwiZsXRriALKHEgh3UtXfzpmbskAFFQYqZtjSg==",
+        "dependencies": {
+          "runtime.native.System.IO.Ports": "9.0.18"
+        }
+      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.4",
         "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
+      "runtime.android-arm.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "/iNdKuEA8/v9pszmf5FweIkfgFVfP5t72cACnhA+1pe+bae9d1EyXplvo+eKtpbw4h7bB5DDPulM9jT3JfrGew=="
+      },
+      "runtime.android-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "c3LbAdP3LoCs86XJLQH8kV/eHRDtK5ZY/xiZsSm+SFyFayD+nvbS2RxZ6jajGBFYHyNc0oAuQLqF1k2w6b2hiQ=="
+      },
+      "runtime.android-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "2yy6OXW7rqPdOldUsScRHV1/oV/kXlWMO99CE1IJvqxh02JroiyPNCnAZ6SLGwsYAvpWZemFEPBxCk7b8jA7yw=="
+      },
+      "runtime.android-x86.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "Fa8FTOk0v6u2T+X20ONToNvvxPMuLvpm0CUzdffIWEKJUvjBN7nlDOrayk4jMJNnlUBGXDcWlmj4IhjiBCKtLw=="
+      },
+      "runtime.linux-arm.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "QmJhoCxXGp5lurDZdsJZrPnLK3WAsJbbEKznh29IW0qDZpnByNuo7HBY1DQUX0BbaEt1ICnRIT3iP53fvRvrlQ=="
+      },
+      "runtime.linux-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "Mhdzn8PnunRyJTvlyXFODchVMJX7plfkz4maRCjKiEMzBBE6HCpdl4q/et2p5wmswzEXY04zoxGDzuLhInBSNQ=="
+      },
+      "runtime.linux-bionic-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "Kzs6V7VDvB2j7iOstlw/7kWmj/KAzJTnhuC/fm3w0bAKWkWDqvZ0Ar6VrL7wK7QQxNnQV77RXWR/WyLqDjDDgw=="
+      },
+      "runtime.linux-bionic-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "Lb+rD4bJWJsqxxPqRBcSp6e49uzr3JzP1TSGZ2lhzrd26CaZw41+EaIE18jH6uU+kewCvxJcqeQtSCzg7GLr+g=="
+      },
+      "runtime.linux-musl-arm.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "hnSrC9E8STAFyAufS+dhJZp1/B+fnQ73lohhsRViP1azVgBZCB3fYnWiMuX3cYrpjWS9Qhr+jN6fo5vfai232Q=="
+      },
+      "runtime.linux-musl-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "9KF9w5pNW11P8L9PdF/uKWwdyppu2RblXneyWWchUKJDUothtFGzuzwA6gcX66MmFySaMV0OVjYAwkplUz1SSw=="
+      },
+      "runtime.linux-musl-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "MhSySI6oeWzQe/f0X2PJ/JTvt0bc2iKFgpA71JJ84mkidIgweboPjf76WbCLQ/7nLcKzeEigubIWjfIbmd+B0w=="
+      },
+      "runtime.linux-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "rb2zfvqzIvq5Rt3YNHE8barxeVXGAdfJrFML8wakqWn0xlV+5R1//uKqAzShGTF+MqRgl9ZT1wNs4mgArWE1Xg=="
+      },
+      "runtime.maccatalyst-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "CHdbtFVCs6aZHgrI/9GfJlbZaCAgiYBifiuhG6pVInEPrZ9q7qVpfAZ4n4aMbq+QvUpaI5gqAXM9mRq5bgjuZA=="
+      },
+      "runtime.maccatalyst-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "JLowpILsicgiSInJhVHfRccUsP1JGzO8FqwmpaZAJpTDa9pCOwukJXGNuMaA83Psbx29l6D4yHeFaDXUiCmc7w=="
+      },
+      "runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "apvH2Og7dF+8lv6u6co5U8FHhCryCm5OJJlo3pKauF7rTDw6s8cQHdhQWSZgHGap3/B6CjGydDydJotJlQWyKA==",
+        "dependencies": {
+          "runtime.android-arm.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.android-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.android-x64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.android-x86.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-arm.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-bionic-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-bionic-x64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-musl-arm.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-musl-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-musl-x64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.linux-x64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.maccatalyst-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.maccatalyst-x64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.osx-arm64.runtime.native.System.IO.Ports": "9.0.18",
+          "runtime.osx-x64.runtime.native.System.IO.Ports": "9.0.18"
+        }
+      },
+      "runtime.osx-arm64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "vGEosqd6a25/AWAeK/mf5V6UPne8w/ziOyBaZ6vlDvLKkeRO6/7rqKQlkVOcfS3U0ZGTLbm8VaUtYezAS0/70Q=="
+      },
+      "runtime.osx-x64.runtime.native.System.IO.Ports": {
+        "type": "Transitive",
+        "resolved": "9.0.18",
+        "contentHash": "ndFG9mJIjKsyNZSpruO4beYNXEC+B0pxN8RrcbTCBzThakwIrQwKw7jLWf4b4U5DJUs/jGQUwJ36COMgVPafsg=="
       },
       "multifunplayer.application": {
         "type": "Project",

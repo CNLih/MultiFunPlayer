@@ -19,6 +19,21 @@ public sealed record CapabilitiesResponse(
     bool AuthenticationRequired,
     string WebSocketPath);
 
+public sealed record SettingsResponse(
+    int SchemaVersion,
+    int TickHz,
+    int MaxWebSocketClients,
+    string ConfigRoot,
+    string ScriptsRoot,
+    string LogsRoot,
+    string KeysRoot,
+    bool AuthenticationRequired);
+
+public sealed record SerialDeviceResponse(
+    string StableId,
+    string DevicePath,
+    string? LinkTarget);
+
 public sealed record ScriptDescriptor(string Id, string Name, long Size, DateTimeOffset LastModifiedUtc);
 
 public sealed record ScriptContentResponse(ScriptDescriptor Script, string Content);

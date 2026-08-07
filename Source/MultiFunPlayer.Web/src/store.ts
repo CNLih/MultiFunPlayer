@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiScriptDescriptor, MfpApiClient } from './api';
+import type { ApiCapabilities, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
@@ -61,6 +61,8 @@ export interface AppState {
   logs: ActivityLog[];
   health: HealthCheck[];
   lastSync: string;
+  settings?: ApiSettings;
+  serialDevices: ApiSerialDevice[];
 }
 
 export interface StatusResponse {
@@ -119,6 +121,7 @@ const initialState: AppState = {
     { label: 'OFS relay', detail: 'Negotiating capabilities', status: 'warn' },
   ],
   lastSync: '09:47:22',
+  serialDevices: [],
 };
 
 function cloneState(): AppState {
@@ -197,6 +200,7 @@ export function createRemoteStore(client: MfpApiClient) {
   state.media = [];
   state.outputs = [];
   state.logs = [];
+  state.serialDevices = [];
   const listeners = new Set<Listener>();
   let socket: WebSocket | undefined;
   const notify = () => listeners.forEach((listener) => listener(state));
@@ -230,7 +234,11 @@ export function createRemoteStore(client: MfpApiClient) {
     notify();
   };
   const refresh = async () => {
-    const [status, scripts] = await Promise.all([client.getStatus(), client.listScripts()]);
+    const [status, scripts, settings, serialDevices] = await Promise.all([
+      client.getStatus(), client.listScripts(), client.getSettings(), client.listSerialDevices(),
+    ]);
+    state.settings = settings;
+    state.serialDevices = serialDevices;
     state.scripts = scripts.map(scriptFromDescriptor);
     applyStatus(status);
   };

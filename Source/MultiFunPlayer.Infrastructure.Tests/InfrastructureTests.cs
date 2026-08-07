@@ -1,4 +1,5 @@
 using System.Text;
+using System.IO.Ports;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Infrastructure.Output;
 using MultiFunPlayer.Infrastructure.Serial;
@@ -69,6 +70,23 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task BoundedTransportCanRecoverAfter_a_single_write_failure()
+    {
+        await using var transport = new RecordingTransport("recoverable");
+        await transport.ConnectAsync();
+        transport.FailWrites = true;
+
+        await Assert.ThrowsAsync<OutputTransportException>(async () =>
+            await transport.SendAsync(Encoding.UTF8.GetBytes("first")));
+
+        transport.FailWrites = false;
+        await transport.SendAsync(Encoding.UTF8.GetBytes("second"));
+
+        Assert.Equal("second", Assert.Single(transport.Payloads));
+        Assert.True(transport.IsConnected);
+    }
+
+    [Fact]
     public void LinuxSerialEnumeratorUsesStableByIdNames()
     {
         using var temp = new TemporaryDirectory();
@@ -94,6 +112,27 @@ public sealed class InfrastructureTests
         });
 
         Assert.Equal("/var/lib/mfp/keys", options.KeysRoot);
+    }
+
+    [Fact]
+    public async Task SerialTransportKeepsStableDevicePathAndValidatesLineSettings()
+    {
+        var settings = new SerialPortSettings
+        {
+            BaudRate = 230400,
+            Parity = Parity.Even,
+            DataBits = 7,
+            StopBits = StopBits.Two,
+            DtrEnable = true,
+        };
+
+        await using var transport = new SerialOutputTransport("serial-test",
+            "/dev/serial/by-id/usb-MultiFunPlayer_0001-if00", settings);
+
+        Assert.Equal("/dev/serial/by-id/usb-MultiFunPlayer_0001-if00", transport.DevicePath);
+        Assert.Equal(230400, transport.Settings.BaudRate);
+        Assert.Equal(Parity.Even, transport.Settings.Parity);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SerialPortSettings { DataBits = 9 }.Validate());
     }
 
     private sealed record SampleSettings(string Name, int Count);

@@ -16,6 +16,23 @@ export interface ApiCapabilities {
   webSocketPath: string;
 }
 
+export interface ApiSettings {
+  schemaVersion: number;
+  tickHz: number;
+  maxWebSocketClients: number;
+  configRoot: string;
+  scriptsRoot: string;
+  logsRoot: string;
+  keysRoot: string;
+  authenticationRequired: boolean;
+}
+
+export interface ApiSerialDevice {
+  stableId: string;
+  devicePath: string;
+  linkTarget: string | null;
+}
+
 export type StateListener = (status: StatusResponse) => void;
 
 /** Same-origin client used by the SPA when it is served by the ASP.NET host. */
@@ -38,6 +55,14 @@ export class MfpApiClient {
 
   async getCapabilities(): Promise<ApiCapabilities> {
     return this.request<ApiCapabilities>('/capabilities');
+  }
+
+  async getSettings(): Promise<ApiSettings> {
+    return this.request<ApiSettings>('/settings');
+  }
+
+  async listSerialDevices(): Promise<ApiSerialDevice[]> {
+    return this.request<ApiSerialDevice[]>('/devices/serial');
   }
 
   async listScripts(): Promise<ApiScriptDescriptor[]> {

@@ -12,6 +12,11 @@ origin. Named volumes preserve `/config`, `/keys`, `/scripts`, and `/logs`.
 The default image is non-root and read-only; add a narrowly scoped serial device
 mapping only when a Linux output adapter is configured.
 
+For serial discovery, map the relevant `/dev/serial/by-id` tree or set
+`MFP_SERIAL_BY_ID_ROOT` to the mapped path. The service lists stable links via
+`/api/v1/devices/serial`; opening and writing still requires the configured
+device to be passed through and readable/writable by the container user.
+
 Compose uses a bridge network by default and waits up to 30 seconds for a
 graceful stop. The service is capped at two CPUs and 512 MiB; adjust the
 deployment override for a host with different output-loop requirements. A
