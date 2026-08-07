@@ -617,6 +617,33 @@ public sealed class InfrastructureTests
         Assert.NotNull(result.Error);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("42")]
+    public void ConfigurationMigrationRejectsNonObjectRootsWithoutThrowing(string json)
+    {
+        var result = new ConfigurationMigrationService().Read(json);
+
+        Assert.False(result.Success);
+        Assert.Null(result.Configuration);
+        Assert.Contains("object", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ConfigurationMigrationReadIsDeterministicAndDoesNotMutateInput()
+    {
+        const string json = "{\"ConfigVersion\":7,\"Device\":{\"SelectedDevice\":\"TCode\",\"Devices\":[{\"Name\":\"TCode\",\"Axes\":[{\"Name\":\"L0\",\"Enabled\":true,\"DefaultValue\":0.25}]}]},\"ScriptRoots\":[\"C:\\\\Media\\\\Scripts\"]}";
+
+        var first = new ConfigurationMigrationService().Read(json);
+        var second = new ConfigurationMigrationService().Read(json);
+
+        Assert.True(first.Success);
+        Assert.Equal(JsonSerializer.Serialize(first.Configuration),
+            JsonSerializer.Serialize(second.Configuration));
+        Assert.Contains("C:\\\\Media", json, StringComparison.Ordinal);
+    }
+
     private sealed record SampleSettings(string Name, int Count);
 
     private sealed class RecordingSink : IOutputSink

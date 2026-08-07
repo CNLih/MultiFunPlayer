@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -132,6 +133,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             var service = new ConfigurationMigrationHostedService(
                 new StorageOptions { ConfigRoot = configRoot },
                 NullLogger<ConfigurationMigrationHostedService>.Instance);
+            var sourceBefore = await File.ReadAllBytesAsync(source);
             await service.StartAsync(CancellationToken.None);
 
             Assert.Equal("migrated", service.Status.State);
@@ -139,7 +141,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 ConfigurationMigrationHostedService.TargetFile));
             Assert.Contains("sourceConfigVersion", migrated, StringComparison.Ordinal);
             Assert.DoesNotContain("omit-me", migrated, StringComparison.Ordinal);
-            Assert.Contains("ApiKey", await File.ReadAllTextAsync(source), StringComparison.Ordinal);
+            Assert.Equal(sourceBefore, await File.ReadAllBytesAsync(source));
 
             var second = new ConfigurationMigrationHostedService(
                 new StorageOptions { ConfigRoot = configRoot },
@@ -150,6 +152,176 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         finally
         {
             Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_configuration_reports_missing_source_without_writing_target()
+    {
+        var previous = Environment.GetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable);
+        using var temp = new TemporaryDirectory();
+        var source = Path.Combine(temp.Path, "missing.json");
+        var configRoot = Path.Combine(temp.Path, "config");
+        Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, source);
+        try
+        {
+            var service = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+
+            await service.StartAsync(CancellationToken.None);
+
+            Assert.Equal("source-not-found", service.Status.State);
+            Assert.Equal("missing.json", service.Status.SourceFile);
+            Assert.False(File.Exists(Path.Combine(configRoot, ConfigurationMigrationHostedService.TargetFile)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_configuration_rejects_oversized_source_without_writing_target()
+    {
+        var previous = Environment.GetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable);
+        using var temp = new TemporaryDirectory();
+        var source = Path.Combine(temp.Path, "oversized.json");
+        var configRoot = Path.Combine(temp.Path, "config");
+        await using (var stream = new FileStream(source, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            stream.SetLength(4 * 1024 * 1024 + 1);
+        Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, source);
+        try
+        {
+            var service = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+
+            await service.StartAsync(CancellationToken.None);
+
+            Assert.Equal("failed", service.Status.State);
+            Assert.Contains("4 MiB", service.Status.Error, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(configRoot, ConfigurationMigrationHostedService.TargetFile)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_configuration_rejects_source_and_target_symbolic_links()
+    {
+        var previous = Environment.GetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable);
+        using var temp = new TemporaryDirectory();
+        var sourceContent = Path.Combine(temp.Path, "source-content.json");
+        var sourceLink = Path.Combine(temp.Path, "source-link.json");
+        var configRoot = Path.Combine(temp.Path, "config");
+        await File.WriteAllTextAsync(sourceContent, "{\"ConfigVersion\":1}");
+        try
+        {
+            File.CreateSymbolicLink(sourceLink, sourceContent);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+        catch (IOException)
+        {
+            return;
+        }
+
+        Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, sourceLink);
+        try
+        {
+            var sourceLinkService = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+            await sourceLinkService.StartAsync(CancellationToken.None);
+            Assert.Equal("failed", sourceLinkService.Status.State);
+            Assert.Contains("symlink", sourceLinkService.Status.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(Path.Combine(configRoot, ConfigurationMigrationHostedService.TargetFile)));
+
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, sourceContent);
+            Directory.CreateDirectory(configRoot);
+            var outside = Path.Combine(temp.Path, "outside-target.json");
+            await File.WriteAllTextAsync(outside, "keep");
+            File.CreateSymbolicLink(Path.Combine(configRoot, ConfigurationMigrationHostedService.TargetFile), outside);
+            var targetLinkService = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+            await targetLinkService.StartAsync(CancellationToken.None);
+            Assert.Equal("failed", targetLinkService.Status.State);
+            Assert.Contains("symbolic", targetLinkService.Status.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("keep", await File.ReadAllTextAsync(outside));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_configuration_honors_cancellation_before_reading_source()
+    {
+        var previous = Environment.GetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable);
+        using var temp = new TemporaryDirectory();
+        var source = Path.Combine(temp.Path, "cancelled.json");
+        var configRoot = Path.Combine(temp.Path, "config");
+        await File.WriteAllTextAsync(source, "{\"ConfigVersion\":1}");
+        Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, source);
+        try
+        {
+            var service = new ConfigurationMigrationHostedService(
+                new StorageOptions { ConfigRoot = configRoot },
+                NullLogger<ConfigurationMigrationHostedService>.Instance);
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                service.StartAsync(cancellation.Token));
+            Assert.False(File.Exists(Path.Combine(configRoot, ConfigurationMigrationHostedService.TargetFile)));
+            Assert.Equal("disabled", service.Status.State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ConfigurationMigrationHostedService.LegacyPathEnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public void Explicit_key_root_survives_a_host_restart()
+    {
+        var previousKeys = Environment.GetEnvironmentVariable("MFP_KEYS_ROOT");
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        using var temp = new TemporaryDirectory();
+        var keysRoot = Path.Combine(temp.Path, "keys");
+        try
+        {
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", keysRoot);
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+
+            string protectedValue;
+            using (var first = new WebApplicationFactory<MultiFunPlayer.Server.Program>())
+            {
+                var provider = first.Services.GetRequiredService<IDataProtectionProvider>();
+                protectedValue = provider.CreateProtector("migration-test").Protect("persistent-payload");
+            }
+
+            var keyFiles = Directory.GetFiles(keysRoot, "*.xml");
+            Assert.NotEmpty(keyFiles);
+
+            using var restarted = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            var restartedProvider = restarted.Services.GetRequiredService<IDataProtectionProvider>();
+            var restored = restartedProvider.CreateProtector("migration-test").Unprotect(protectedValue);
+            Assert.Equal("persistent-payload", restored);
+            Assert.Equal(keyFiles.Select(Path.GetFileName).OrderBy(name => name),
+                Directory.GetFiles(keysRoot, "*.xml").Select(Path.GetFileName).OrderBy(name => name));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", previousKeys);
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
         }
     }
 

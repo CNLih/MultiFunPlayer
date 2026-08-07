@@ -44,7 +44,8 @@ public sealed class ConfigurationMigrationService
         JsonObject root;
         try
         {
-            root = JsonNode.Parse(json)?.AsObject()
+            var node = JsonNode.Parse(json);
+            root = node as JsonObject
                 ?? throw new JsonException("The configuration root must be an object.");
         }
         catch (JsonException exception)

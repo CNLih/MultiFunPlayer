@@ -552,8 +552,8 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 29/29;
-  Server tests: 24/24.
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 33/33;
+  Server tests: 29/29.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings.
@@ -595,8 +595,9 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  24/24, including The Handy registry integration, device-axis persistence,
-  network media registry behavior, and redacted JSONL log persistence/download.
+  29/29, including The Handy registry integration, device-axis persistence,
+  network media registry behavior, redacted JSONL log persistence/download,
+  and explicit key-root reuse across independent host instances.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
   Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
@@ -608,7 +609,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 29/29). Registry
+  simulator tests cover all three sources (Infrastructure 33/33). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -651,8 +652,10 @@ Validated in the current Linux environment:
 - CI now contains a separate amd64/arm64 Buildx matrix that builds each image,
   starts it with temporary persistent roots, checks anonymous liveness,
   authenticated adapter access, and SPA fallback, then removes the container.
-  This is an executable release gate, but it remains unchecked here until an
-  Ubuntu runner produces both matrix results.
+  Each matrix leg now also runs the pinned Trivy action against the loaded image
+  and uploads a JSON vulnerability report before smoke testing. This is an
+  executable release gate, but it remains unchecked here until an Ubuntu runner
+  produces both build, scan, and smoke results.
 - The Windows build matrix now uses the same non-parallel xUnit collection
   setting as the portable job, and the temporary-directory helper retries only
   transient cleanup races. A Windows runner result is still required before
@@ -696,6 +699,10 @@ Validated in the current Linux environment:
   by multi-axis load, legacy configuration migration, the Core/Application
   desktop-reference scan, backend playback/output after browser disconnect,
   and the published operations/security documentation.
+- Configuration migration acceptance now rejects non-object JSON roots,
+  preserves the source byte-for-byte, rejects missing/oversized/reparse-point
+  sources and targets, honors cancellation, and proves the explicit Data
+  Protection key root can decrypt data after a separate host instance starts.
 
 Still open and intentionally not advertised as complete:
 

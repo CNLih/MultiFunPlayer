@@ -236,6 +236,24 @@ jobs:
       uses: docker/setup-buildx-action@v3
     - name: Build ${{ matrix.arch }} image
       run: docker buildx build --platform linux/${{ matrix.arch }} --tag multifunplayer:ci-${{ matrix.arch }} --load .
+    - name: Scan ${{ matrix.arch }} image for high and critical vulnerabilities
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      with:
+        scan-type: image
+        image-ref: multifunplayer:ci-${{ matrix.arch }}
+        format: json
+        output: trivy-${{ matrix.arch }}.json
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: '1'
+        version: v0.73.0
+    - name: Upload ${{ matrix.arch }} image scan evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-image-scan-${{ matrix.arch }}
+        path: trivy-${{ matrix.arch }}.json
+        if-no-files-found: ignore
     - name: Smoke test ${{ matrix.arch }} image
       env:
         IMAGE_TAG: multifunplayer:ci-${{ matrix.arch }}
