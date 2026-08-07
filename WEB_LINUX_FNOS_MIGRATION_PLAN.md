@@ -648,6 +648,10 @@ Validated in the current Linux environment:
   authenticated adapter access, and SPA fallback, then removes the container.
   This is an executable release gate, but it remains unchecked here until an
   Ubuntu runner produces both matrix results.
+- The Windows build matrix now uses the same non-parallel xUnit collection
+  setting as the portable job, and the temporary-directory helper retries only
+  transient cleanup races. A Windows runner result is still required before
+  P0-04 is marked complete.
 - Current dependency checks report no vulnerable .NET packages, no production
   Web-package vulnerabilities, and no production Docs-package vulnerabilities.
   The Docs toolchain is now pinned to Docusaurus 3.10.2 and builds cleanly;

@@ -130,7 +130,7 @@ jobs:
     - name: Install dependencies (locked)
       run: dotnet restore --locked-mode
     - name: Test ${{ matrix.build_type }}
-      run: dotnet test --no-restore --configuration ${{ matrix.build_type }}
+      run: dotnet test --no-restore --configuration ${{ matrix.build_type }} -- xunit.parallelizeTestCollections=false
     - name: Build ${{ matrix.build_type }}
       run: dotnet publish --no-restore --configuration ${{ matrix.build_type }}
     - name: Upload ${{ matrix.build_type }} artifact
