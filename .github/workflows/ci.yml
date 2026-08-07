@@ -218,6 +218,8 @@ jobs:
       working-directory: ./Docs
     - name: Test SBOM tooling
       run: python -m unittest discover -s tools/tests -v
+    - name: Validate release evidence template
+      run: python tools/validate-release-evidence.py deploy/release-evidence.example.json --json
     - name: Generate dependency SBOM
       run: python tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json
     - name: Generate license inventory

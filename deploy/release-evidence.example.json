@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "release": "replace-with-version-or-commit",
+  "gates": [
+    {"id": "p0-04-windows-ci", "status": "pending", "evidence": []},
+    {"id": "p1-04-wpf-xaml", "status": "pending", "evidence": []},
+    {"id": "p1-05-wpf-plugin", "status": "pending", "evidence": []},
+    {"id": "p1-06-windows-framework-dependent", "status": "pending", "evidence": []},
+    {"id": "p6-06-docker-multiarch", "status": "pending", "evidence": []},
+    {"id": "p6-11-volume-upgrade", "status": "pending", "evidence": []},
+    {"id": "p7-01-validation-matrix", "status": "pending", "evidence": []},
+    {"id": "p7-02-eight-hour-soak", "status": "pending", "evidence": []},
+    {"id": "p7-03-interruption-matrix", "status": "pending", "evidence": []},
+    {"id": "p7-06-security-scan", "status": "pending", "evidence": []},
+    {"id": "p7-07-sbom-license", "status": "pending", "evidence": []},
+    {"id": "p7-09-fnos-upgrade-rollback", "status": "pending", "evidence": []},
+    {"id": "p7-10-release-candidate", "status": "pending", "evidence": []},
+    {"id": "accept-linux-docker", "status": "pending", "evidence": []},
+    {"id": "accept-fnos-web-entry", "status": "pending", "evidence": []},
+    {"id": "accept-output-protocols", "status": "pending", "evidence": []},
+    {"id": "accept-config-key-persistence", "status": "pending", "evidence": []},
+    {"id": "accept-physical-architectures", "status": "pending", "evidence": []},
+    {"id": "accept-tier-evidence", "status": "pending", "evidence": []},
+    {"id": "accept-wpf-rollback", "status": "pending", "evidence": []}
+  ]
+}

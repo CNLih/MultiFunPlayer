@@ -59,3 +59,16 @@ and a scanner such as Trivy against the exact multi-arch image. Record tool
 versions, findings, and accepted exceptions with the release candidate. fnOS
 schema validation and FPK signing must use the `fnpack` version provided by the
 target firmware.
+
+For a machine-readable release gate, start from
+`deploy/release-evidence.example.json`, attach each runner or target-device
+artifact as an evidence object, and validate it with:
+
+```sh
+python3 tools/validate-release-evidence.py deploy/release-evidence.json --json
+python3 tools/validate-release-evidence.py deploy/release-evidence.json --require-complete
+```
+
+The first command allows pending gates during development. The second command
+is the release-candidate gate and fails unless all twenty required gates have a
+valid pass status and at least one evidence reference.

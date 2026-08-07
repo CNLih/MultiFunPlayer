@@ -763,6 +763,11 @@ Validated in the current Linux environment:
   independent-host persistence test covers configuration, keys, scripts, and
   logs together; actual Docker/fnOS upgrade and rollback rehearsal remains
   external.
+- `tools/validate-release-evidence.py` and
+  `deploy/release-evidence.example.json` now define the twenty release and
+  target-acceptance gates in machine-readable form. Development validation may
+  retain pending gates; `--require-complete` rejects any pending/failed gate or
+  passed gate without an evidence reference.
 
 Still open and intentionally not advertised as complete:
 
