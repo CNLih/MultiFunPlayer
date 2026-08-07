@@ -442,7 +442,7 @@ Tasks:
 - [x] P5-01 Create application shell, routing, authentication bootstrap, API client, and real-time store.
 - [x] P5-02 Build the runtime dashboard with media state, connection state, output state, and health.
 - [x] P5-03 Build media source list, configuration forms, connection controls, and capability messages.
-- [ ] P5-04 Build script browser/load controls, time/offset/sync controls, and axis value visualization.
+- [x] P5-04 Build script browser/load controls, time/offset/sync controls, and axis value visualization.
 - [ ] P5-05 Build output target creation, configuration, connection, update-rate, and diagnostics screens.
 - [ ] P5-06 Build device axis, range, inversion, interpolation, and limit settings.
 - [ ] P5-07 Build repository, general, security, log, and diagnostic settings.
@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 19/19;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 20/20;
   Server tests: 22/22.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
@@ -579,9 +579,11 @@ Validated in the current Linux environment:
   The Handy uses the existing desktop API contract, takes a configured
   `sourceAxis`, reads its connection key only from
   `MFP_THE_HANDY_CONNECTION_KEY`, and never persists the key. File and serial
-  endpoint constraints are validated before persistence; connection failures
-  are represented in the target state. Simulator tests cover handshake,
-  malformed/timeout responses, send failure, and explicit reconnect.
+  endpoint constraints are validated before persistence; each target persists
+  an `updateRateHz` from 1 to 20 and samples frames independently before
+  formatting transport output. Connection failures are represented in the
+  target state. Simulator tests cover handshake, malformed/timeout responses,
+  send failure, explicit reconnect, and rate-limit/seek behavior.
 - A persistent media-source registry now exposes CRUD and lifecycle routes for
   the Internal timeline plus explicit capability states for network and
   external-player integrations. Internal sources connect directly; planned or

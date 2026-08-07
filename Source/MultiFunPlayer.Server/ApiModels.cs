@@ -54,6 +54,7 @@ public sealed record OutputTargetResponse(
     string Protocol,
     string Endpoint,
     string SourceAxis,
+    int UpdateRateHz,
     bool Enabled,
     bool AutoConnect,
     bool Connected,
@@ -72,7 +73,8 @@ public sealed record OutputTargetRequest(
     string StopBits = "One",
     bool DtrEnable = false,
     bool RtsEnable = false,
-    string SourceAxis = "L0");
+    string SourceAxis = "L0",
+    int UpdateRateHz = 20);
 
 public sealed record MediaSourceResponse(
     string Id,

@@ -80,6 +80,23 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public void RateLimitedSink_samples_forward_progress_and_seeks()
+    {
+        var inner = new RecordingSink();
+        using var sink = new RateLimitedOutputSink(inner, 2);
+
+        sink.Publish(FrameAt(0));
+        sink.Publish(FrameAt(0.25));
+        sink.Publish(FrameAt(0.5));
+        sink.Publish(FrameAt(0.4));
+
+        Assert.Equal(new[] { 0d, 0.5d, 0.4d }, inner.Positions);
+
+        static OutputFrame FrameAt(double seconds)
+            => new(TimeSpan.FromSeconds(seconds), new Dictionary<string, double> { ["L0"] = seconds });
+    }
+
+    [Fact]
     public async Task BoundedTransportCanRecoverAfter_a_single_write_failure()
     {
         await using var transport = new RecordingTransport("recoverable");
@@ -391,6 +408,13 @@ public sealed class InfrastructureTests
     }
 
     private sealed record SampleSettings(string Name, int Count);
+
+    private sealed class RecordingSink : IOutputSink
+    {
+        public List<double> Positions { get; } = [];
+
+        public void Publish(OutputFrame frame) => Positions.Add(frame.Position.TotalSeconds);
+    }
 
     private sealed class RecordingTransport(string id) : BoundedOutputTransport(id)
     {

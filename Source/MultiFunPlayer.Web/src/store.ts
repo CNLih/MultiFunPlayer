@@ -57,6 +57,7 @@ export interface OutputTargetInput {
   protocol: string;
   endpoint: string;
   sourceAxis: string;
+  rate: number;
   enabled: boolean;
   autoConnect: boolean;
 }
@@ -136,9 +137,9 @@ const initialState: AppState = {
     { id: 'script-slate', name: 'Slate / Device smoke test', format: 'JSON', duration: '01:00', updated: 'Aug 02', size: '84 KB', axes: 8 },
   ],
   outputs: [
-    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 60, lastPacket: '320 ms ago', signal: 94 },
-    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 30, lastPacket: '1.8 s ago', signal: 58 },
-    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 20, lastPacket: 'Never', signal: 0 },
+    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', signal: 94 },
+    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', signal: 58 },
+    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', signal: 0 },
   ],
   logs: [
     { id: 1, time: '09:47:22', level: 'info', message: 'Playback resumed at 60 Hz', source: 'runtime' },
@@ -306,7 +307,7 @@ export function createMockStore() {
         endpoint: input.endpoint,
         sourceAxis: input.sourceAxis,
         status: input.enabled && input.autoConnect ? 'online' : 'offline',
-        rate: 60,
+        rate: input.rate,
         lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
         signal: input.enabled && input.autoConnect ? 86 : 0,
         enabled: input.enabled,
@@ -430,8 +431,8 @@ export function createRemoteStore(client: MfpApiClient) {
     protocol: target.protocol.toUpperCase(),
     endpoint: target.endpoint,
     sourceAxis: target.sourceAxis || 'L0',
+    rate: target.updateRateHz || 20,
     status: statusFromConnection(target.connected, target.lastError),
-    rate: 60,
     lastPacket: target.connected ? 'Just now' : target.lastError ?? 'Never',
     signal: target.connected ? 86 : 0,
     error: target.lastError ?? undefined,
@@ -486,6 +487,16 @@ export function createRemoteStore(client: MfpApiClient) {
     await refreshResources();
     notify();
   };
+  const outputRequest = (input: OutputTargetInput) => ({
+    id: input.id,
+    name: input.name,
+    protocol: input.protocol,
+    endpoint: input.endpoint,
+    sourceAxis: input.sourceAxis,
+    updateRateHz: input.rate,
+    enabled: input.enabled,
+    autoConnect: input.autoConnect,
+  });
   const command = (action: () => Promise<StatusResponse>, message: string) => {
     void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
   };
@@ -568,7 +579,7 @@ export function createRemoteStore(client: MfpApiClient) {
       return source;
     },
     async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
-      await client.createOutputTarget(input);
+      await client.createOutputTarget(outputRequest(input));
       await refreshResourcesAfter();
       const target = state.outputs.find((item) => item.id === input.id);
       if (!target) throw new Error('The server did not return the created output target.');
@@ -577,7 +588,7 @@ export function createRemoteStore(client: MfpApiClient) {
       return target;
     },
     async updateOutputTarget(id: string, input: OutputTargetInput): Promise<OutputTarget> {
-      await client.updateOutputTarget(id, input);
+      await client.updateOutputTarget(id, outputRequest(input));
       await refreshResourcesAfter();
       const target = state.outputs.find((item) => item.id === input.id);
       if (!target) throw new Error('The server did not return the updated output target.');

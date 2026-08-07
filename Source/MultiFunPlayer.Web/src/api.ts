@@ -77,6 +77,7 @@ export interface ApiOutputTarget {
   protocol: string;
   endpoint: string;
   sourceAxis: string;
+  updateRateHz: number;
   enabled: boolean;
   autoConnect: boolean;
   connected: boolean;
@@ -89,6 +90,7 @@ export interface ApiOutputTargetRequest {
   protocol: string;
   endpoint: string;
   sourceAxis: string;
+  updateRateHz: number;
   enabled: boolean;
   autoConnect: boolean;
 }

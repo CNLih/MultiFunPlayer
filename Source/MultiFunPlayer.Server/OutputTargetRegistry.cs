@@ -37,7 +37,8 @@ public sealed record OutputTargetDefinition(
     string StopBits = "One",
     bool DtrEnable = false,
     bool RtsEnable = false,
-    string SourceAxis = "L0");
+    string SourceAxis = "L0",
+    int UpdateRateHz = 20);
 
 /// <summary>
 /// Owns configured output transports and their engine sink registrations.
@@ -338,15 +339,17 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     target.Registration?.Dispose();
                     target.Registration = null;
                 };
-                target.Registration = _engine.AddSink(adapter);
+                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz);
+                target.Registration = _engine.AddSink(sink);
                 target.Adapter = adapter;
-                target.Sink = adapter;
+                target.Sink = sink;
             }
             else
             {
                 transport = CreateTransport(target.Definition);
                 await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
-                var sink = new TCodeOutputSink(transport);
+                var sink = new RateLimitedOutputSink(new TCodeOutputSink(transport),
+                    target.Definition.UpdateRateHz);
                 target.Registration = _engine.AddSink(sink);
                 target.Transport = transport;
                 target.Sink = sink;
@@ -525,6 +528,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             return "endpoint is required and must be at most 2048 characters.";
         if (ValidateSourceAxis(definition.SourceAxis) is not null)
             return "sourceAxis must contain only letters, numbers, '-' or '_', and be at most 64 characters.";
+        if (definition.UpdateRateHz is < 1 or > 20)
+            return "updateRateHz must be between 1 and 20.";
         return null;
     }
 
@@ -558,6 +563,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     private static OutputTargetResponse ToResponse(RuntimeTarget target)
         => new(target.Definition.Id, target.Definition.Name, target.Definition.Protocol,
             target.Definition.Endpoint, target.Definition.SourceAxis,
+            target.Definition.UpdateRateHz,
             target.Definition.Enabled, target.Definition.AutoConnect,
             target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true,
             target.Adapter?.LastError ?? target.LastError);

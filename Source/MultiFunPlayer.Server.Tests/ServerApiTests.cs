@@ -225,10 +225,15 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             "outside", "Outside", "file", "../outside.tcode"));
         Assert.Equal(OutputTargetOperationStatus.Invalid, invalid.Status);
 
+        var invalidRate = await registry.CreateAsync(new OutputTargetDefinition(
+            "invalid-rate", "Invalid rate", "file", "invalid-rate.tcode", UpdateRateHz: 21));
+        Assert.Equal(OutputTargetOperationStatus.Invalid, invalidRate.Status);
+
         var created = await registry.CreateAsync(new OutputTargetDefinition(
-            "file-1", "File target", "file", "runtime.tcode"));
+            "file-1", "File target", "file", "runtime.tcode", UpdateRateHz: 5));
         Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
         Assert.True(created.Target!.Connected);
+        Assert.Equal(5, created.Target.UpdateRateHz);
         Assert.True(File.Exists(Path.Combine(storage.LogsRoot, "runtime.tcode")));
 
         var duplicate = await registry.CreateAsync(new OutputTargetDefinition(
@@ -244,6 +249,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             NullLogger<OutputTargetRegistry>.Instance);
         await restarted.StartAsync(CancellationToken.None);
         Assert.Equal("file-1", Assert.Single(restarted.List()).Id);
+        Assert.Equal(5, Assert.Single(restarted.List()).UpdateRateHz);
         Assert.Equal(OutputTargetOperationStatus.Success,
             (await restarted.DeleteAsync("file-1")).Status);
         Assert.Empty(restarted.List());

@@ -299,7 +299,7 @@ public static class ServerProgram
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Protocol ?? string.Empty,
             request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
             request.BaudRate, request.Parity, request.DataBits, request.StopBits,
-            request.DtrEnable, request.RtsEnable, request.SourceAxis);
+            request.DtrEnable, request.RtsEnable, request.SourceAxis, request.UpdateRateHz);
 
     private static MediaSourceDefinition ToDefinition(string? id, MediaSourceRequest request)
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Kind ?? string.Empty,
