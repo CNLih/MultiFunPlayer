@@ -883,9 +883,13 @@ Validated in the current Linux environment:
   rollback DLL arguments allow a versioned upgrade rehearsal. A current-branch
   run using the same Release DLL for baseline, upgrade, and rollback passed all
   three phases (including forced interruption and state restoration); this
-  validates the harness path only, not a different-version upgrade. The
-  forced-stop helper has a unit test. Docker volume and fnOS package
-  upgrade/rollback evidence remains external.
+  validates the harness path only, not a different-version upgrade. A
+  versioned local rehearsal using the `e3f2f8a3` Server publish as baseline and
+  rollback, with the current branch as upgrade (`/tmp/mfp-versioned-upgrade.json`),
+  also passed all phases and restored scripts, axis policy, logs, and all four
+  persistent roots after upgrade and rollback. This remains process-level
+  evidence only; Docker volume and fnOS package upgrade/rollback evidence
+  remains external. The forced-stop helper has a unit test.
 - The output view and `GET /api/v1/output-targets` now show per-target
   sent/coalesced/failed frame counts (`coalescedFrames` is canonical and
   `droppedFrames` remains a historical response alias),
