@@ -18,6 +18,7 @@ def report(*, graceful=True, sent=10, dropped=0, failed=0, p95=50):
         "output": {
             "sentFrames": sent,
             "droppedFrames": dropped,
+            "coalescedFrames": dropped,
             "failedFrames": failed,
         },
         "revisionIntervalMilliseconds": {"p95": p95},
@@ -37,6 +38,14 @@ class PortableSoakTests(unittest.TestCase):
             max_revision_interval_ms=100, max_dropped_frames=0)
         self.assertFalse(result["passed"])
         self.assertEqual(4, len(result["failures"]))
+        self.assertTrue(any("coalesced 1 frames" in failure for failure in result["failures"]))
+
+    def test_acceptance_prefers_explicit_coalesced_count(self):
+        evidence = report(dropped=0)
+        evidence["output"]["coalescedFrames"] = 4
+        result = MODULE.evaluate_acceptance(evidence, max_dropped_frames=3)
+        self.assertFalse(result["passed"])
+        self.assertEqual(4, result["observedCoalescedFrames"])
 
     def test_optional_jitter_budget_is_enforced(self):
         result = MODULE.evaluate_acceptance(report(p95=125), max_revision_interval_ms=100)

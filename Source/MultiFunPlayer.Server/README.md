@@ -101,8 +101,10 @@ official HTTPS API endpoint.
 
 `GET /api/v1/output-targets` also returns bounded diagnostics for each target:
 `sentFrames`, `droppedFrames`, `failedFrames`, `reconnects`, and
-`lastSentAtUtc`, plus the latest `lastError` from a failed sink write. A sent
-frame means the sink accepted it; a transport may
+`lastSentAtUtc`, plus the latest `lastError` from a failed sink write. The
+historical `droppedFrames` counter is the per-target rate-limiter's coalesced
+sample count, not a transport-loss count; `failedFrames` records sink write
+failures. A sent frame means the sink accepted it; a transport may
 complete the physical write asynchronously. Counters accumulate for the
 current server process across disconnect/reconnect and reset on restart. A
 successful later write clears the transient `lastError`; reconnect remains an

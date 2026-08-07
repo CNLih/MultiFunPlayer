@@ -118,10 +118,12 @@ def evaluate_acceptance(report: dict[str, Any],
         failures.append("no output frames were sent")
     if output.get("failedFrames", 0) != 0:
         failures.append("output sink reported failed frames")
-    dropped_frames = output.get("droppedFrames", 0)
-    if max_dropped_frames is not None and dropped_frames > max_dropped_frames:
+    # ``droppedFrames`` is the historical API name for rate-limited samples.
+    # Prefer the explicit report field while accepting older evidence files.
+    coalesced_frames = output.get("coalescedFrames", output.get("droppedFrames", 0))
+    if max_dropped_frames is not None and coalesced_frames > max_dropped_frames:
         failures.append(
-            f"output sink dropped {dropped_frames} frames (budget {max_dropped_frames})"
+            f"output sink coalesced {coalesced_frames} frames (budget {max_dropped_frames})"
         )
     if report.get("gracefulStop") is not True:
         failures.append("server did not stop gracefully")
@@ -138,7 +140,8 @@ def evaluate_acceptance(report: dict[str, Any],
         "maxRevisionIntervalMilliseconds": max_revision_interval_ms,
         "observedRevisionIntervalP95Milliseconds": p95,
         "maxDroppedFrames": max_dropped_frames,
-        "observedDroppedFrames": dropped_frames,
+        "observedDroppedFrames": output.get("droppedFrames", coalesced_frames),
+        "observedCoalescedFrames": coalesced_frames,
     }
 
 
@@ -229,6 +232,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "positionSeconds": status["positionSeconds"],
                     "sentFrames": target["sentFrames"],
                     "droppedFrames": target["droppedFrames"],
+                    "coalescedFrames": target["droppedFrames"],
                     "failedFrames": target["failedFrames"],
                     "reconnects": target["reconnects"],
                     "rssBytes": rss_bytes,
@@ -240,9 +244,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report["gracefulStop"] = graceful_stop
             output = report["samples"][-1] if report["samples"] else {}
             report["result"] = "pass" if output.get("sentFrames", 0) > 0 and output.get("failedFrames", 0) == 0 else "fail"
+            coalesced_frames = output.get("coalescedFrames", output.get("droppedFrames", 0))
             report["output"] = {
-                key: output.get(key, 0)
-                for key in ("sentFrames", "droppedFrames", "failedFrames", "reconnects")
+                "sentFrames": output.get("sentFrames", 0),
+                # Keep the old API-shaped field for consumers of schema v1.
+                "droppedFrames": output.get("droppedFrames", coalesced_frames),
+                "coalescedFrames": coalesced_frames,
+                "failedFrames": output.get("failedFrames", 0),
+                "reconnects": output.get("reconnects", 0),
             }
             report["process"] = {
                 "peakRssBytes": max((sample["rssBytes"] or 0 for sample in report["samples"]), default=0),

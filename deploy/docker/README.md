@@ -86,15 +86,18 @@ python3 tools/run-portable-soak.py \
 ```
 
 The harness starts an isolated server with temporary config, key, script, and
-log roots, then records output sent/dropped/failed counts, reconnects, status
-revision intervals, process RSS, CPU time, and graceful shutdown. A short
-duration is suitable for CI smoke checks; only a target Linux/fnOS run can
+log roots, then records output sent/coalesced/failed counts, reconnects, status
+revision intervals, process RSS, CPU time, and graceful shutdown. The API's
+historical `droppedFrames` name is retained as an alias for the rate-limited
+sample count; `coalescedFrames` is the unambiguous field in the soak report,
+while `failedFrames` represents sink write failures. A short duration is
+suitable for CI smoke checks; only a target Linux/fnOS run can
 provide the release-required eight-hour evidence. The p95 revision interval
-budget is optional. Dropped/coalesced frames remain diagnostic by default; add
+budget is optional. Coalesced frames remain diagnostic by default; add
 `--max-dropped-frames 5760` for an explicit 1% budget on the default 20 Hz,
 eight-hour run, or `--max-dropped-frames 0` only when the target's output policy
-requires zero drops. The command exits non-zero for failed frames, no output,
-abnormal shutdown, or an explicitly exceeded budget.
+requires zero coalescing. The command exits non-zero for failed frames, no
+output, abnormal shutdown, or an explicitly exceeded coalescing budget.
 
 To rehearse a process-level upgrade while preserving the same four roots, run:
 
