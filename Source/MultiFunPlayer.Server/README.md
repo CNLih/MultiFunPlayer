@@ -16,7 +16,8 @@ the SPA with a fallback route. Without a built dist directory it serves the
 small static preview instead.
 
 Run from the repository root with `dotnet run --project Source/MultiFunPlayer.Server`.
-Set `MFP_SCRIPTS_PATH` to a directory containing `.funscript` files. If
+Set `MFP_SCRIPTS_PATH` (or `MFP_SCRIPTS_ROOT`) to a directory containing
+`.funscript` files. If
 `MFP_AUTH_TOKEN` is non-empty, all API and WebSocket requests require either
 `Authorization: Bearer <token>` or `X-MFP-Token: <token>`; health endpoints stay
 anonymous. The token is never included in logs or response bodies.

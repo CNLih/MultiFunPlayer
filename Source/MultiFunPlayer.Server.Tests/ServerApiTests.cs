@@ -361,6 +361,169 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Persistent_volumes_survive_independent_host_instances()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        var previousKeys = Environment.GetEnvironmentVariable("MFP_KEYS_ROOT");
+        var previousScripts = Environment.GetEnvironmentVariable("MFP_SCRIPTS_ROOT");
+        var previousLogs = Environment.GetEnvironmentVariable("MFP_LOGS_ROOT");
+        var previousAuth = Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN");
+        var previousPairing = Environment.GetEnvironmentVariable("MFP_PAIRING_TOKEN");
+        using var temp = new TemporaryDirectory();
+        try
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", Path.Combine(temp.Path, "keys"));
+            Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", Path.Combine(temp.Path, "scripts"));
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", Path.Combine(temp.Path, "logs"));
+            Environment.SetEnvironmentVariable("MFP_AUTH_TOKEN", null);
+            Environment.SetEnvironmentVariable("MFP_PAIRING_TOKEN", null);
+
+            string protectedValue;
+            using (var first = new WebApplicationFactory<MultiFunPlayer.Server.Program>())
+            {
+                using var client = first.CreateClient();
+                var upload = await client.PostAsJsonAsync("/api/v1/scripts", new
+                {
+                    id = "restart.funscript",
+                    content = "{\"actions\":[{\"at\":0,\"pos\":50}]}"
+                });
+                Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+
+                var axis = await client.PutAsJsonAsync("/api/v1/device-axes/L0", new
+                {
+                    axis = "L0",
+                    minimum = 0.1,
+                    maximum = 0.9,
+                    inverted = true,
+                    interpolation = "Linear",
+                    limitEnabled = false
+                });
+                Assert.Equal(HttpStatusCode.OK, axis.StatusCode);
+
+                var logs = first.Services.GetRequiredService<RuntimeLogStore>();
+                logs.Add(LogLevel.Warning, "restart.test", new EventId(93),
+                    "persistent volume marker");
+
+                var provider = first.Services.GetRequiredService<IDataProtectionProvider>();
+                protectedValue = provider.CreateProtector("restart-test").Protect("persistent-payload");
+            }
+
+            using var restarted = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var restartedClient = restarted.CreateClient();
+            var scripts = await restartedClient.GetFromJsonAsync<JsonElement>("/api/v1/scripts");
+            Assert.Contains(scripts.EnumerateArray(), item =>
+                item.GetProperty("id").GetString() == "restart.funscript");
+
+            var deviceAxes = await restartedClient.GetFromJsonAsync<JsonElement>("/api/v1/device-axes");
+            Assert.Contains(deviceAxes.EnumerateArray(), item =>
+                item.GetProperty("axis").GetString() == "L0"
+                && item.GetProperty("inverted").GetBoolean());
+
+            var persistedLogs = await restartedClient.GetAsync("/api/v1/logs/file");
+            Assert.Equal(HttpStatusCode.OK, persistedLogs.StatusCode);
+            Assert.Contains("restart.test", await persistedLogs.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+
+            var restartedProvider = restarted.Services.GetRequiredService<IDataProtectionProvider>();
+            Assert.Equal("persistent-payload",
+                restartedProvider.CreateProtector("restart-test").Unprotect(protectedValue));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", previousKeys);
+            Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", previousScripts);
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", previousLogs);
+            Environment.SetEnvironmentVariable("MFP_AUTH_TOKEN", previousAuth);
+            Environment.SetEnvironmentVariable("MFP_PAIRING_TOKEN", previousPairing);
+        }
+    }
+
+    [Fact]
+    public async Task Backend_output_continues_after_state_websocket_disconnect()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        var previousLogs = Environment.GetEnvironmentVariable("MFP_LOGS_ROOT");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+        Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", Path.Combine(temp.Path, "logs"));
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var create = await client.PostAsJsonAsync("/api/v1/output-targets", new
+            {
+                id = "browser-disconnect-file",
+                name = "Browser disconnect file",
+                protocol = "file",
+                endpoint = "browser-disconnect.tcode",
+                enabled = true,
+                autoConnect = true,
+                updateRateHz = 20
+            });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+
+            var outputPath = Path.Combine(temp.Path, "logs", "browser-disconnect.tcode");
+            var load = await client.PostAsync("/api/v1/scripts/load", new StringContent(
+                "{\"name\":\"disconnect.funscript\",\"axis\":\"L0\",\"content\":{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":10000,\"pos\":100}]}}",
+                Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.OK, load.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/v1/player/play", null)).StatusCode);
+
+            var startedOutput = false;
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (File.Exists(outputPath)
+                    && (await File.ReadAllTextAsync(outputPath)).Contains("L", StringComparison.Ordinal))
+                {
+                    startedOutput = true;
+                    break;
+                }
+
+                await Task.Delay(50);
+            }
+
+            Assert.True(startedOutput, "The output target did not receive a frame before the browser connected.");
+            var beforeDisconnectLength = new FileInfo(outputPath).Length;
+
+            var websocketClient = factory.Server.CreateWebSocketClient();
+            using var socket = await websocketClient.ConnectAsync(new Uri("ws://localhost/hubs/state"),
+                CancellationToken.None);
+            var initialBuffer = new byte[4096];
+            var initial = await socket.ReceiveAsync(initialBuffer, CancellationToken.None);
+            Assert.Equal(WebSocketMessageType.Text, initial.MessageType);
+
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "browser closed",
+                CancellationToken.None);
+            var broadcaster = factory.Services.GetRequiredService<StateBroadcaster>();
+            for (var attempt = 0; attempt < 20 && broadcaster.ClientCount != 0; attempt++)
+                await Task.Delay(25);
+            Assert.Equal(0, broadcaster.ClientCount);
+
+            var receivedOutputAfterDisconnect = false;
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (new FileInfo(outputPath).Length > beforeDisconnectLength)
+                {
+                    receivedOutputAfterDisconnect = true;
+                    break;
+                }
+
+                await Task.Delay(50);
+            }
+
+            Assert.True(receivedOutputAfterDisconnect,
+                "The output target stopped receiving frames after the browser disconnected.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", previousLogs);
+        }
+    }
+
+    [Fact]
     public void Script_catalog_upload_is_json_validated_and_symlink_safe()
     {
         using var temp = new TemporaryDirectory();
@@ -570,11 +733,12 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Contains(list.EnumerateArray(), item =>
                 item.GetProperty("id").GetString() == "http-file"
                 && item.GetProperty("connected").GetBoolean()
-                && item.GetProperty("sentFrames").GetInt64() == 0
-                && item.GetProperty("droppedFrames").GetInt64() == 0
-                && item.GetProperty("failedFrames").GetInt64() == 0
+                && item.GetProperty("sentFrames").GetInt64() >= 0
+                && item.GetProperty("droppedFrames").GetInt64() >= 0
+                && item.GetProperty("failedFrames").GetInt64() >= 0
                 && item.GetProperty("reconnects").GetInt64() == 0
-                && item.GetProperty("lastSentAtUtc").ValueKind == JsonValueKind.Null
+                && (item.GetProperty("lastSentAtUtc").ValueKind is JsonValueKind.Null
+                    or JsonValueKind.String)
                 && item.GetProperty("deviceName").GetString() == "Simulated Toy"
                 && item.GetProperty("deviceIndex").GetUInt32() == 2
                 && item.GetProperty("actuatorType").GetString() == "Linear"

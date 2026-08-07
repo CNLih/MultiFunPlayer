@@ -5,8 +5,9 @@ using System.Text.Json;
 namespace MultiFunPlayer.Server;
 
 /// <summary>
-/// Rooted catalog rooted at MFP_SCRIPTS_PATH. File names are used as opaque
-/// ids; paths are resolved and checked again before every read or write.
+/// Rooted catalog resolved from the configured scripts path or its persistent
+/// environment aliases. File names are opaque ids; paths are resolved and
+/// checked again before every read or write.
 /// </summary>
 public sealed class ScriptCatalog
 {
@@ -18,6 +19,7 @@ public sealed class ScriptCatalog
     public ScriptCatalog(IConfiguration configuration, IHostEnvironment environment)
     {
         var configured = configuration["MultiFunPlayer:ScriptsPath"]
+            ?? Environment.GetEnvironmentVariable("MFP_SCRIPTS_ROOT")
             ?? Environment.GetEnvironmentVariable("MFP_SCRIPTS_PATH")
             ?? "scripts";
         _root = Path.GetFullPath(Path.IsPathRooted(configured)

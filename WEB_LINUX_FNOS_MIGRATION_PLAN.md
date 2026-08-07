@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 33/33;
-  Server tests: 30/30.
+  Server tests: 32/32.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings.
@@ -566,8 +566,9 @@ Validated in the current Linux environment:
   ownership of backend playback state.
 - The script view binds its axis visualization to normalized `status.axes`
   values (with a deterministic demo fallback); offset is applied to seek
-  requests and the selected clock mode is retained in SPA state. Full
-  media-clock arbitration and per-axis editing remain open P5 work.
+  requests and the selected clock mode is retained in SPA state. Persisted
+  range, inversion, interpolation, and limit editing is covered; broader
+  media-clock arbitration and device/browser matrix validation remain open.
 - The Infrastructure migration reader accepts the sanitized desktop JSON shape,
   emits versioned portable records, normalizes path separators, and omits
   secret fields without modifying the source document. An explicit
@@ -578,7 +579,9 @@ Validated in the current Linux environment:
   WebSocket binary/invalid text frames are ignored without affecting the
   playback API.
 - Script repository reads and uploads reject traversal and reparse points;
-  uploads are JSON-validated, bounded, atomic, and opt-in overwrite only.
+  uploads are JSON-validated, bounded, atomic, and opt-in overwrite only. The
+  server now resolves both `MFP_SCRIPTS_ROOT` and the Docker-compatible
+  `MFP_SCRIPTS_PATH` alias consistently with the other persistent roots.
 - A persistent output-target registry now exposes CRUD and lifecycle routes for
   direct TCP, UDP, WebSocket, File, Serial, and The Handy HTTP HDSP v2 output.
   The Handy uses the existing desktop API contract, takes a configured
@@ -595,10 +598,13 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  30/30, including The Handy registry integration, device-axis persistence,
+  32/32, including The Handy registry integration, device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
   explicit key-root reuse across independent host instances, and rejection of
-  old protected data after the explicit key root is removed.
+  old protected data after the explicit key root is removed. A dedicated host
+  restart test also uploads a script, writes device settings and a redacted
+  log, protects a value, and verifies all four persistent roots through an
+  independent host instance.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
   Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
@@ -626,7 +632,8 @@ Validated in the current Linux environment:
 - The SPA now loads media/output registries and device-axis policies from the
   server, provides persisted create/connect/disconnect/delete workflows, and
   renders planned/blocked capability errors. Script upload remains available
-  in both demo and remote modes; browser screenshot automation remains open.
+  in both demo and remote modes; the broader browser/device matrix remains
+  open while the focused desktop/mobile screenshot harness is validated.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -699,12 +706,16 @@ Validated in the current Linux environment:
   Jellyfin/Emby/Plex configuration and connection, scripts-root upload followed
   by multi-axis load, legacy configuration migration, the Core/Application
   desktop-reference scan, backend playback/output after browser disconnect,
-  and the published operations/security documentation.
+  including a state-WebSocket connect/close followed by continued file-output
+  frames, and the published operations/security documentation.
 - Configuration migration acceptance now rejects non-object JSON roots,
   preserves the source byte-for-byte, rejects missing/oversized/reparse-point
   sources and targets, honors cancellation, and proves the explicit Data
   Protection key root can decrypt data after a separate host instance starts;
-  removing that key root is also proven to reject old protected data.
+  removing that key root is also proven to reject old protected data. An
+  independent-host persistence test covers configuration, keys, scripts, and
+  logs together; actual Docker/fnOS upgrade and rollback rehearsal remains
+  external.
 
 Still open and intentionally not advertised as complete:
 
@@ -716,7 +727,8 @@ Still open and intentionally not advertised as complete:
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data
   Protection persistence is implemented for an explicitly mounted key root;
-  key rotation/removal and upgrade rehearsal remain open.
+  key rotation policy and upgrade rehearsal remain open; removal of an explicit
+  key root is covered by a negative decryption test.
 - Full UI settings forms and the broader browser/device matrix. The focused
   Playwright harness and desktop/mobile screenshots are now validated.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
