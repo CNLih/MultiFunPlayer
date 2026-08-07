@@ -789,7 +789,7 @@ public sealed class InfrastructureTests
             "/variables.html" => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "<html><p id=\"state\">2</p><p id=\"filepath\">/media/mpc-demo.mp4</p><p id=\"duration\">12000</p><p id=\"position\">2500</p><p id=\"playbackrate\">1</p></html>",
+                    "<html><p id=\"state\">2</p><p id=\"filepath\">/media/mpc-demo.mp4</p><p id=\"duration\">12000</p><p id=\"position\">2500</p><p id=\"playbackrate\">1,25</p></html>",
                     Encoding.UTF8, "text/html")
             },
             "/command.html" => new HttpResponseMessage(HttpStatusCode.OK),
@@ -811,6 +811,7 @@ public sealed class InfrastructureTests
         Assert.True(adapter.Current.Playing);
         Assert.Equal(TimeSpan.FromSeconds(2.5), adapter.Current.Position);
         Assert.Equal(TimeSpan.FromSeconds(12), adapter.Current.Duration);
+        Assert.Equal(1.25, adapter.Current.PlaybackSpeed);
 
         await adapter.SendPlayAsync(false);
         await adapter.SendSeekAsync(TimeSpan.FromSeconds(4));

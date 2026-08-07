@@ -584,7 +584,7 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
         var position = variables.TryGetValue("position", out var positionText)
             ? ParseMilliseconds(positionText) : TimeSpan.Zero;
         var speed = variables.TryGetValue("playbackrate", out var speedText)
-            ? ParseDouble(speedText, 1d) : 1d;
+            ? ParseDouble(speedText.Replace(',', '.'), 1d) : 1d;
         return new(null, _deviceId, path, path, playing, duration, position,
             speed > 0 && double.IsFinite(speed) ? speed : 1d);
     }
