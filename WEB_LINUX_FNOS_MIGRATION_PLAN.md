@@ -584,7 +584,7 @@ Validated in the current Linux environment:
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings. The Playwright desktop/mobile
-  journeys pass 4/4 when the host browser libraries are available.
+  journeys pass 10/10 when the host browser libraries are available.
 - GitHub Actions now includes an Ubuntu portable job that performs locked
   restore, Core/Application/Infrastructure/Server tests, solution build, and
   SPA type/static/production checks. Windows runner execution remains required
