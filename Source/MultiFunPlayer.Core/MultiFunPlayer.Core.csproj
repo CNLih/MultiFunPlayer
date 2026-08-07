@@ -11,6 +11,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="MultiFunPlayer.Core.Tests" />
     <InternalsVisibleTo Include="MultiFunPlayer" />
+    <InternalsVisibleTo Include="MultiFunPlayer.Tests" />
   </ItemGroup>
 
   <ItemGroup>

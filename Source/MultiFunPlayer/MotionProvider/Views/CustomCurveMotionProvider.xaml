@@ -1,7 +1,7 @@
 <UserControl x:Class="MultiFunPlayer.MotionProvider.Views.CustomCurveMotionProvider"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:common="clr-namespace:MultiFunPlayer.Common"
+             xmlns:common="clr-namespace:MultiFunPlayer.Common;assembly=MultiFunPlayer.Core"
              xmlns:controls="clr-namespace:MultiFunPlayer.UI.Controls"
              xmlns:converters="clr-namespace:MultiFunPlayer.UI.Converters"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"

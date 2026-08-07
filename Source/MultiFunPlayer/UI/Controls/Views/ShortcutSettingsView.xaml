@@ -9,7 +9,7 @@
              xmlns:rawinput="clr-namespace:MultiFunPlayer.Input.RawInput"
              xmlns:s="https://github.com/canton7/Stylet"
              xmlns:shortcut="clr-namespace:MultiFunPlayer.Shortcut"
-             xmlns:tcode="clr-namespace:MultiFunPlayer.Input.TCode"
+             xmlns:tcode="clr-namespace:MultiFunPlayer.Input.TCode;assembly=MultiFunPlayer.Core"
              xmlns:ui="clr-namespace:MultiFunPlayer.UI"
              xmlns:xinput="clr-namespace:MultiFunPlayer.Input.XInput"
              d:DesignHeight="450"

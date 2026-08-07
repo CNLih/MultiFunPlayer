@@ -1,6 +1,6 @@
 ﻿namespace MultiFunPlayer.Common;
 
-internal enum DeviceAxisUpdateType
+public enum DeviceAxisUpdateType
 {
     FixedUpdate,
     PolledUpdate

@@ -459,7 +459,7 @@ internal sealed class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDispo
                         if (!double.IsFinite(x))
                             return false;
 
-                        var factor = Interpolation.Linear(settings.SmartLimitPoints, x) / 100;
+                        var factor = WpfInterpolation.Linear(settings.SmartLimitPoints, x) / 100;
 
                         context.Value = settings.SmartLimitMode switch
                         {

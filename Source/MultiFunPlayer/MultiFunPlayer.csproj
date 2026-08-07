@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWPF>true</UseWPF>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -25,6 +25,32 @@
     
   <ItemGroup>
     <ProjectReference Include="..\MultiFunPlayer.Core\MultiFunPlayer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- These platform-neutral contracts now live in MultiFunPlayer.Core. -->
+    <Compile Remove="Common\BroadcastEvent.cs" />
+    <Compile Remove="Common\DeviceAxis.cs" />
+    <Compile Remove="Common\DeviceSettings.cs" />
+    <Compile Remove="Common\IDeviceAxisValueProvider.cs" />
+    <Compile Remove="Common\Keyframe.cs" />
+    <Compile Remove="Common\KeyframeCollection.cs" />
+    <Compile Remove="Common\SplittingStringBuffer.cs" />
+    <Compile Remove="Common\TypedValue.cs" />
+    <Compile Remove="Common\Utils\DeviceAxisUtils.cs" />
+    <Compile Remove="Common\Utils\MathUtils.cs" />
+    <Compile Remove="Input\IInputGesture.cs" />
+    <Compile Remove="Input\IInputGestureData.cs" />
+    <Compile Remove="Input\IInputGestureDescriptor.cs" />
+    <Compile Remove="Input\TCode\TCodeAxisGesture.cs" />
+    <Compile Remove="Input\TCode\TCodeButtonGesture.cs" />
+    <Compile Remove="Script\Bookmark.cs" />
+    <Compile Remove="Script\BookmarkCollection.cs" />
+    <Compile Remove="Script\Chapter.cs" />
+    <Compile Remove="Script\ChapterCollection.cs" />
+    <Compile Remove="Script\IScriptReader.cs" />
+    <Compile Remove="Script\IScriptResource.cs" />
+    <Compile Remove="Script\IScriptWriter.cs" />
   </ItemGroup>
 
   <ItemGroup>
