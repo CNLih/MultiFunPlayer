@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
@@ -25,16 +27,31 @@ public sealed record RuntimeLogsResponse(
 /// </summary>
 public sealed class RuntimeLogStore
 {
+    private const long MaxPersistedBytes = 4 * 1024 * 1024;
+    private const string RuntimeLogFileName = "runtime.log";
+    private const string RotatedLogFileName = "runtime.log.1";
     private readonly object _gate = new();
     private readonly Queue<RuntimeLogEntry> _entries = new();
     private readonly int _capacity;
     private readonly SecretRedactor _redactor;
+    private readonly string? _filePath;
     private long _dropped;
 
-    public RuntimeLogStore(IConfiguration configuration)
+    public RuntimeLogStore(IConfiguration configuration, string? logsRoot = null)
     {
         _capacity = ServerOptions.ResolveLogCapacity(configuration);
         _redactor = new SecretRedactor(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"));
+        if (!string.IsNullOrWhiteSpace(logsRoot))
+        {
+            try
+            {
+                var root = Path.GetFullPath(logsRoot);
+                Directory.CreateDirectory(root);
+                _filePath = Path.Combine(root, RuntimeLogFileName);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     public int Capacity => _capacity;
@@ -45,6 +62,8 @@ public sealed class RuntimeLogStore
     }
 
     public long DroppedCount => Interlocked.Read(ref _dropped);
+
+    public string? FilePath => _filePath;
 
     public void Add(LogLevel level, string category, EventId eventId, string message,
         IReadOnlyDictionary<string, object?>? properties = null, Exception? exception = null)
@@ -64,6 +83,7 @@ public sealed class RuntimeLogStore
                 Interlocked.Increment(ref _dropped);
             }
             _entries.Enqueue(entry);
+            PersistLocked(entry);
         }
     }
 
@@ -72,6 +92,26 @@ public sealed class RuntimeLogStore
         limit = Math.Clamp(limit, 1, _capacity);
         lock (_gate)
             return _entries.TakeLast(limit).ToArray();
+    }
+
+    private void PersistLocked(RuntimeLogEntry entry)
+    {
+        if (_filePath is null)
+            return;
+        try
+        {
+            var file = new FileInfo(_filePath);
+            if (file.Exists && file.Length >= MaxPersistedBytes)
+            {
+                var rotated = Path.Combine(file.DirectoryName!, RotatedLogFileName);
+                File.Move(_filePath, rotated, overwrite: true);
+            }
+
+            File.AppendAllText(_filePath,
+                JsonSerializer.Serialize(entry) + Environment.NewLine, Encoding.UTF8);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private sealed class SecretRedactor

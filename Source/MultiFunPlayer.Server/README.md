@@ -43,7 +43,10 @@ in-memory ring is bounded by `MultiFunPlayer:LogCapacity` (default 500); once
 full, oldest entries are discarded and the response marks `truncated: true`.
 Message fields and structured properties matching token, secret, password,
 authorization, cookie, API key, or credential names are replaced with
-`[REDACTED]` before retention.
+`[REDACTED]` before retention. The same sanitized entries are appended as
+bounded JSONL under the configured logs root and can be downloaded from
+`GET /api/v1/logs/file`; once the file reaches 4 MiB it is rotated to
+`runtime.log.1`.
 
 `GET /api/v1/settings` exposes only non-secret effective server settings. The
 serial device view is available at `GET /api/v1/devices/serial`; it enumerates

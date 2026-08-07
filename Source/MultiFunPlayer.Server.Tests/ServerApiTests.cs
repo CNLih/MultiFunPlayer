@@ -434,6 +434,7 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs/file", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }
 
@@ -514,6 +515,38 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.DoesNotContain("property-secret", json, StringComparison.Ordinal);
         Assert.Contains("test.component", json, StringComparison.Ordinal);
         Assert.Contains("42", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Persisted_logs_are_redacted_and_downloadable()
+    {
+        var previousLogs = Environment.GetEnvironmentVariable("MFP_LOGS_ROOT");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", temp.Path);
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var scope = factory.Services.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<RuntimeLogStore>();
+            store.Add(LogLevel.Warning, "persisted.test", new EventId(91),
+                "token=private-value", new Dictionary<string, object?>
+                {
+                    ["password"] = "another-secret"
+                });
+
+            using var client = factory.CreateClient();
+            var response = await client.GetAsync("/api/v1/logs/file");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var content = await response.Content.ReadAsStringAsync();
+            Assert.Contains("persisted.test", content, StringComparison.Ordinal);
+            Assert.DoesNotContain("private-value", content, StringComparison.Ordinal);
+            Assert.DoesNotContain("another-secret", content, StringComparison.Ordinal);
+            Assert.Contains("[REDACTED]", content, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", previousLogs);
+        }
     }
 
     [Fact]

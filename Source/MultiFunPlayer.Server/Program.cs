@@ -43,7 +43,7 @@ public static class ServerProgram
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<MediaSourceRegistry>());
         builder.Services.AddSingleton<StateBroadcaster>();
-        var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
+        var runtimeLogStore = new RuntimeLogStore(builder.Configuration, storage.LogsRoot);
         builder.Services.AddSingleton(runtimeLogStore);
         builder.Logging.AddProvider(new RuntimeLogProvider(runtimeLogStore));
         builder.Services.AddHostedService<EngineTicker>();
@@ -203,6 +203,12 @@ public static class ServerProgram
             if (requested is < 1 or > 1000)
                 return Problem(StatusCodes.Status400BadRequest, "Invalid log limit", "limit must be between 1 and 1000.", "invalid_limit");
             return Results.Ok(new RuntimeLogsResponse(store.Read(requested), store.DroppedCount > 0, store.Capacity));
+        });
+        app.MapGet("/api/v1/logs/file", (RuntimeLogStore store) =>
+        {
+            if (store.FilePath is null || !File.Exists(store.FilePath))
+                return Results.NotFound();
+            return Results.File(store.FilePath, "application/x-ndjson", "runtime.log");
         });
 
         app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
@@ -474,6 +480,7 @@ internal static class OpenApiDocument
             ["/api/v1/media-sources/{id}/disconnect"] = new { post = Operation("Disconnect media source") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
+            ["/api/v1/logs/file"] = new { get = Operation("Download redacted persisted runtime logs") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
             ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
             ["/api/v1/player/play"] = new { post = Operation("Play") },
