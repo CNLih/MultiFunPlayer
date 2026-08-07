@@ -231,6 +231,15 @@ jobs:
       with:
         name: dependency-sbom
         path: artifacts/sbom
+    - name: Run reproducible validation matrix
+      run: python tools/run-validation-matrix.py --output artifacts/validation/validation-matrix.json
+    - name: Upload validation matrix evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-matrix-evidence
+        path: artifacts/validation
+        if-no-files-found: ignore
 
   packaging:
     runs-on: ubuntu-latest

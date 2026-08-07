@@ -556,7 +556,7 @@ Validated in the current Linux environment:
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 36/36;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 37/37;
   Server tests: 39/39, including the Data Protection service wiring test.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
@@ -637,7 +637,7 @@ Validated in the current Linux environment:
   (`MFP_EMBY_API_KEY`, `MFP_JELLYFIN_API_KEY`, or `MFP_PLEX_TOKEN` by default),
   while `deviceId` selects the remote session/client. Bounded JSON/XML parsing,
   XML DTD rejection, malformed response handling, cancellation, and protocol
-  simulator tests cover all three sources (Infrastructure 36/36). Registry
+  simulator tests cover all three sources (Infrastructure 37/37). Registry
   integration verifies normalized `mediaState` and that token values never
   reach `media-sources.json`; MPV/VLC/MPC and other process/proxy-bound sources
   remain blocked.
@@ -788,6 +788,15 @@ Validated in the current Linux environment:
   operations documentation requiring old key files to remain available during
   rotation. Server tests that mutate process-level environment variables share
   a non-parallel collection so the integration evidence is deterministic.
+- `tools/run-validation-matrix.py` now executes the reproducible local unit,
+  integration, contract, Web/browser, boundary, packaging, and release-template
+  checks and writes a redacted JSON report. The latest Linux run passed 17
+  checks with 0 failures; Playwright covered desktop and mobile viewports, and
+  the interruption subset covers browser disconnect, TCP/WS peer restart,
+  Buttplug device removal, and persistent-volume process restart. The report
+  keeps Docker/Buildx, fnOS, physical output, and container restart checks
+  explicitly pending, and the Ubuntu CI job uploads the same artifact for each
+  run.
 
 Still open and intentionally not advertised as complete:
 
@@ -804,6 +813,9 @@ Still open and intentionally not advertised as complete:
   removal of an explicit key root is covered by a negative decryption test.
 - Full UI settings forms and the broader browser/device matrix. The focused
   Playwright harness and desktop/mobile screenshots are now validated.
+- The local validation matrix is now reproducible and machine-readable, but its
+  four target-environment entries remain pending until Docker/Buildx, fnOS,
+  physical output, and container restart evidence is attached.
 - Docker Buildx execution, physical amd64/arm64 NAS checks, serial hardware,
   clean fnOS installation/upgrade/rollback, and long-duration soak evidence.
 - Docs dependency remediation is complete: the full documentation audit is

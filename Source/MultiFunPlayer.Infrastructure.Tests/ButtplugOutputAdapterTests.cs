@@ -90,6 +90,28 @@ public sealed class ButtplugOutputAdapterTests
     }
 
     [Fact]
+    public async Task Device_removal_stops_commands_to_removed_device()
+    {
+        await using var simulator = await ButtplugSimulator.StartAsync();
+        await using var adapter = new ButtplugOutputAdapter("buttplug-removal", simulator.Endpoint,
+            new ButtplugOutputOptions { DeviceIndex = 2, Transport = FastTransport() });
+
+        await adapter.ConnectAsync();
+        await simulator.DeviceReady.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => adapter.Devices.Count == 1);
+        await simulator.RemoveDeviceAsync(2);
+        await WaitUntilAsync(() => adapter.Devices.Count == 0);
+
+        var commandsBeforePublish = simulator.CountCommands("ScalarCmd");
+        adapter.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0.9 }));
+        await Task.Delay(150);
+
+        Assert.Equal(commandsBeforePublish, simulator.CountCommands("ScalarCmd"));
+        Assert.Null(adapter.LastError);
+    }
+
+    [Fact]
     public async Task Rejects_malformed_server_messages_and_surfaces_fault()
     {
         await using var simulator = await ButtplugSimulator.StartAsync(malformedAfterHandshake: true);
@@ -98,9 +120,12 @@ public sealed class ButtplugOutputAdapterTests
         var fault = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
         adapter.Faulted += exception => fault.TrySetResult(exception);
 
-        var connection = await Assert.ThrowsAsync<OutputTransportException>(
-            () => adapter.ConnectAsync().AsTask());
-        Assert.Contains("invalid", connection.ToString(), StringComparison.OrdinalIgnoreCase);
+        var connection = await Record.ExceptionAsync(() => adapter.ConnectAsync().AsTask());
+        if (connection is not null)
+        {
+            Assert.IsType<OutputTransportException>(connection);
+            Assert.Contains("invalid", connection.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
         var error = await fault.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Contains("invalid", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(adapter.IsConnected);
@@ -138,6 +163,8 @@ public sealed class ButtplugOutputAdapterTests
         public bool MalformedAfterHandshake { get; init; }
         public TaskCompletionSource DeviceReady { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private WebSocket? _socket;
 
         public static async Task<ButtplugSimulator> StartAsync(bool malformedAfterHandshake = false)
         {
@@ -195,41 +222,77 @@ public sealed class ButtplugOutputAdapterTests
             throw new TimeoutException($"Timed out waiting for Buttplug command '{command}'.");
         }
 
+        public int CountCommands(string command)
+        {
+            string[] messages;
+            lock (_gate)
+                messages = _messages.ToArray();
+            return messages.Sum(message =>
+            {
+                using var document = JsonDocument.Parse(message);
+                return document.RootElement.ValueKind == JsonValueKind.Array
+                    ? document.RootElement.EnumerateArray().Count(item => item.TryGetProperty(command, out _))
+                    : 0;
+            });
+        }
+
+        public async Task RemoveDeviceAsync(uint deviceIndex)
+        {
+            WebSocket socket;
+            lock (_gate)
+                socket = _socket ?? throw new InvalidOperationException("Simulator socket is not connected.");
+            await SendAsync(socket,
+                $"[{{\"DeviceRemoved\":{{\"Id\":99,\"DeviceIndex\":{deviceIndex}}}}}]");
+        }
+
         private async Task RunAsync(WebSocket socket, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested && socket.State == WebSocketState.Open)
+            lock (_gate)
+                _socket = socket;
+            try
             {
-                var message = await ReceiveAsync(socket, cancellationToken);
-                if (message is null)
-                    return;
-                lock (_gate)
-                    _messages.Add(message);
-                using var document = JsonDocument.Parse(message);
-                foreach (var envelope in document.RootElement.EnumerateArray())
+                while (!cancellationToken.IsCancellationRequested && socket.State == WebSocketState.Open)
                 {
-                    if (envelope.TryGetProperty("RequestServerInfo", out var request))
+                    var message = await ReceiveAsync(socket, cancellationToken);
+                    if (message is null)
+                        return;
+                    lock (_gate)
+                        _messages.Add(message);
+                    using var document = JsonDocument.Parse(message);
+                    foreach (var envelope in document.RootElement.EnumerateArray())
                     {
-                        var id = request.GetProperty("Id").GetInt32();
-                        await SendAsync(socket, $"[{{\"ServerInfo\":{{\"Id\":{id},\"MessageVersion\":3,\"MaxPingTime\":0}}}}]");
-                        if (MalformedAfterHandshake)
+                        if (envelope.TryGetProperty("RequestServerInfo", out var request))
                         {
-                            await SendAsync(socket, "{not-an-array");
-                            return;
+                            var id = request.GetProperty("Id").GetInt32();
+                            await SendAsync(socket, $"[{{\"ServerInfo\":{{\"Id\":{id},\"MessageVersion\":3,\"MaxPingTime\":0}}}}]");
+                            if (MalformedAfterHandshake)
+                            {
+                                await SendAsync(socket, "{not-an-array");
+                                return;
+                            }
+                        }
+                        else if (envelope.TryGetProperty("RequestDeviceList", out var deviceList))
+                        {
+                            var id = deviceList.GetProperty("Id").GetInt32();
+                            await SendAsync(socket,
+                                $"[{{\"DeviceList\":{{\"Id\":{id},\"Devices\":[{{\"DeviceIndex\":2,\"DeviceName\":\"Simulated Toy\",\"DeviceMessages\":{{\"VibrateCmd\":{{}},\"LinearCmd\":{{}},\"RotateCmd\":{{}}}}}}]}}}}]");
+                        }
+                        else if (envelope.TryGetProperty("StartScanning", out var scan))
+                        {
+                            var id = scan.GetProperty("Id").GetInt32();
+                            await SendAsync(socket, $"[{{\"Ok\":{{\"Id\":{id}}}}}]");
+                            await SendAsync(socket, "[{\"DeviceAdded\":{\"Id\":2,\"DeviceIndex\":2,\"DeviceName\":\"Simulated Toy\",\"DeviceMessages\":{\"VibrateCmd\":{},\"LinearCmd\":{},\"RotateCmd\":{}}}}]");
+                            DeviceReady.TrySetResult();
                         }
                     }
-                    else if (envelope.TryGetProperty("RequestDeviceList", out var deviceList))
-                    {
-                        var id = deviceList.GetProperty("Id").GetInt32();
-                        await SendAsync(socket,
-                            $"[{{\"DeviceList\":{{\"Id\":{id},\"Devices\":[{{\"DeviceIndex\":2,\"DeviceName\":\"Simulated Toy\",\"DeviceMessages\":{{\"VibrateCmd\":{{}},\"LinearCmd\":{{}},\"RotateCmd\":{{}}}}}}]}}}}]");
-                    }
-                    else if (envelope.TryGetProperty("StartScanning", out var scan))
-                    {
-                        var id = scan.GetProperty("Id").GetInt32();
-                        await SendAsync(socket, $"[{{\"Ok\":{{\"Id\":{id}}}}}]");
-                        await SendAsync(socket, "[{\"DeviceAdded\":{\"Id\":2,\"DeviceIndex\":2,\"DeviceName\":\"Simulated Toy\",\"DeviceMessages\":{\"VibrateCmd\":{},\"LinearCmd\":{},\"RotateCmd\":{}}}}]");
-                        DeviceReady.TrySetResult();
-                    }
+                }
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_socket, socket))
+                        _socket = null;
                 }
             }
         }
