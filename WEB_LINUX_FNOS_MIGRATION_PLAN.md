@@ -578,7 +578,7 @@ Validated in the current Linux environment:
   short smoke interval, requests a graceful close, and verifies exit code zero.
   Both Windows CI and tag publishing invoke it; a successful Windows runner
   artifact is still required before P1-06 is checked off.
-- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 40/40;
+- Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 41/41;
   Server tests: 42/42, including the Data Protection service wiring test and
   registry-level VLC/MPC adapter coverage.
   A Linux cross-target solution build with `EnableWindowsTargeting=true` also
@@ -854,13 +854,18 @@ Validated in the current Linux environment:
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
-  acceptance results, optional p95/drop budgets, and JSON evidence. The latest
+  acceptance results, optional p95/drop budgets, and JSON evidence. A previous
   five-minute local smoke passed with 5,987 sent, 8 dropped, 0 failed, and
   0 reconnects under an explicit 60-frame (1% of a 20 Hz five-minute run)
   drop budget; p95 revision interval was 50.360 ms under a 100 ms budget, peak
-  RSS was about 117 MiB, CPU time was 9.27 s, and shutdown was graceful. CI
-  runs a 10-second smoke with the same p95/drop budgets and uploads the report.
-  This does not replace the
+  RSS was about 117 MiB, CPU time was 9.27 s, and shutdown was graceful. A
+  reproducible follow-up from the current branch (`/tmp/mfp-portable-soak-5m-final.json`)
+  completed graceful shutdown with 5,932 sent, 63 sampled/coalesced, 0 failed,
+  and 0 reconnects; p95 revision interval was 50.347 ms, peak RSS about 127 MiB,
+  and CPU time 9.14 s. That run failed only the diagnostic 60-frame coalescing
+  budget; it does not indicate transport loss (`failedFrames` stayed zero), but
+  it also does not satisfy the budgeted soak gate. CI runs a 10-second smoke with
+  the same p95/drop budgets and uploads the report. Neither run replaces the
   required eight-hour Linux/fnOS soak or target-device failure matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced

@@ -820,6 +820,37 @@ public sealed class InfrastructureTests
             && request.RequestUri.Query.Contains("position=00%3A00%3A04", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task NetworkMediaAdapter_reconnects_after_remote_player_restart()
+    {
+        var handler = new FlakyVlcHttpHandler();
+        await using var adapter = new NetworkMediaSourceAdapter(NetworkMediaSourceKind.Vlc,
+            new Uri("http://media.test/"), null, "vlc-client", handler,
+            new NetworkMediaSourceAdapterOptions
+            {
+                PollInterval = TimeSpan.FromMilliseconds(100),
+                ConnectTimeout = TimeSpan.FromSeconds(2),
+                RequestTimeout = TimeSpan.FromSeconds(2)
+            });
+        var faulted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        adapter.ConnectionStateChanged += state =>
+        {
+            if (state == NetworkMediaConnectionState.Faulted)
+                faulted.TrySetResult();
+        };
+
+        await adapter.ConnectAsync();
+        Assert.True(adapter.IsConnected);
+        handler.FailStatus = true;
+        await faulted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(NetworkMediaConnectionState.Faulted, adapter.ConnectionState);
+
+        handler.FailStatus = false;
+        await adapter.ConnectAsync();
+        Assert.True(adapter.IsConnected);
+        Assert.Equal("/media/restarted.mp4", adapter.Current.Path);
+    }
+
     private static HttpResponseMessage JsonResponse(string json)
         => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
@@ -892,6 +923,25 @@ public sealed class InfrastructureTests
         {
             Requests.Add(request);
             return Task.FromResult(responder(request));
+        }
+    }
+
+    private sealed class FlakyVlcHttpHandler : HttpMessageHandler
+    {
+        public bool FailStatus { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (FailStatus && path == "/requests/status.json")
+                throw new HttpRequestException("simulated remote player restart");
+            return Task.FromResult(path switch
+            {
+                "/requests/status.json" => JsonResponse("{\"apiversion\":4,\"state\":\"playing\",\"currentplid\":9,\"length\":12,\"time\":1.5,\"rate\":1}"),
+                "/requests/playlist.json" => JsonResponse("{\"children\":[{\"type\":\"leaf\",\"current\":\"current\",\"uri\":\"file:///media/restarted.mp4\"}]}"),
+                _ => NotFoundResponse()
+            });
         }
     }
 
