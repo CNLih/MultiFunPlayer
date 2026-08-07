@@ -9,6 +9,12 @@ const appRoot = app;
 const demoStore = createMockStore();
 const apiClient = new MfpApiClient();
 let store = demoStore;
+const importInput = document.createElement('input');
+importInput.type = 'file';
+importInput.className = 'sr-only';
+importInput.accept = '.funscript,.json,application/json';
+importInput.setAttribute('aria-label', 'Select a script file to import');
+document.body.append(importInput);
 const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'runtime', label: 'Runtime', hint: 'Playback and health' },
   { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
@@ -155,11 +161,33 @@ function renderLogTable(logs: AppState['logs']): string {
   return `<div class="log-list">${logs.map((log) => `<div class="log-row"><span class="log-time">${log.time}</span><span class="log-level level-${log.level}">${log.level}</span><span class="log-message">${escapeHtml(log.message)}</span><span class="log-source">${escapeHtml(log.source)}</span></div>`).join('')}</div>`;
 }
 
-function showToast(message: string) {
+function showToast(message: string, variant: 'success' | 'error' = 'success') {
   const region = document.querySelector<HTMLDivElement>('.toast-region');
   if (!region) return;
-  region.innerHTML = `<div class="toast">${escapeHtml(message)}</div>`;
+  region.innerHTML = `<div class="toast toast-${variant}" role="status">${escapeHtml(message)}</div>`;
   window.setTimeout(() => { region.innerHTML = ''; }, 2600);
+}
+
+function scriptIdForFile(file: File): string {
+  const originalName = file.name.split(/[\\/]/).pop() ?? 'uploaded-script.funscript';
+  const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return /\.(funscript|json)$/i.test(safeName) ? safeName : `${safeName || 'uploaded-script'}.funscript`;
+}
+
+async function importSelectedFile() {
+  const file = importInput.files?.[0];
+  if (!file) return;
+  const id = scriptIdForFile(file);
+  try {
+    const content = await file.text();
+    const script = await store.uploadScript(id, content);
+    showToast(`Imported ${script.name}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The script could not be uploaded.';
+    showToast(`Import failed: ${message}`, 'error');
+  } finally {
+    importInput.value = '';
+  }
 }
 
 function handleClick(event: MouseEvent) {
@@ -176,7 +204,7 @@ function handleClick(event: MouseEvent) {
   if (action === 'refresh') showToast('Demo snapshot refreshed');
   if (action === 'add-media') showToast('Source form is available when an API is connected');
   if (action === 'add-output') showToast('Target form is available when an API is connected');
-  if (action === 'import-script') showToast('Drop a script into /scripts to import it');
+  if (action === 'import-script') importInput.click();
   if (action === 'download-logs') showToast('Diagnostic snapshot prepared (demo only)');
   if (action === 'load-next') {
     const next = store.getState().scripts.find((script) => script.id !== store.getState().nowPlaying.id);
@@ -210,6 +238,7 @@ function handleInput(event: Event) {
 appRoot.addEventListener('click', handleClick);
 appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
+importInput.addEventListener('change', () => { void importSelectedFile(); });
 store.subscribe(render);
 window.setInterval(() => store.tick(), 1000);
 const initialRoute = window.location.hash.slice(1) as Route;

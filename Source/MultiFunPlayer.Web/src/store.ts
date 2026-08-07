@@ -168,6 +168,25 @@ export function createMockStore() {
       appendLog('info', `Loaded ${script.name}`, 'runtime');
       notify();
     },
+    async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
+      const existingIndex = state.scripts.findIndex((script) => script.id === id);
+      if (existingIndex >= 0 && !overwrite) throw new Error('A script with that name already exists.');
+      const script: ScriptResource = {
+        ...(existingIndex >= 0 ? state.scripts[existingIndex] : {}),
+        id,
+        name: id,
+        format: id.toLowerCase().endsWith('.json') ? 'JSON' : 'Funscript',
+        duration: '--:--',
+        updated: 'Just now',
+        size: `${Math.max(1, Math.ceil(content.length / 1024))} KB`,
+        axes: 0,
+      };
+      if (existingIndex >= 0) state.scripts[existingIndex] = script;
+      else state.scripts = [script, ...state.scripts];
+      appendLog('info', `Imported ${script.name}`, 'scripts');
+      notify();
+      return script;
+    },
     toggleMedia(id: string) {
       const item = state.media.find((source) => source.id === id);
       if (!item) return;
@@ -225,6 +244,11 @@ export function createRemoteStore(client: MfpApiClient) {
     message: item.message,
     source: item.category,
   }));
+  const refreshScripts = async () => {
+    const scripts = await client.listScripts();
+    state.scripts = scripts.map(scriptFromDescriptor);
+    notify();
+  };
   const applyStatus = (status: StatusResponse) => {
     const playing = status.state.toLowerCase() === 'playing';
     const script = state.scripts.find((item) => item.name === status.script) ?? state.nowPlaying;
@@ -261,6 +285,14 @@ export function createRemoteStore(client: MfpApiClient) {
     togglePlayback() { command(() => client.command(state.playing ? 'pause' : 'play'), state.playing ? 'Playback paused' : 'Playback resumed'); },
     toggleEngine() { appendLog('warn', 'Engine lifecycle is owned by the server process'); notify(); },
     loadScript(script: ScriptResource) { command(() => client.loadScript(script.id), `Loaded ${script.name}`); },
+    async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
+      const descriptor = await client.uploadScript(id, content, overwrite);
+      await refreshScripts();
+      const script = scriptFromDescriptor(descriptor);
+      appendLog('info', `Imported ${script.name}`, 'scripts');
+      notify();
+      return script;
+    },
     toggleMedia(_id: string) { appendLog('warn', 'Media source adapters are configured on the server'); notify(); },
     toggleOutput(_id: string) { appendLog('warn', 'Output adapters are configured on the server'); notify(); },
     tick() { /* state arrives from the bounded WebSocket stream */ },

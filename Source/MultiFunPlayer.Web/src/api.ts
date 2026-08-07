@@ -89,6 +89,13 @@ export class MfpApiClient {
     return this.request<ApiScriptDescriptor[]>('/scripts');
   }
 
+  async uploadScript(id: string, content: string, overwrite = false): Promise<ApiScriptDescriptor> {
+    return this.request<ApiScriptDescriptor>('/scripts', {
+      method: 'POST',
+      body: JSON.stringify({ id, content, overwrite }),
+    });
+  }
+
   async loadScript(id: string): Promise<StatusResponse> {
     return this.request<StatusResponse>('/scripts/load', {
       method: 'POST',

@@ -224,6 +224,7 @@ td strong { color: var(--text); font-size: 12px; }
 
 .toast-region { position: fixed; right: 22px; bottom: 22px; z-index: 5; }
 .toast { padding: 11px 14px; border: 1px solid #2a776f; border-radius: 5px; background: #162e2d; color: #c8f1ec; box-shadow: var(--shadow); font-size: 12px; }
+.toast-error { border-color: #9b4a55; background: var(--red-soft); color: #ffd9dc; }
 
 @media (max-width: 1050px) {
   .sidebar { width: 215px; flex-basis: 215px; }
