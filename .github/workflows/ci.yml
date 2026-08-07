@@ -211,7 +211,7 @@ jobs:
         npm run typecheck
         npm run check:static
         npm run build
-        npm audit --omit=dev --audit-level=high
+        npm audit --audit-level=high
       working-directory: ./Source/MultiFunPlayer.Web
     - name: Run Web browser smoke and screenshots
       run: npm run test:e2e

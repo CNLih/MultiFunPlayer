@@ -763,9 +763,10 @@ Validated in the current Linux environment:
 - Current dependency checks report no vulnerable .NET packages, no production
   Web-package vulnerabilities, and no Docs-package vulnerabilities. The Docs
   toolchain remains on Docusaurus 3.10.2, pins safe `serialize-javascript` and
-  `uuid` overrides, requires Node 20+, and builds cleanly. CI now fails on a
-  high/critical full Docs audit instead of swallowing the result; P7-06 remains
-  open only for the exact runtime-image scan and release-environment review.
+  `uuid` overrides, requires Node 20+, and builds cleanly. CI now runs full
+  high/critical audits for both Web and Docs instead of omitting development
+  tooling; P7-06 remains open only for the exact runtime-image scan and
+  release-environment review.
 - The Web lockfile now pins Playwright 1.55.1 and Vite 6.4.3 (including the
   patched esbuild line). A clean `npm ci --ignore-scripts`, Web audit, Vite
   build, and the ten desktop/mobile browser executions all pass with zero npm
@@ -774,7 +775,7 @@ Validated in the current Linux environment:
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
   falling back to the integrity-pinned npm package manifests and unambiguous
-  license files for legacy metadata. The current workspace contains 1,395
+  license files for legacy metadata. The current workspace contains 1,401
   deduplicated components and the generated inventory reports zero components
   without a license declaration, satisfying the repository-side P7-07
   generation task. The container matrix now requests a separate
