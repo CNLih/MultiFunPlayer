@@ -175,10 +175,27 @@ def collect_npm(root: Path, components: dict[str, dict]) -> int:
         except (OSError, json.JSONDecodeError):
             continue
         lockfile_count += 1
-        for path, metadata in document.get("packages", {}).items():
-            if not path.startswith("node_modules/") or not metadata.get("version"):
+        packages = document.get("packages", {})
+        for path, metadata in packages.items():
+            if not path.startswith("node_modules/"):
                 continue
             package_path = path.removeprefix("node_modules/")
+            license_path = path
+            if not metadata.get("version"):
+                # npm represents a local file dependency as a link entry under
+                # node_modules plus a separate package entry at its resolved
+                # path. Follow that target so vendored packages are visible in
+                # the SBOM and retain their manifest/license evidence.
+                if not metadata.get("link"):
+                    continue
+                target_path = metadata.get("resolved")
+                target_metadata = packages.get(target_path)
+                if not isinstance(target_path, str) or not isinstance(target_metadata, dict):
+                    continue
+                if not target_metadata.get("version"):
+                    continue
+                metadata = target_metadata
+                license_path = target_path
             if package_path.startswith("@"):
                 name = "/".join(package_path.split("/")[:2])
             else:
@@ -189,7 +206,7 @@ def collect_npm(root: Path, components: dict[str, dict]) -> int:
                 name,
                 version,
                 f"pkg:npm/{quote(name, safe='@._-/')}@{quote(version, safe='.-_+')}",
-                npm_license(lockfile, path, metadata),
+                npm_license(lockfile, license_path, metadata),
             )
     return lockfile_count
 

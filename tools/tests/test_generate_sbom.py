@@ -99,6 +99,36 @@ class GenerateSbomTests(unittest.TestCase):
             component = components["pkg:npm/legacy-package@1.2.3"]
             self.assertEqual({"id": "MIT"}, component["licenses"][0]["license"])
 
+    def test_collect_npm_follows_local_link_package_and_license(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "Docs"
+            vendor = docs / "vendor" / "local-package"
+            vendor.mkdir(parents=True)
+            (docs / "package-lock.json").write_text(json.dumps({
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {},
+                    "node_modules/local-package": {
+                        "resolved": "vendor/local-package",
+                        "link": True,
+                    },
+                    "vendor/local-package": {
+                        "version": "2.0.3-mfp.1",
+                        "license": "MIT",
+                    },
+                },
+            }), encoding="utf-8")
+            (vendor / "package.json").write_text(
+                json.dumps({"name": "local-package", "version": "2.0.3-mfp.1",
+                            "license": "MIT"}),
+                encoding="utf-8")
+
+            components = {}
+            generate_sbom.collect_npm(root, components)
+            component = components["pkg:npm/local-package@2.0.3-mfp.1"]
+            self.assertEqual({"id": "MIT"}, component["licenses"][0]["license"])
+
 
 if __name__ == "__main__":
     unittest.main()

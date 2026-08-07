@@ -858,7 +858,8 @@ Validated in the current Linux environment:
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
   falling back to the integrity-pinned npm package manifests and unambiguous
-  license files for legacy metadata. The current workspace contains 1,401
+  license files for legacy metadata, including local `file:` packages such as
+  the vendored `image-size` fork. The current workspace contains 1,402
   deduplicated components and the generated inventory reports zero components
   without a license declaration, satisfying the repository-side P7-07
   generation task. The container matrix now requests a separate
