@@ -199,6 +199,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     token = "portable-soak-token-1234567890"
     port = args.port or free_port()
     server = Path(args.server).resolve()
+    min_duration_seconds = getattr(args, "min_duration_seconds", None)
     if not server.is_file():
         raise FileNotFoundError(f"server DLL does not exist: {server}")
     repository_root = Path(__file__).resolve().parents[1]
@@ -215,7 +216,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "maxDroppedFrames": (args.max_coalesced_frames
                               if args.max_coalesced_frames is not None
                               else args.max_dropped_frames),
-        "minDurationSeconds": args.min_duration_seconds,
+        "minDurationSeconds": min_duration_seconds,
         "server": str(server),
         "buildEvidence": {
             "repositoryRevision": repository_revision(repository_root),
@@ -366,7 +367,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 report, args.max_revision_interval_ms,
                 max_dropped_frames=args.max_dropped_frames,
                 max_coalesced_frames=args.max_coalesced_frames,
-                min_duration_seconds=args.min_duration_seconds)
+                min_duration_seconds=min_duration_seconds)
             report["result"] = "pass" if report["acceptance"]["passed"] else "fail"
         except Exception as error:
             graceful_stop = stop_process(process)
