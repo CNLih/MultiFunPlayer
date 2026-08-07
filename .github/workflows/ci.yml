@@ -163,6 +163,13 @@ jobs:
         npm run check:static
         npm run build
       working-directory: ./Source/MultiFunPlayer.Web
+    - name: Generate dependency SBOM
+      run: python tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json
+    - name: Upload dependency SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-sbom
+        path: artifacts/sbom/multifunplayer.cyclonedx.json
 
   packaging:
     runs-on: ubuntu-latest

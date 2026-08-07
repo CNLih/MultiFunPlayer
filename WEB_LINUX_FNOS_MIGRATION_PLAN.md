@@ -650,6 +650,11 @@ Validated in the current Linux environment:
   was attempted but npm registry resolution timed out without changing the
   lockfile, so P7-06 remains open for a controlled Docusaurus upgrade and
   container scan before a release candidate.
+- `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
+  dependency SBOM from restored NuGet assets and committed npm lockfiles; the
+  current workspace contains 1,325 deduplicated components and CI uploads the
+  artifact. The exact runtime image/FPK SBOM and license review remain open
+  until those artifacts can be built in their target environments.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,
@@ -678,9 +683,10 @@ Still open and intentionally not advertised as complete:
 - Browser Playwright/screenshot tests and full UI settings forms.
 - Docker Buildx execution, fnpack/official fnOS schema validation, physical
   amd64/arm64 NAS checks, serial hardware, and long-duration soak evidence.
-- Docs dependency remediation, SBOM/license generation, and Trivy or an
-  equivalent image scan remain release-environment work; the static packaging
-  contract is evidence of structure, not a substitute for those scans.
+- Docs dependency remediation and Trivy or an equivalent image scan remain
+  release-environment work. The repository now has dependency-level SBOM
+  generation, but the static packaging contract is evidence of structure, not
+  a substitute for image/FPK scans.
 
 These are external or higher-scope gates rather than reasons to roll back the
 portable foundation. The acceptance checklist below remains unchecked until

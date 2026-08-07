@@ -49,7 +49,8 @@ The repository-owned static gate is:
 
 It does not replace external validation. A release must also run `dotnet list
 <solution> package --vulnerable --include-transitive`, `npm audit --omit=dev`,
-an SBOM generator, and a scanner such as Trivy against the exact multi-arch
-image. Record tool versions, findings, and accepted exceptions with the release
-candidate. fnOS schema validation and FPK signing must use the `fnpack` version
-provided by the target firmware.
+`python3 tools/generate-sbom.py --output artifacts/sbom/multifunplayer.cyclonedx.json`,
+and a scanner such as Trivy against the exact multi-arch image. Record tool
+versions, findings, and accepted exceptions with the release candidate. fnOS
+schema validation and FPK signing must use the `fnpack` version provided by the
+target firmware.
