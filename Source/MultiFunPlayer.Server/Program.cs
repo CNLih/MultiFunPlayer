@@ -1,0 +1,236 @@
+using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
+using Microsoft.AspNetCore.Http.Json;
+using MultiFunPlayer.Application;
+using MultiFunPlayer.Script;
+
+namespace MultiFunPlayer.Server;
+
+public static class ServerProgram
+{
+    public static void Configure(WebApplicationBuilder builder)
+    {
+        builder.Services.AddProblemDetails();
+        builder.Services.Configure<JsonOptions>(options =>
+            options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
+        builder.Services.AddSingleton<HeadlessPlayerEngine>();
+        builder.Services.AddSingleton<ScriptCatalog>();
+        builder.Services.AddSingleton<StateBroadcaster>();
+        builder.Services.AddHostedService<EngineTicker>();
+    }
+
+    public static void Map(WebApplication app)
+    {
+        app.UseExceptionHandler();
+        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
+        app.Use(async (context, next) =>
+        {
+            if (IsHealthPath(context.Request.Path) || IsPublicAsset(context.Request.Path))
+            {
+                await next(context);
+                return;
+            }
+
+            var expected = Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN");
+            if (string.IsNullOrEmpty(expected))
+            {
+                await next(context);
+                return;
+            }
+
+            var actual = ReadToken(context.Request);
+            if (string.IsNullOrEmpty(actual) || !CryptographicEquals(actual, expected))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await Results.Problem(statusCode: StatusCodes.Status401Unauthorized,
+                    title: "Authentication required", detail: "Provide a valid bearer token.")
+                    .ExecuteAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
+
+        app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+        app.MapGet("/health/ready", (HeadlessPlayerEngine engine) =>
+            Results.Ok(new { status = "ready", state = engine.State.ToString() }));
+
+        app.MapGet("/api/v1/status", (HeadlessPlayerEngine engine) =>
+            Results.Ok(ApiModelMapper.ToStatus(engine.Current)));
+        app.MapGet("/api/v1/capabilities", (IConfiguration config) =>
+        {
+            var hz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
+            return Results.Ok(new CapabilitiesResponse("v1", hz,
+                ["play", "pause", "stop", "seek", "load"], ["funscript", "websocket"],
+                !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
+        });
+        app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
+
+        app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
+        app.MapGet("/api/v1/scripts/{id}", (string id, ScriptCatalog catalog) =>
+            catalog.TryRead(id, out var response)
+                ? Results.Ok(response)
+                : Problem(StatusCodes.Status404NotFound, "Script not found", "The requested script id is not in the catalog.", "script_not_found"));
+        app.MapPost("/api/v1/scripts/load", (LoadScriptRequest request, ScriptCatalog catalog,
+            HeadlessPlayerEngine engine) =>
+        {
+            string? name = request.Name;
+            string? source = "api";
+            string? content = null;
+            if (!string.IsNullOrWhiteSpace(request.Id))
+            {
+                if (!catalog.TryRead(request.Id, out var file))
+                    return Problem(StatusCodes.Status404NotFound, "Script not found", "The requested script id is not in the catalog.", "script_not_found");
+                name = file!.Script.Name;
+                source = $"catalog/{file.Script.Id}";
+                content = file.Content;
+            }
+            else if (request.Content.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+            {
+                content = request.Content.GetRawText();
+            }
+            else if (request.Content.ValueKind == JsonValueKind.String)
+            {
+                content = request.Content.GetString();
+            }
+
+            if (string.IsNullOrWhiteSpace(content))
+                return Problem(StatusCodes.Status400BadRequest, "Script content required", "Provide an id or a funscript JSON document.", "content_or_id_required");
+
+            var result = FunscriptReader.Default.FromText(name ?? "api.funscript", source!, content);
+            if (!result.IsSuccess)
+                return Problem(StatusCodes.Status400BadRequest, "Invalid funscript", "The supplied document could not be parsed.", "invalid_funscript");
+
+            if (result.Resources is { Count: > 0 })
+                engine.Load(result.Resources);
+            else if (result.Resource is not null)
+                engine.Load(result.Resource, request.Axis ?? "default");
+            else
+                return Problem(StatusCodes.Status400BadRequest, "Empty funscript", "The supplied document contains no actions.", "empty_funscript");
+
+            return Results.Ok(ApiModelMapper.ToStatus(engine.Current));
+        });
+
+        app.MapPost("/api/v1/player/play", (HeadlessPlayerEngine engine) => Command(engine, engine.Play));
+        app.MapPost("/api/v1/player/pause", (HeadlessPlayerEngine engine) => Command(engine, engine.Pause));
+        app.MapPost("/api/v1/player/stop", (HeadlessPlayerEngine engine) => Command(engine, engine.Stop));
+        app.MapPost("/api/v1/player/seek", (SeekRequest request, HeadlessPlayerEngine engine) =>
+        {
+            if (!double.IsFinite(request.PositionSeconds) || request.PositionSeconds < 0)
+                return Problem(StatusCodes.Status400BadRequest, "Invalid seek position", "positionSeconds must be a finite non-negative number.", "invalid_position");
+            engine.Seek(TimeSpan.FromSeconds(request.PositionSeconds));
+            return Results.Ok(ApiModelMapper.ToStatus(engine.Current));
+        });
+
+        app.Map("/hubs/state", async context => await HandleWebSocket(context));
+        app.UseStaticFiles();
+        app.MapFallbackToFile("index.html");
+    }
+
+    private static IResult Command(HeadlessPlayerEngine engine, Action action)
+    {
+        action();
+        return Results.Ok(ApiModelMapper.ToStatus(engine.Current));
+    }
+
+    private static async Task HandleWebSocket(HttpContext context)
+    {
+        if (!context.WebSockets.IsWebSocketRequest)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+                title: "WebSocket upgrade required").ExecuteAsync(context);
+            return;
+        }
+
+        var broadcaster = context.RequestServices.GetRequiredService<StateBroadcaster>();
+        if (!broadcaster.TrySubscribe(out var subscription) || subscription is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "WebSocket capacity reached").ExecuteAsync(context);
+            return;
+        }
+
+        using (subscription)
+        using (var socket = await context.WebSockets.AcceptWebSocketAsync())
+        {
+            var engine = context.RequestServices.GetRequiredService<HeadlessPlayerEngine>();
+            subscription.SetInitial(engine.Current);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            var sendTask = SendSnapshots(socket, subscription.Reader, engine.Current, linked.Token);
+            var receiveTask = DrainUntilClosed(socket, linked.Token);
+            await Task.WhenAny(sendTask, receiveTask);
+            linked.Cancel();
+            try { await Task.WhenAll(sendTask, receiveTask); }
+            catch (Exception exception) when (exception is OperationCanceledException or WebSocketException or IOException) { }
+            if (socket.State == WebSocketState.Open || socket.State == WebSocketState.CloseReceived)
+                await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "closed", CancellationToken.None);
+        }
+    }
+
+    private static async Task SendSnapshots(WebSocket socket, ChannelReader<EngineSnapshot> reader,
+        EngineSnapshot initial, CancellationToken cancellationToken)
+    {
+        await SendSnapshot(socket, initial, cancellationToken);
+        await foreach (var snapshot in reader.ReadAllAsync(cancellationToken))
+            await SendSnapshot(socket, snapshot, cancellationToken);
+    }
+
+    private static async Task SendSnapshot(WebSocket socket, EngineSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(ApiModelMapper.ToStatus(snapshot));
+        await socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
+    }
+
+    private static async Task DrainUntilClosed(WebSocket socket, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[512];
+        while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+        {
+            var result = await socket.ReceiveAsync(buffer, cancellationToken);
+            if (result.MessageType == WebSocketMessageType.Close)
+                break;
+        }
+    }
+
+    private static bool IsHealthPath(PathString path) => path.StartsWithSegments("/health");
+    private static bool IsPublicAsset(PathString path) => path.StartsWithSegments("/public");
+
+    private static string? ReadToken(HttpRequest request)
+    {
+        if (request.Headers.TryGetValue("X-MFP-Token", out var value))
+            return value.FirstOrDefault();
+        var authorization = request.Headers.Authorization.FirstOrDefault();
+        return authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
+            ? authorization[7..].Trim() : null;
+    }
+
+    private static bool CryptographicEquals(string left, string right)
+    {
+        var a = Encoding.UTF8.GetBytes(left);
+        var b = Encoding.UTF8.GetBytes(right);
+        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
+    }
+
+    private static IResult Problem(int statusCode, string title, string detail, string code)
+        => Results.Problem(statusCode: statusCode, title: title, detail: detail,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+}
+
+public partial class Program { }
+
+public static class ProgramEntryPoint
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+        ServerProgram.Configure(builder);
+        var app = builder.Build();
+        ServerProgram.Map(app);
+        app.Run();
+    }
+}
