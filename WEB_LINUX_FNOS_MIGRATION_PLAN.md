@@ -109,7 +109,11 @@ Deployment:
 - Current tests contain approximately 984 lines and do not cover the complete timing and output pipeline.
 - CI now installs .NET 9 and pinned .NET 10.0.302, and `global.json` selects the .NET 10 SDK for local builds.
 - Package versions are pinned and NuGet lock files are checked for every project.
-- The local validation environment uses `/home/henry/.dotnet` (.NET SDK 10.0.302), Node 22, and has no Docker/fnpack or WindowsDesktop runtime; Docker, fnOS, ARM, serial hardware, and Windows UI execution therefore remain external validation gates.
+- The local validation environment uses `/home/henry/.dotnet` (.NET SDK 10.0.302)
+  and Node 22. It has no Docker daemon, installed fnpack, WindowsDesktop
+  runtime, target fnOS host, ARM hardware, or serial device; the official
+  fnpack binary can be supplied explicitly for package-only checks, while
+  Docker, fnOS, ARM, serial, and Windows UI execution remain external gates.
 
 ## 5. Target Architecture
 
@@ -720,9 +724,10 @@ Validated in the current Linux environment:
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, and JSON
-  evidence. A 5-second local smoke passed with 66 sent and 0 failed frames;
-  CI runs a 10-second smoke and uploads the report. This does not replace the
-  required eight-hour Linux/fnOS soak or target-device failure matrix.
+  evidence. The latest 5-second local smoke passed with 59 sent and 0 failed
+  frames; CI runs a 10-second smoke and uploads the report. This does not
+  replace the required eight-hour Linux/fnOS soak or target-device failure
+  matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
