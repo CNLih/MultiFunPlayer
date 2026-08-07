@@ -78,3 +78,13 @@ stored as non-secret JSON below the config root. File endpoints are relative
 to the logs root, while serial endpoints must use a stable Linux device path
 or a COM name. Connection failures remain visible as `lastError` and do not
 terminate the host.
+
+Media sources are managed through `/api/v1/media-sources` and the matching
+`connect`, `disconnect`, update, and delete subroutes. The `internal` source
+is directly available to the headless timeline. Emby, Jellyfin, Plex, and OFS
+entries are persisted as `planned` network capabilities, while MPV, VLC, MPC,
+Whirligig, DeoVR, and HereSphere are reported as `blocked` external-proxy
+capabilities until a remote adapter or companion process is provided. Source
+endpoints accept only `http(s)` or `ws(s)` URLs and never accept embedded
+credentials; unsupported connections return a visible error rather than
+pretending to be connected.

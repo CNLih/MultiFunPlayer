@@ -337,7 +337,7 @@ Tasks:
 
 - [x] P3-01 Create `MultiFunPlayer.Server` using ASP.NET Core 10 and Microsoft DI.
 - [x] P3-02 Implement hosted-service startup, auto-connect, graceful cancellation, and ordered shutdown.
-- [ ] P3-03 Define versioned DTOs and REST endpoints for status, media sources, scripts, outputs, devices, settings, logs, and commands.
+- [x] P3-03 Define versioned DTOs and REST endpoints for status, media sources, scripts, outputs, devices, settings, logs, and commands.
 - [x] P3-04 Add SignalR or a documented WebSocket contract for state changes, notifications, and connection diagnostics.
 - [x] P3-05 Coalesce UI updates to a configurable maximum of 10-20 Hz without changing backend output rates.
 - [x] P3-06 Add OpenAPI generation and checked-in API examples.
@@ -574,6 +574,12 @@ Validated in the current Linux environment:
   direct TCP, UDP, WebSocket, File, and Serial transports. File and serial
   endpoint constraints are validated before persistence; connection failures
   are represented in the target state.
+- A persistent media-source registry now exposes CRUD and lifecycle routes for
+  the Internal timeline plus explicit capability states for network and
+  external-player integrations. Internal sources connect directly; planned or
+  blocked entries persist safely, reject embedded credentials, and surface an
+  unavailable-adapter error instead of claiming a live connection. Server tests:
+  20/20.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -581,7 +587,9 @@ Validated in the current Linux environment:
 
 Still open and intentionally not advertised as complete:
 
-- Full media-source and output-target CRUD/adapters remain open. Initial pairing is implemented, but
+- Functional media-source network adapters and The Handy/Buttplug output
+  adapters remain open; the CRUD/registry contracts now exist and clearly
+  report planned or blocked capabilities. Initial pairing is implemented, but
   upgrade/backup rehearsal and
   recovery documentation remain open. Serial open/write is implemented, but
   physical reconnect and permission validation remain external gates. Data

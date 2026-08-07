@@ -72,6 +72,26 @@ public sealed record OutputTargetRequest(
     bool DtrEnable = false,
     bool RtsEnable = false);
 
+public sealed record MediaSourceResponse(
+    string Id,
+    string Name,
+    string Kind,
+    string Endpoint,
+    bool Enabled,
+    bool AutoConnect,
+    string Integration,
+    string ImplementationStatus,
+    bool Connected,
+    string? LastError);
+
+public sealed record MediaSourceRequest(
+    string? Id,
+    string? Name,
+    string? Kind,
+    string? Endpoint,
+    bool Enabled = true,
+    bool AutoConnect = true);
+
 public sealed record SeekRequest(double PositionSeconds);
 
 public static class ApiModelMapper

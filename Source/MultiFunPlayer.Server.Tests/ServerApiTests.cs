@@ -287,6 +287,91 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Media_source_registry_persists_direct_and_planned_capabilities()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions { ConfigRoot = Path.Combine(temp.Path, "config") };
+        await using var registry = new MediaSourceRegistry(storage,
+            NullLogger<MediaSourceRegistry>.Instance);
+        await registry.StartAsync(CancellationToken.None);
+
+        var internalSource = await registry.CreateAsync(new MediaSourceDefinition(
+            "timeline", "Internal timeline", "internal", string.Empty));
+        Assert.Equal(MediaSourceOperationStatus.Success, internalSource.Status);
+        Assert.True(internalSource.Source!.Connected);
+        Assert.Equal("ready", internalSource.Source.ImplementationStatus);
+
+        var remote = await registry.CreateAsync(new MediaSourceDefinition(
+            "jellyfin", "Jellyfin", "jellyfin", "https://media.example.local"));
+        Assert.Equal(MediaSourceOperationStatus.Success, remote.Status);
+        Assert.False(remote.Source!.Connected);
+        Assert.Equal("planned", remote.Source.ImplementationStatus);
+        Assert.Contains("not wired", remote.Source.LastError, StringComparison.OrdinalIgnoreCase);
+
+        var credentials = await registry.CreateAsync(new MediaSourceDefinition(
+            "unsafe", "Unsafe", "emby", "https://media.example.local/?token=secret"));
+        Assert.Equal(MediaSourceOperationStatus.Invalid, credentials.Status);
+        Assert.Equal(2, registry.List().Count);
+
+        await registry.StopAsync(CancellationToken.None);
+        await using var restarted = new MediaSourceRegistry(storage,
+            NullLogger<MediaSourceRegistry>.Instance);
+        await restarted.StartAsync(CancellationToken.None);
+        Assert.Equal(new[] { "jellyfin", "timeline" },
+            restarted.List().Select(source => source.Id).OrderBy(id => id).ToArray());
+        Assert.True(restarted.List().Single(source => source.Id == "timeline").Connected);
+    }
+
+    [Fact]
+    public async Task Media_source_http_contract_exposes_capability_state_and_rejects_credentials()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        using var temp = new TemporaryDirectory();
+        Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var create = await client.PostAsJsonAsync("/api/v1/media-sources", new
+            {
+                id = "remote-jellyfin",
+                name = "Remote Jellyfin",
+                kind = "jellyfin",
+                endpoint = "https://media.example.local",
+                autoConnect = true
+            });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var created = await create.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("planned", created.GetProperty("implementationStatus").GetString());
+            Assert.False(created.GetProperty("connected").GetBoolean());
+            Assert.Contains("not wired", created.GetProperty("lastError").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var connect = await client.PostAsync("/api/v1/media-sources/remote-jellyfin/connect", null);
+            Assert.Equal(HttpStatusCode.BadGateway, connect.StatusCode);
+
+            var invalid = await client.PostAsJsonAsync("/api/v1/media-sources", new
+            {
+                id = "unsafe-media",
+                name = "Unsafe",
+                kind = "emby",
+                endpoint = "https://media.example.local/?api-key=secret"
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+            var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/media-sources");
+            Assert.Contains(list.EnumerateArray(), item =>
+                item.GetProperty("id").GetString() == "remote-jellyfin");
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await client.DeleteAsync("/api/v1/media-sources/remote-jellyfin")).StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+        }
+    }
+
+    [Fact]
     public async Task Environment_tick_rate_overrides_configuration_section()
     {
         var previous = Environment.GetEnvironmentVariable("MFP_TICK_HZ");
@@ -346,6 +431,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/scripts", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));
     }

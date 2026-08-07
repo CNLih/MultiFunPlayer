@@ -39,6 +39,9 @@ public static class ServerProgram
         builder.Services.AddSingleton<OutputTargetRegistry>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<OutputTargetRegistry>());
+        builder.Services.AddSingleton<MediaSourceRegistry>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<MediaSourceRegistry>());
         builder.Services.AddSingleton<StateBroadcaster>();
         var runtimeLogStore = new RuntimeLogStore(builder.Configuration);
         builder.Services.AddSingleton(runtimeLogStore);
@@ -160,6 +163,28 @@ public static class ServerProgram
             OutputTargetRegistry registry, CancellationToken cancellationToken) =>
             MapOutputTargetOperation(await registry.DisconnectAsync(id, cancellationToken)
                 .ConfigureAwait(false), created: false));
+        app.MapGet("/api/v1/media-sources", (MediaSourceRegistry registry) =>
+            Results.Ok(registry.List()));
+        app.MapPost("/api/v1/media-sources", async (MediaSourceRequest request,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.CreateAsync(ToDefinition(request.Id, request), cancellationToken)
+                .ConfigureAwait(false), created: true));
+        app.MapPut("/api/v1/media-sources/{id}", async (string id, MediaSourceRequest request,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.UpdateAsync(id, ToDefinition(id, request), cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapDelete("/api/v1/media-sources/{id}", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.DeleteAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/connect", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.ConnectAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/disconnect", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.DisconnectAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
         app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
         {
             var root = Environment.GetEnvironmentVariable("MFP_SERIAL_BY_ID_ROOT");
@@ -267,6 +292,10 @@ public static class ServerProgram
             request.BaudRate, request.Parity, request.DataBits, request.StopBits,
             request.DtrEnable, request.RtsEnable);
 
+    private static MediaSourceDefinition ToDefinition(string? id, MediaSourceRequest request)
+        => new(id ?? string.Empty, request.Name ?? string.Empty, request.Kind ?? string.Empty,
+            request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect);
+
     private static IResult MapOutputTargetOperation(OutputTargetOperation operation, bool created)
         => operation.Status switch
         {
@@ -284,6 +313,25 @@ public static class ServerProgram
                 "Output target storage unavailable", operation.Error ?? "The output target could not be persisted.", "output_target_unavailable"),
             _ => Problem(StatusCodes.Status502BadGateway,
                 "Output target connection failed", operation.Error ?? "The output target could not connect.", "output_target_failed")
+        };
+
+    private static IResult MapMediaSourceOperation(MediaSourceOperation operation, bool created)
+        => operation.Status switch
+        {
+            MediaSourceOperationStatus.Success when created
+                => Results.Created($"/api/v1/media-sources/{Uri.EscapeDataString(operation.Source!.Id)}", operation.Source),
+            MediaSourceOperationStatus.Success when operation.Source is null => Results.NoContent(),
+            MediaSourceOperationStatus.Success => Results.Ok(operation.Source),
+            MediaSourceOperationStatus.Invalid => Problem(StatusCodes.Status400BadRequest,
+                "Invalid media source", operation.Error ?? "The media source is invalid.", "invalid_media_source"),
+            MediaSourceOperationStatus.NotFound => Problem(StatusCodes.Status404NotFound,
+                "Media source not found", operation.Error ?? "The media source does not exist.", "media_source_not_found"),
+            MediaSourceOperationStatus.Conflict => Problem(StatusCodes.Status409Conflict,
+                "Media source already exists", operation.Error ?? "The media source id is already in use.", "media_source_conflict"),
+            MediaSourceOperationStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                "Media source storage unavailable", operation.Error ?? "The media source could not be persisted.", "media_source_unavailable"),
+            _ => Problem(StatusCodes.Status502BadGateway,
+                "Media source connection unavailable", operation.Error ?? "The media source adapter is unavailable.", "media_source_failed")
         };
 
     private static async Task HandleWebSocket(HttpContext context)
@@ -420,6 +468,10 @@ internal static class OpenApiDocument
             ["/api/v1/output-targets/{id}"] = new { put = Operation("Update output target"), delete = Operation("Delete output target") },
             ["/api/v1/output-targets/{id}/connect"] = new { post = Operation("Connect output target") },
             ["/api/v1/output-targets/{id}/disconnect"] = new { post = Operation("Disconnect output target") },
+            ["/api/v1/media-sources"] = new { get = Operation("List media sources"), post = Operation("Create media source") },
+            ["/api/v1/media-sources/{id}"] = new { put = Operation("Update media source"), delete = Operation("Delete media source") },
+            ["/api/v1/media-sources/{id}/connect"] = new { post = Operation("Connect media source") },
+            ["/api/v1/media-sources/{id}/disconnect"] = new { post = Operation("Disconnect media source") },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
