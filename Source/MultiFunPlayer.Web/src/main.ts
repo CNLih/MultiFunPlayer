@@ -1,11 +1,14 @@
-import { createMockStore, formatTime, statusLabel, type AppState, type Route, type Status } from './store';
+import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type Route, type Status } from './store';
+import { MfpApiClient } from './api';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root is missing');
 const appRoot = app;
 
-const store = createMockStore();
+const demoStore = createMockStore();
+const apiClient = new MfpApiClient();
+let store = demoStore;
 const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'runtime', label: 'Runtime', hint: 'Playback and health' },
   { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
@@ -26,7 +29,7 @@ function render(state: AppState) {
           <div class="brand-mark" aria-hidden="true">MFP</div>
           <div><strong>MultiFunPlayer</strong><span>Control room</span></div>
         </div>
-        <div class="demo-chip"><span class="live-dot" aria-hidden="true"></span> Local demo mode</div>
+        <div class="demo-chip"><span class="live-dot" aria-hidden="true"></span> ${state.mode === 'server' ? 'Server API connected' : 'Local demo mode'}</div>
         <nav class="nav-list">
           ${routes.map((route) => `<button class="nav-item ${state.route === route.id ? 'active' : ''}" data-route="${route.id}" aria-current="${state.route === route.id ? 'page' : 'false'}"><span class="nav-label">${route.label}</span><span class="nav-hint">${route.hint}</span></button>`).join('')}
         </nav>
@@ -199,7 +202,23 @@ appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
 store.subscribe(render);
 window.setInterval(() => store.tick(), 1000);
-
 const initialRoute = window.location.hash.slice(1) as Route;
+
+// A static preview remains useful without a backend. When served by ASP.NET
+// Core, promote the same UI to the authenticated server store automatically.
+void (async () => {
+  if (new URLSearchParams(window.location.search).get('demo') === '1') return;
+  try {
+    const remoteStore = createRemoteStore(apiClient);
+    await remoteStore.connect();
+    store = remoteStore;
+    store.subscribe(render);
+    if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
+    render(store.getState());
+  } catch {
+    // Vite/static preview has no API; keep the deterministic demo store.
+  }
+})();
+
 if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => undefined));

@@ -14,6 +14,11 @@ namespace MultiFunPlayer.Server;
 
 public static class ServerProgram
 {
+    private static readonly JsonSerializerOptions StateJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public static void Configure(WebApplicationBuilder builder)
     {
         DeviceAxis.InitializeDefaults();
@@ -189,7 +194,7 @@ public static class ServerProgram
 
     private static async Task SendSnapshot(WebSocket socket, EngineSnapshot snapshot, CancellationToken cancellationToken)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(ApiModelMapper.ToStatus(snapshot));
+        var payload = JsonSerializer.SerializeToUtf8Bytes(ApiModelMapper.ToStatus(snapshot), StateJsonOptions);
         await socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
     }
 
@@ -205,15 +210,28 @@ public static class ServerProgram
     }
 
     private static bool IsHealthPath(PathString path) => path.StartsWithSegments("/health");
-    private static bool IsPublicAsset(PathString path) => path.StartsWithSegments("/public");
+    private static bool IsPublicAsset(PathString path)
+        => path == "/" || path.StartsWithSegments("/public") || path.StartsWithSegments("/assets")
+            || path.Equals("/index.html", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/manifest.webmanifest", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/icon.svg", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase);
 
     private static string? ReadToken(HttpRequest request)
     {
         if (request.Headers.TryGetValue("X-MFP-Token", out var value))
             return value.FirstOrDefault();
         var authorization = request.Headers.Authorization.FirstOrDefault();
-        return authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
-            ? authorization[7..].Trim() : null;
+        if (authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
+            return authorization[7..].Trim();
+        // Browsers cannot set headers during a WebSocket upgrade. This query
+        // token is accepted only for the upgrade path and is never logged by
+        // the application.
+        return request.HttpContext.WebSockets.IsWebSocketRequest
+            && request.Query.TryGetValue("access_token", out var queryToken)
+            ? queryToken.FirstOrDefault()
+            : null;
     }
 
     private static bool CryptographicEquals(string left, string right)
@@ -272,7 +290,13 @@ public static class ProgramEntryPoint
 {
     public static void Main(string[] args)
     {
-        var builder = WebApplication.CreateBuilder(args);
+        var outputWebRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        var options = new WebApplicationOptions
+        {
+            Args = args,
+            WebRootPath = Directory.Exists(outputWebRoot) ? outputWebRoot : null,
+        };
+        var builder = WebApplication.CreateBuilder(options);
         ServerProgram.Configure(builder);
         var app = builder.Build();
         ServerProgram.Map(app);

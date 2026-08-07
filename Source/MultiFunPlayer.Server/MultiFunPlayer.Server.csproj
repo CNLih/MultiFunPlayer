@@ -15,8 +15,15 @@
     <ProjectReference Include="..\MultiFunPlayer.Infrastructure\MultiFunPlayer.Infrastructure.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="Exists('..\MultiFunPlayer.Web\dist')">
+    <Content Include="..\MultiFunPlayer.Web\dist\**" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="!Exists('..\MultiFunPlayer.Web\dist')">
     <Content Include="..\MultiFunPlayer.Web\static\index.html" Link="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="!Exists('..\MultiFunPlayer.Web\dist')">
     <Content Include="..\MultiFunPlayer.Web\public\**" Link="wwwroot\public\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

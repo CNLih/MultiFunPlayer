@@ -1,0 +1,7 @@
+{
+  "id": "003",
+  "slug": "core-library-extraction",
+  "status": "completed",
+  "branch": "feature/web-linux-fnos-migration",
+  "evidence": ["plain net10.0 Core", "Core tests 8/8", "WPF adapter build"]
+}

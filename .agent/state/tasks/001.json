@@ -1,0 +1,7 @@
+{
+  "id": "001",
+  "slug": "baseline-and-golden-tests",
+  "status": "completed",
+  "branch": "feature/web-linux-fnos-migration",
+  "evidence": ["global.json", "locked NuGet restore", "golden fixtures", "CI SDK pinning"]
+}

@@ -9,6 +9,7 @@ const required = [
   'tsconfig.json',
   'src/main.ts',
   'src/store.ts',
+  'src/api.ts',
   'src/styles.css',
   'public/manifest.webmanifest',
   'public/sw.js',
@@ -26,4 +27,7 @@ for (const key of ['name', 'short_name', 'start_url', 'display']) {
 if (!readFileSync(join(root, 'src/main.ts'), 'utf8').includes('createMockStore')) {
   throw new Error('The SPA must use the mock store for backend-independent preview');
 }
-console.log(`Static checks passed (${required.length} required files, no backend dependency).`);
+if (!readFileSync(join(root, 'src/api.ts'), 'utf8').includes('class MfpApiClient')) {
+  throw new Error('The SPA API client is missing');
+}
+console.log(`Static checks passed (${required.length} required files, backend-compatible demo fallback).`);

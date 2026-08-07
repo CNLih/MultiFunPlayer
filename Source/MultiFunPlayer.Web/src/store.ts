@@ -1,3 +1,5 @@
+import type { ApiCapabilities, ApiScriptDescriptor, MfpApiClient } from './api';
+
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
 
@@ -47,6 +49,7 @@ export interface HealthCheck {
 }
 
 export interface AppState {
+  mode: 'demo' | 'server';
   route: Route;
   engineRunning: boolean;
   nowPlaying: ScriptResource;
@@ -60,9 +63,19 @@ export interface AppState {
   lastSync: string;
 }
 
+export interface StatusResponse {
+  state: string;
+  script: string | null;
+  positionSeconds: number;
+  durationSeconds: number;
+  axes: Record<string, number>;
+  revision: number;
+}
+
 export type Listener = (state: AppState) => void;
 
 const initialState: AppState = {
+  mode: 'demo',
   route: 'runtime',
   engineRunning: true,
   nowPlaying: {
@@ -174,6 +187,73 @@ export function createMockStore() {
       state.elapsed = (state.elapsed + 1) % 512;
       notify();
     },
+  };
+}
+
+export function createRemoteStore(client: MfpApiClient) {
+  const base = createMockStore();
+  const state = base.getState();
+  state.mode = 'server';
+  state.media = [];
+  state.outputs = [];
+  state.logs = [];
+  const listeners = new Set<Listener>();
+  let socket: WebSocket | undefined;
+  const notify = () => listeners.forEach((listener) => listener(state));
+  const appendLog = (level: ActivityLog['level'], message: string, source = 'server') => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    state.logs = [{ id: Date.now(), time, level, message, source }, ...state.logs].slice(0, 30);
+    state.lastSync = time;
+  };
+  const scriptFromDescriptor = (descriptor: ApiScriptDescriptor): ScriptResource => ({
+    id: descriptor.id,
+    name: descriptor.name,
+    format: 'Funscript',
+    duration: '--:--',
+    updated: new Date(descriptor.lastModifiedUtc).toLocaleDateString(),
+    size: `${Math.max(1, Math.round(descriptor.size / 1024))} KB`,
+    axes: 0,
+  });
+  const applyStatus = (status: StatusResponse) => {
+    const playing = status.state.toLowerCase() === 'playing';
+    const script = state.scripts.find((item) => item.name === status.script) ?? state.nowPlaying;
+    state.playing = playing;
+    state.engineRunning = status.state.toLowerCase() !== 'stopped';
+    state.elapsed = status.positionSeconds;
+    state.nowPlaying = { ...script, name: status.script ?? script.name, duration: formatTime(status.durationSeconds), axes: Object.keys(status.axes).length };
+    state.health = [
+      { label: 'Engine loop', detail: `Server tick / revision ${status.revision}`, status: 'pass' },
+      { label: 'API connection', detail: 'Authenticated same-origin session', status: 'pass' },
+      { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
+    ];
+    state.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    notify();
+  };
+  const refresh = async () => {
+    const [status, scripts] = await Promise.all([client.getStatus(), client.listScripts()]);
+    state.scripts = scripts.map(scriptFromDescriptor);
+    applyStatus(status);
+  };
+  const command = (action: () => Promise<StatusResponse>, message: string) => {
+    void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
+  };
+
+  return {
+    getState: () => state,
+    subscribe(listener: Listener) { listeners.add(listener); listener(state); return () => listeners.delete(listener); },
+    setRoute(route: Route) { state.route = route; window.history.replaceState({}, '', `#${route}`); notify(); },
+    togglePlayback() { command(() => client.command(state.playing ? 'pause' : 'play'), state.playing ? 'Playback paused' : 'Playback resumed'); },
+    toggleEngine() { appendLog('warn', 'Engine lifecycle is owned by the server process'); notify(); },
+    loadScript(script: ScriptResource) { command(() => client.loadScript(script.id), `Loaded ${script.name}`); },
+    toggleMedia(_id: string) { appendLog('warn', 'Media source adapters are configured on the server'); notify(); },
+    toggleOutput(_id: string) { appendLog('warn', 'Output adapters are configured on the server'); notify(); },
+    tick() { /* state arrives from the bounded WebSocket stream */ },
+    async connect() {
+      const capabilities: ApiCapabilities = await client.getCapabilities();
+      socket = client.connectState(capabilities.webSocketPath, applyStatus, () => appendLog('warn', 'State stream disconnected'));
+      await refresh();
+    },
+    close() { socket?.close(); },
   };
 }
 
