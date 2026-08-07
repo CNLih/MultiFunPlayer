@@ -772,6 +772,9 @@ Validated in the current Linux environment:
   `deploy/release-evidence.json` and runs the complete evidence gate before
   building release archives; the current branch intentionally does not provide
   a fabricated complete manifest.
+- `tools/check-portable-boundary.py` now scans Core/Application source and
+  project files for WPF, Stylet, Win32/WMI, registry, and DPAPI references; the
+  current scan passes and is enforced in the portable CI job.
 
 Still open and intentionally not advertised as complete:
 
