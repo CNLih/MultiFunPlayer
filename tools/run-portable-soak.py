@@ -10,6 +10,7 @@ migration plan. It does not claim container, fnOS, hardware, or ARM coverage.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -82,6 +83,32 @@ def process_metrics(pid: int) -> tuple[int | None, float | None]:
         return rss_bytes, cpu_seconds
     except (FileNotFoundError, IndexError, OSError, ValueError):
         return None, None
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def repository_revision(root: Path) -> str | None:
+    """Return the checked-out revision when the harness runs from a Git tree."""
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=root,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip()
+    return revision or None
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
@@ -164,6 +191,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     server = Path(args.server).resolve()
     if not server.is_file():
         raise FileNotFoundError(f"server DLL does not exist: {server}")
+    repository_root = Path(__file__).resolve().parents[1]
 
     report: dict[str, Any] = {
         "schemaVersion": 1,
@@ -178,6 +206,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                               if args.max_coalesced_frames is not None
                               else args.max_dropped_frames),
         "server": str(server),
+        "buildEvidence": {
+            "repositoryRevision": repository_revision(repository_root),
+            "serverAssemblySha256": sha256_file(server),
+            "serverAssemblyBytes": server.stat().st_size,
+        },
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "samples": [],
     }

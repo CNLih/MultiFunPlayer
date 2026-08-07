@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,6 +27,15 @@ def report(*, graceful=True, sent=10, dropped=0, failed=0, p95=50):
 
 
 class PortableSoakTests(unittest.TestCase):
+    def test_sha256_file_is_stable_for_assembly_evidence(self):
+        with tempfile.NamedTemporaryFile() as stream:
+            stream.write(b"portable-soak-evidence")
+            stream.flush()
+            self.assertEqual(
+                "89af3662ff6269f7ba37fe3f7713bafc1a2b26fade409b0d38ec521d1a2aaadb",
+                MODULE.sha256_file(Path(stream.name)),
+            )
+
     def test_coalesced_count_prefers_canonical_field_for_samples(self):
         self.assertEqual(4, MODULE.coalesced_frame_count({
             "droppedFrames": 0,

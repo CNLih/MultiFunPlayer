@@ -91,6 +91,8 @@ python3 tools/run-portable-soak.py \
 The harness starts an isolated server with temporary config, key, script, and
 log roots, then records output sent/coalesced/failed counts, reconnects, status
 revision intervals, process RSS, CPU time, and graceful shutdown. The API's
+report also records the repository revision and Server assembly SHA-256/size so
+the measured process can be tied to an exact build.
 historical `droppedFrames` name is retained as an alias for the rate-limited
 sample count; `coalescedFrames` is the unambiguous field in the soak report,
 while `failedFrames` represents sink write failures. A short duration is
