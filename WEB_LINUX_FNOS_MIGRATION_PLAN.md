@@ -691,6 +691,12 @@ Validated in the current Linux environment:
   bundle after loading the Playwright headless shell with user-space Ubuntu
   libraries; CI installs the browser and host dependencies before running
   them.
+- `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
+  entry point with temporary four-volume roots, output diagnostics, revision
+  interval statistics, RSS/CPU sampling, graceful-stop reporting, and JSON
+  evidence. A 5-second local smoke passed with 66 sent and 0 failed frames;
+  CI runs a 10-second smoke and uploads the report. This does not replace the
+  required eight-hour Linux/fnOS soak or target-device failure matrix.
 - The output view now shows per-target sent/dropped/failed frame counts,
   reconnects, and last-send time; the diagnostics view consumes migration and
   adapter capability endpoints and exposes repository, general, security,

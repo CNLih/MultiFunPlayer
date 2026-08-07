@@ -50,3 +50,19 @@ Before invoking Docker, run the repository-owned static contract check:
 This verifies the Dockerfile, compose security defaults, persistent volume
 names, and the structural fnOS manifest. It does not build an image or replace
 Docker Compose, Buildx, Trivy, or fnOS/fnpack validation on a target host.
+
+For a headless Linux soak, build the Release server first and run the portable
+harness from the repository root:
+
+```sh
+python3 tools/run-portable-soak.py \
+  --dotnet /path/to/dotnet \
+  --duration-seconds 28800 \
+  --output artifacts/soak/portable-soak.json
+```
+
+The harness starts an isolated server with temporary config, key, script, and
+log roots, then records output sent/dropped/failed counts, reconnects, status
+revision intervals, process RSS, CPU time, and graceful shutdown. A short
+duration is suitable for CI smoke checks; only a target Linux/fnOS run can
+provide the release-required eight-hour evidence.

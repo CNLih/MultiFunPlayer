@@ -168,6 +168,15 @@ jobs:
       run: dotnet list MultiFunPlayer.sln package --vulnerable --include-transitive --no-restore
     - name: Build solution
       run: dotnet build MultiFunPlayer.sln --no-restore --configuration Release -p:EnableWindowsTargeting=true
+    - name: Run portable short soak smoke
+      run: python tools/run-portable-soak.py --duration-seconds 10 --poll-seconds 0.5 --output artifacts/soak/portable-soak.json
+    - name: Upload portable soak evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: portable-soak-evidence
+        path: artifacts/soak
+        if-no-files-found: ignore
     - name: Install Web dependencies
       run: npm ci --no-audit --no-fund
       working-directory: ./Source/MultiFunPlayer.Web
