@@ -867,7 +867,7 @@ Validated in the current Linux environment:
   and CPU time 9.14 s. That run failed only the diagnostic 60-frame coalescing
   budget; it does not indicate transport loss (`failedFrames` stayed zero), but
   it also does not satisfy the budgeted soak gate. CI runs a 10-second smoke with
-  the same p95/drop budgets and uploads the report. Neither run replaces the
+  the same p95/coalescing budgets and uploads the report. Neither run replaces the
   required eight-hour Linux/fnOS soak or target-device failure matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
