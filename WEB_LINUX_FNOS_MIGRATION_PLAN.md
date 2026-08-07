@@ -1023,7 +1023,7 @@ Validated in the current Linux environment:
   with `deviceId` retention and `secretRef` redaction, multi-axis script
   upload/load, seek/play/stop, and bounded redacted logs; it is local evidence
   only, not a Docker, fnOS, or physical-device acceptance.
-- The supporting Python validation/tooling suite passes 37/37, including
+- The supporting Python validation/tooling suite passes 38/38, including
   target-harness media CRUD/redaction, browser-host dependency classification,
   and explicit soak coalescing-budget evidence tests.
 
