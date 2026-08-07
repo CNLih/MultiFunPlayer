@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "description": "Sanitized baseline traces; endpoints and device identifiers are placeholders.",
+  "traces": [
+    {
+      "protocol": "tcode",
+      "transport": "tcp",
+      "direction": "output",
+      "payload": "L05000I100"
+    },
+    {
+      "protocol": "tcode",
+      "transport": "websocket",
+      "direction": "output",
+      "payload": "L05000I100\n"
+    },
+    {
+      "protocol": "vlc-http",
+      "transport": "http",
+      "direction": "response",
+      "status": 200,
+      "payload": "{\"state\":\"playing\",\"time\":12}"
+    },
+    {
+      "protocol": "ofs-websocket",
+      "transport": "websocket",
+      "direction": "input",
+      "payload": "{\"type\":\"time\",\"value\":12}"
+    }
+  ]
+}

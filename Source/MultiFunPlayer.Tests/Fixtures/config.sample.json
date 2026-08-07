@@ -1,0 +1,29 @@
+{
+  "ConfigVersion": 44,
+  "Device": {
+    "SelectedDevice": "TCode-0.3",
+    "Devices": [
+      {
+        "Name": "TCode-0.3",
+        "OutputPrecision": 4,
+        "Axes": [
+          { "Name": "L0", "Enabled": true, "DefaultValue": 0.5 },
+          { "Name": "R2", "Enabled": true, "DefaultValue": 0.5 }
+        ]
+      }
+    ]
+  },
+  "MediaSource": {
+    "Selected": "Internal",
+    "RemoteEndpoint": "media.example.invalid"
+  },
+  "OutputTarget": {
+    "Items": [
+      {
+        "Type": "TcpOutputTarget",
+        "Endpoint": "output.example.invalid:9000",
+        "Enabled": false
+      }
+    ]
+  }
+}
