@@ -26,3 +26,13 @@ cannot reach the target.
 
 The Dockerfile has not been executed on this host because Docker is unavailable.
 The first hardware validation must cover both `linux/amd64` and `linux/arm64`.
+
+For a local protocol smoke target, start the optional simulators with:
+
+```sh
+docker compose -f deploy/docker/compose.yaml --profile simulators up --build
+```
+
+The TCP receiver is available to the application as `fake-tcp:18000`; the UDP
+receiver is `fake-udp:18001`. Both print bounded payload previews and have no
+device or filesystem access. This simulator profile is not enabled by default.

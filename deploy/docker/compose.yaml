@@ -33,6 +33,32 @@ services:
         limits:
           cpus: "2.0"
           memory: 512M
+
+  fake-tcp:
+    profiles: ["simulators"]
+    build:
+      context: ./fake-endpoint
+    environment:
+      MODE: tcp
+      PORT: 18000
+    ports:
+      - "18000:18000"
+    networks:
+      - mfp
+    restart: "no"
+
+  fake-udp:
+    profiles: ["simulators"]
+    build:
+      context: ./fake-endpoint
+    environment:
+      MODE: udp
+      PORT: 18001
+    ports:
+      - "18001:18001/udp"
+    networks:
+      - mfp
+    restart: "no"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/usr/local/bin/mfp-busybox", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]

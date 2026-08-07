@@ -477,7 +477,7 @@ Tasks:
 - [x] P6-04 Add configurable listen address/port, health check, graceful stop, and resource limits.
 - [x] P6-05 Document bridge networking and an opt-in host-network mode for protocols that require it.
 - [ ] P6-06 Build and test `linux/amd64` and `linux/arm64` images.
-- [ ] P6-07 Add a compose example with a fake TCP/UDP endpoint for first-run validation.
+- [x] P6-07 Add a compose example with a fake TCP/UDP endpoint for first-run validation.
 - [ ] P6-08 Create the fnOS Docker application project with `fnpack`.
 - [ ] P6-09 Add FPK manifest, icons, Web entry, port, volume, upgrade, and uninstall behavior.
 - [x] P6-10 Add fnOS-specific serial mapping and permission documentation.
