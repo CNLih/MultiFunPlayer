@@ -629,6 +629,11 @@ Validated in the current Linux environment:
   create/list, file-output create/connect, script upload, and fixed-size
   persisted log download. The log endpoint snapshots JSONL under its lock so
   ongoing request logging cannot change the response content length.
+- Final Release server smoke after the network/axis changes returned 200 for
+  liveness, adapter capabilities, device-axis listing, OpenAPI, and SPA
+  fallback; the Emby/Jellyfin/Plex entries reported `ready`, Buttplug remained
+  explicitly `planned`, an axis policy PUT persisted successfully, and Ctrl-C
+  shutdown completed cleanly.
 - Headless operations, architecture, and contribution guides now document
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
