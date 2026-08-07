@@ -32,6 +32,8 @@ free_port = _SOAK.free_port
 request_json = _SOAK.request_json
 stop_process = _SOAK.stop_process
 wait_for_live = _SOAK.wait_for_live
+repository_revision = _SOAK.repository_revision
+sha256_file = _SOAK.sha256_file
 
 
 TOKEN = "portable-upgrade-token-1234567890"
@@ -111,6 +113,14 @@ def verify_persistent_state(base_url: str, root: Path) -> dict[str, Any]:
     return state
 
 
+def assembly_evidence(path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "sha256": sha256_file(path),
+        "bytes": path.stat().st_size,
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     server = Path(args.server).resolve()
     baseline_server = Path(args.baseline_server or args.server).resolve()
@@ -125,6 +135,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "server": str(server),
         "baselineServer": str(baseline_server),
         "rollbackServer": str(rollback_server) if rollback_server is not None else None,
+        "buildEvidence": {
+            "repositoryRevision": repository_revision(Path(__file__).resolve().parents[1]),
+            "assemblies": {
+                "baseline": assembly_evidence(baseline_server),
+                "upgrade": assembly_evidence(server),
+                **({"rollback": assembly_evidence(rollback_server)}
+                   if rollback_server is not None else {}),
+            },
+        },
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),
         "phases": [],
     }

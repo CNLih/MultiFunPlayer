@@ -16,6 +16,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PortableUpgradeTests(unittest.TestCase):
+    def test_assembly_evidence_contains_digest_and_size(self):
+        with tempfile.NamedTemporaryFile() as stream:
+            stream.write(b"portable-upgrade-evidence")
+            stream.flush()
+            evidence = MODULE.assembly_evidence(Path(stream.name))
+        self.assertEqual(25, evidence["bytes"])
+        self.assertEqual(
+            "8b47216b2b252879fa554768a2b955366935d70514922dbd369b77c56c10b1bc",
+            evidence["sha256"],
+        )
+
     def test_interrupt_server_forces_nonzero_child_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "child.log"
