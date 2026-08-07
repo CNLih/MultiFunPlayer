@@ -68,8 +68,10 @@ public sealed record OutputTargetResponse(
     uint? DeviceIndex = null,
     string ActuatorType = "Vibrate",
     uint ActuatorIndex = 0,
-    int DurationMilliseconds = 50,
-    long CoalescedFrames = 0);
+    int DurationMilliseconds = 50)
+{
+    public long CoalescedFrames { get; init; }
+}
 
 public sealed record OutputTargetRequest(
     string? Id,

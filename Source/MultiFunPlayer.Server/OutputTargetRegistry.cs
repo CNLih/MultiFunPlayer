@@ -639,7 +639,10 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             sentFrames, droppedFrames, failedFrames, target.Reconnects, lastSentAtUtc,
             target.Definition.DeviceName, target.Definition.DeviceIndex,
             target.Definition.ActuatorType, target.Definition.ActuatorIndex,
-            target.Definition.DurationMilliseconds, droppedFrames);
+            target.Definition.DurationMilliseconds)
+        {
+            CoalescedFrames = droppedFrames
+        };
     }
 
     private static void CaptureDiagnostics(RuntimeTarget target)
