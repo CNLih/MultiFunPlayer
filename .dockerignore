@@ -1,6 +1,5 @@
 .git
-.agent/logs
-.agent/state
+.agent
 **/bin
 **/obj
 Source/MultiFunPlayer.Web/node_modules

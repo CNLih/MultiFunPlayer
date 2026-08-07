@@ -754,7 +754,7 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 114/114 checks passed for the
+- The packaging contract validator reports 115/115 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
   roots, health check, secret interpolation, the structural fnOS manifest, and
   the canonical `fnpack` project. The fnOS Compose service now carries the
@@ -781,7 +781,8 @@ Validated in the current Linux environment:
 - The Docker build context now excludes Web browser reports, test results,
   generated SPA/Docs output, and both Web/Docs dependency trees. The packaging
   contract checks these exclusions so local diagnostics cannot inflate or
-  accidentally enter a runtime build context.
+  accidentally enter a runtime build context. The entire `.agent` directory
+  is also excluded because it is orchestration metadata, not application input.
 - The three Docker base images are pinned to reviewed multi-architecture
   manifest digests; the packaging contract rejects a floating base tag so an
   image rebuild cannot silently change the .NET or Node runtime.

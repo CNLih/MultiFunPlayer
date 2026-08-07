@@ -230,7 +230,7 @@ class Validator:
             ), "no secret value is baked into Dockerfile ARG/ENV")
 
         if ignore is not None:
-            for entry in (".git", "**/bin", "**/obj", "Source/MultiFunPlayer.Web/node_modules",
+            for entry in (".git", ".agent", "**/bin", "**/obj", "Source/MultiFunPlayer.Web/node_modules",
                           "Source/MultiFunPlayer.Web/playwright-report",
                           "Source/MultiFunPlayer.Web/test-results", "Docs/node_modules",
                           "Docs/build", "Docs/.docusaurus"):
