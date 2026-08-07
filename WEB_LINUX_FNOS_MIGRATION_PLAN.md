@@ -702,8 +702,9 @@ Validated in the current Linux environment:
   deduplicated components and the generated inventory reports zero components
   without a license declaration. The container matrix now requests a separate
   CycloneDX SBOM for each loaded runtime image and uploads it beside the Trivy
-  report; exact runtime-image review and release-owner review of FPK artifacts
-  remain open until a runner produces and reviews those artifacts.
+  report and now generates a license inventory beside each runtime SBOM; exact
+  runtime-image review and release-owner review of FPK artifacts remain open
+  until a runner produces and reviews those artifacts.
 - `tools/generate-fpk-sbom.py` now produces a file-level CycloneDX inventory for
   both the outer FPK and nested `app.tgz`, rejects unsafe archive members, and
   records SHA-256 plus MIT license evidence. Local x86 and ARM FPKs each

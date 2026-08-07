@@ -305,11 +305,18 @@ jobs:
         format: cyclonedx-json
         output-file: runtime-sbom-${{ matrix.arch }}.cyclonedx.json
         upload-artifact: false
+    - name: Generate ${{ matrix.arch }} runtime license inventory
+      run: |
+        python tools/generate-license-report.py \
+          --input runtime-sbom-${{ matrix.arch }}.cyclonedx.json \
+          --output runtime-licenses-${{ matrix.arch }}.md
     - name: Upload ${{ matrix.arch }} runtime SBOM
       uses: actions/upload-artifact@v4
       with:
         name: runtime-sbom-${{ matrix.arch }}
-        path: runtime-sbom-${{ matrix.arch }}.cyclonedx.json
+        path: |
+          runtime-sbom-${{ matrix.arch }}.cyclonedx.json
+          runtime-licenses-${{ matrix.arch }}.md
     - name: Scan ${{ matrix.arch }} image for high and critical vulnerabilities
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
       with:
