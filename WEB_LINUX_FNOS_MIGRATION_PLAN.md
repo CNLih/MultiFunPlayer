@@ -754,10 +754,12 @@ Validated in the current Linux environment:
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
   acceptance results, optional p95/drop budgets, and JSON evidence. The latest
-  5-second local smoke passed with 57 sent, 0 failed, and 37 diagnostic dropped
-  frames; p95 revision interval was about 50.8 ms and shutdown was graceful.
-  CI runs a 10-second smoke and uploads the report. This does not replace the
-  required eight-hour Linux/fnOS soak or target-device failure matrix.
+  60-second local smoke passed with 734 sent, 0 failed, 0 reconnects, and 462
+  diagnostic dropped frames; p95 revision interval was 50.64 ms under a 100 ms
+  budget, peak RSS was about 116 MB, CPU time was 3.51 s, and shutdown was
+  graceful. CI runs a 10-second smoke and uploads the report. This does not
+  replace the required eight-hour Linux/fnOS soak or target-device failure
+  matrix.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
