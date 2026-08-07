@@ -436,11 +436,19 @@
           "Newtonsoft.Json": "[13.0.4, )"
         }
       },
-      "multifunplayer.server": {
+      "multifunplayer.infrastructure": {
         "type": "Project",
         "dependencies": {
           "MultiFunPlayer.Application": "[1.0.0, )",
           "MultiFunPlayer.Core": "[1.0.0, )"
+        }
+      },
+      "multifunplayer.server": {
+        "type": "Project",
+        "dependencies": {
+          "MultiFunPlayer.Application": "[1.0.0, )",
+          "MultiFunPlayer.Core": "[1.0.0, )",
+          "MultiFunPlayer.Infrastructure": "[1.0.0, )"
         }
       }
     }

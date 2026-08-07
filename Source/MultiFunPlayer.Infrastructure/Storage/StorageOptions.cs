@@ -15,14 +15,15 @@ public sealed record StorageOptions
 
         return new StorageOptions
         {
-            ConfigRoot = ValueOrDefault(environment, "MFP_CONFIG_ROOT", "/config"),
-            ScriptsRoot = ValueOrDefault(environment, "MFP_SCRIPTS_ROOT", "/scripts"),
-            LogsRoot = ValueOrDefault(environment, "MFP_LOGS_ROOT", "/logs")
+            ConfigRoot = ValueOrDefault(environment, "MFP_CONFIG_ROOT", "MFP_CONFIG_PATH", "/config"),
+            ScriptsRoot = ValueOrDefault(environment, "MFP_SCRIPTS_ROOT", "MFP_SCRIPTS_PATH", "/scripts"),
+            LogsRoot = ValueOrDefault(environment, "MFP_LOGS_ROOT", "MFP_LOGS_PATH", "/logs")
         };
     }
 
-    private static string ValueOrDefault(IReadOnlyDictionary<string, string?> environment, string key, string fallback)
-        => environment.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value.Trim()
-            : fallback;
+    private static string ValueOrDefault(IReadOnlyDictionary<string, string?> environment, string key, string alias, string fallback)
+        => ValueOrNull(environment, key) ?? ValueOrNull(environment, alias) ?? fallback;
+
+    private static string? ValueOrNull(IReadOnlyDictionary<string, string?> environment, string key)
+        => environment.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 }

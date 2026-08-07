@@ -18,6 +18,13 @@
         "dependencies": {
           "Newtonsoft.Json": "[13.0.4, )"
         }
+      },
+      "multifunplayer.infrastructure": {
+        "type": "Project",
+        "dependencies": {
+          "MultiFunPlayer.Application": "[1.0.0, )",
+          "MultiFunPlayer.Core": "[1.0.0, )"
+        }
       }
     }
   }

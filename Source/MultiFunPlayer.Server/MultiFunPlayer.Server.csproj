@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MultiFunPlayer.Application\MultiFunPlayer.Application.csproj" />
     <ProjectReference Include="..\MultiFunPlayer.Core\MultiFunPlayer.Core.csproj" />
+    <ProjectReference Include="..\MultiFunPlayer.Infrastructure\MultiFunPlayer.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

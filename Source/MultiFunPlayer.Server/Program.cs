@@ -6,6 +6,8 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Http.Json;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Common;
+using MultiFunPlayer.Infrastructure.Capabilities;
+using MultiFunPlayer.Infrastructure.Storage;
 using MultiFunPlayer.Script;
 
 namespace MultiFunPlayer.Server;
@@ -19,6 +21,7 @@ public static class ServerProgram
         builder.Services.Configure<JsonOptions>(options =>
             options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         builder.Services.AddSingleton<HeadlessPlayerEngine>();
+        builder.Services.AddSingleton(StorageOptions.FromEnvironment());
         builder.Services.AddSingleton<ScriptCatalog>();
         builder.Services.AddSingleton<StateBroadcaster>();
         builder.Services.AddHostedService<EngineTicker>();
@@ -66,7 +69,8 @@ public static class ServerProgram
         {
             var hz = Math.Clamp(config.GetValue("MultiFunPlayer:TickHz", 20), 1, 20);
             return Results.Ok(new CapabilitiesResponse("v1", hz,
-                ["play", "pause", "stop", "seek", "load"], ["funscript", "websocket"],
+                ["play", "pause", "stop", "seek", "load"],
+                ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
         });
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
