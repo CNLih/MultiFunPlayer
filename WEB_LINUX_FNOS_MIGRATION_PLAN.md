@@ -842,6 +842,12 @@ Validated in the current Linux environment:
   placing bearer tokens in the report. The container CI job runs it for both
   architectures and uploads the report; physical output and firmware checks
   remain target-specific.
+- The current local Release Server build passed that target harness 14/14 on
+  an isolated port with separate config, key, script, and log roots. The run
+  verified liveness/readiness, SPA fallback, authentication, redacted settings,
+  capabilities, adapter/serial discovery, multi-axis script upload/load,
+  seek/play/stop, and bounded redacted logs; it is local evidence only, not a
+  Docker, fnOS, or physical-device acceptance.
 
 Still open and intentionally not advertised as complete:
 
