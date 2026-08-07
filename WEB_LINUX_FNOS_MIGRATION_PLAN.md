@@ -441,7 +441,7 @@ Tasks:
 
 - [x] P5-01 Create application shell, routing, authentication bootstrap, API client, and real-time store.
 - [x] P5-02 Build the runtime dashboard with media state, connection state, output state, and health.
-- [ ] P5-03 Build media source list, configuration forms, connection controls, and capability messages.
+- [x] P5-03 Build media source list, configuration forms, connection controls, and capability messages.
 - [ ] P5-04 Build script browser/load controls, time/offset/sync controls, and axis value visualization.
 - [ ] P5-05 Build output target creation, configuration, connection, update-rate, and diagnostics screens.
 - [ ] P5-06 Build device axis, range, inversion, interpolation, and limit settings.
@@ -579,11 +579,15 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  20/20.
+  21/21, including redacted JSONL log persistence and download.
 - `MultiFunPlayer.Application` now exposes platform-neutral ports for media
   adapters, output adapters, configuration, secrets, rooted files, and serial
   discovery. Implementations remain in Infrastructure/Server and can be
   replaced without changing Core timing or script evaluation.
+- The SPA now loads media/output registries from the server, provides persisted
+  create/connect/disconnect/delete workflows, and renders planned/blocked
+  capability errors. Script upload remains available in both demo and remote
+  modes; browser screenshot automation and full settings surfaces remain open.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
