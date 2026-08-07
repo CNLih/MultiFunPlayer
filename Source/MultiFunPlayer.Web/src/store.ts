@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
+import type { ApiCapabilities, ApiLogsResponse, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
@@ -218,6 +218,13 @@ export function createRemoteStore(client: MfpApiClient) {
     size: `${Math.max(1, Math.round(descriptor.size / 1024))} KB`,
     axes: 0,
   });
+  const logsFromResponse = (response: ApiLogsResponse): ActivityLog[] => response.items.map((item, index) => ({
+    id: Date.parse(item.timestampUtc) || Date.now() + index,
+    time: new Date(item.timestampUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    level: item.level.toLowerCase() === 'error' || item.level.toLowerCase() === 'critical' ? 'error' : item.level.toLowerCase() === 'warning' ? 'warn' : 'info',
+    message: item.message,
+    source: item.category,
+  }));
   const applyStatus = (status: StatusResponse) => {
     const playing = status.state.toLowerCase() === 'playing';
     const script = state.scripts.find((item) => item.name === status.script) ?? state.nowPlaying;
@@ -234,11 +241,12 @@ export function createRemoteStore(client: MfpApiClient) {
     notify();
   };
   const refresh = async () => {
-    const [status, scripts, settings, serialDevices] = await Promise.all([
-      client.getStatus(), client.listScripts(), client.getSettings(), client.listSerialDevices(),
+    const [status, scripts, settings, serialDevices, logs] = await Promise.all([
+      client.getStatus(), client.listScripts(), client.getSettings(), client.listSerialDevices(), client.getLogs(),
     ]);
     state.settings = settings;
     state.serialDevices = serialDevices;
+    state.logs = logsFromResponse(logs);
     state.scripts = scripts.map(scriptFromDescriptor);
     applyStatus(status);
   };

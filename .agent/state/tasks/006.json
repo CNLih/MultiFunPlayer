@@ -3,6 +3,6 @@
   "slug": "web-linux-fnos-prototype",
   "status": "completed-with-target-validation-pending",
   "branch": "feature/web-linux-fnos-migration",
-  "evidence": ["SPA typecheck/static/build", "same-origin API client", "settings and serial API client", "Dockerfile", "compose", "optional TCP/UDP simulator profile", "fnOS manifest scaffold", "Infrastructure tests 8/8"],
+  "evidence": ["SPA typecheck/static/build", "same-origin API client", "remote logs/settings/serial diagnostics", "Dockerfile", "compose", "optional TCP/UDP simulator profile", "fnOS manifest scaffold", "Infrastructure tests 8/8"],
   "pending": ["Playwright screenshots", "Docker Buildx execution", "fnpack/fnOS", "physical amd64/arm64 and serial"]
 }

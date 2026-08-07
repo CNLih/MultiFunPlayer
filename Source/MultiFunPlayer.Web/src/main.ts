@@ -138,7 +138,17 @@ function renderOutputs(state: AppState): string {
 function renderLogs(state: AppState): string {
   return `${pageHeading('Diagnostics', 'Logs and health', 'Inspect the event stream and the checks that protect the output loop.', '<button class="button button-secondary" data-action="download-logs">Export snapshot</button>')}
     <div class="health-summary"><div class="health-summary-copy"><p class="eyebrow">Overall status</p><h2><span class="health-orb" aria-hidden="true"></span>Operational with one warning</h2><p>Last complete check at ${escapeHtml(state.lastSync)}. The warning is isolated to the OFS relay negotiation.</p></div><div class="health-summary-grid">${state.health.map((check) => `<div><span>${statusDot(check.status)}${check.status === 'pass' ? 'Pass' : 'Review'}</span><strong>${check.label}</strong></div>`).join('')}</div></div>
-    <section class="panel table-panel" aria-labelledby="logs-title"><div class="panel-heading"><div><p class="eyebrow">Event stream</p><h2 id="logs-title">Recent logs</h2></div><label class="compact-select">Level <select id="log-filter" aria-label="Filter log level"><option value="all">All events</option><option value="info">Info</option><option value="warn">Warnings</option><option value="error">Errors</option></select></label></div><div id="log-table">${renderLogTable(state.logs)}</div></section>`;
+    <section class="panel table-panel" aria-labelledby="logs-title"><div class="panel-heading"><div><p class="eyebrow">Event stream</p><h2 id="logs-title">Recent logs</h2></div><label class="compact-select">Level <select id="log-filter" aria-label="Filter log level"><option value="all">All events</option><option value="info">Info</option><option value="warn">Warnings</option><option value="error">Errors</option></select></label></div><div id="log-table">${renderLogTable(state.logs)}</div></section>
+    ${renderServerDiagnostics(state)}`;
+}
+
+function renderServerDiagnostics(state: AppState): string {
+  if (!state.settings) return '';
+  const settings = state.settings;
+  const serialRows = state.serialDevices.length === 0
+    ? '<tr><td colspan="3">No stable serial devices discovered</td></tr>'
+    : state.serialDevices.map((device) => `<tr><td><strong>${escapeHtml(device.stableId)}</strong></td><td>${escapeHtml(device.devicePath)}</td><td>${escapeHtml(device.linkTarget ?? 'n/a')}</td></tr>`).join('');
+  return `<section class="content-grid two-thirds diagnostics-grid"><section class="panel" aria-labelledby="settings-title"><div class="panel-heading"><div><p class="eyebrow">Effective server state</p><h2 id="settings-title">Runtime settings</h2></div><span class="status-badge status-online">Protected</span></div><dl class="settings-list"><div><dt>Schema</dt><dd>v${settings.schemaVersion}</dd></div><div><dt>Engine cadence</dt><dd>${settings.tickHz} Hz</dd></div><div><dt>Browser clients</dt><dd>${settings.maxWebSocketClients}</dd></div><div><dt>Authentication</dt><dd>${settings.authenticationRequired ? 'Required' : 'Disabled'}</dd></div><div><dt>Scripts root</dt><dd>${escapeHtml(settings.scriptsRoot)}</dd></div><div><dt>Logs root</dt><dd>${escapeHtml(settings.logsRoot)}</dd></div></dl></section><section class="panel table-panel" aria-labelledby="serial-title"><div class="panel-heading"><div><p class="eyebrow">Device discovery</p><h2 id="serial-title">Serial devices</h2></div><span class="result-count">${state.serialDevices.length} found</span></div><div class="responsive-table"><table><thead><tr><th>Stable ID</th><th>Path</th><th>Link target</th></tr></thead><tbody>${serialRows}</tbody></table></div></section></section>`;
 }
 
 function renderLogTable(logs: AppState['logs']): string {

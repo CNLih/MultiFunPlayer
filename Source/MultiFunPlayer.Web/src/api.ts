@@ -33,6 +33,22 @@ export interface ApiSerialDevice {
   linkTarget: string | null;
 }
 
+export interface ApiRuntimeLogEntry {
+  timestampUtc: string;
+  level: string;
+  category: string;
+  eventId: number;
+  message: string;
+  traceId: string | null;
+  properties: Record<string, unknown>;
+}
+
+export interface ApiLogsResponse {
+  items: ApiRuntimeLogEntry[];
+  truncated: boolean;
+  capacity: number;
+}
+
 export type StateListener = (status: StatusResponse) => void;
 
 /** Same-origin client used by the SPA when it is served by the ASP.NET host. */
@@ -63,6 +79,10 @@ export class MfpApiClient {
 
   async listSerialDevices(): Promise<ApiSerialDevice[]> {
     return this.request<ApiSerialDevice[]>('/devices/serial');
+  }
+
+  async getLogs(limit = 30): Promise<ApiLogsResponse> {
+    return this.request<ApiLogsResponse>(`/logs?limit=${encodeURIComponent(limit)}`);
   }
 
   async listScripts(): Promise<ApiScriptDescriptor[]> {

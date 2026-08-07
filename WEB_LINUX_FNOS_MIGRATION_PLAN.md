@@ -556,6 +556,9 @@ Validated in the current Linux environment:
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 8/8;
   Server tests: 9/9.
 - Web `typecheck`, static contract check, and Vite production build pass.
+- The remote SPA now consumes bounded runtime logs, non-secret settings, and
+  stable serial discovery, and renders those diagnostics without taking
+  ownership of backend playback state.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
