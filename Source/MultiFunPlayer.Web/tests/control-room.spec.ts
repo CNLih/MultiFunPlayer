@@ -193,6 +193,12 @@ test.describe('control room demo journey', () => {
     expect(bearerSeen.length).toBeGreaterThan(0);
     expect(bearerSeen.every((value) => value === 'Bearer remote-browser-token')).toBeTruthy();
 
+    await page.getByRole('button', { name: 'Device settings' }).click();
+    await expect(page.getByRole('heading', { name: 'Server-managed storage' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Effective runtime' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Access policy' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Legacy configuration' })).toBeVisible();
+
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();
     await expect(page.getByText('25%')).toBeVisible();

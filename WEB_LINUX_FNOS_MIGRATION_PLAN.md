@@ -689,6 +689,12 @@ Validated in the current Linux environment:
   all ten executions using user-local Chromium runtime libraries. The base
   host still lacks `libnspr4.so`, so CI continues to install the browser image
   dependencies explicitly.
+- The Web `Device settings` route now surfaces the server-managed repository,
+  effective runtime, security, and legacy-migration panels alongside axis
+  policies. These panels are deliberately read-only because root paths,
+  cadence, and authentication bootstrap are process-bound settings; the
+  remote browser journey asserts all four panels without moving ownership of
+  restart-required configuration into the SPA.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
