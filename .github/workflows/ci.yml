@@ -76,7 +76,7 @@ jobs:
       with:
         node-version: 22
         cache: npm
-        cache-dependency-path: ./Docs
+        cache-dependency-path: ./Docs/package-lock.json
     - name: Install dependencies
       run: npm ci
       working-directory: ./Docs
@@ -212,7 +212,13 @@ jobs:
         npm run check:static
         npm run build
         npm audit --audit-level=high
+        npm audit --audit-level=high --json > ../../web-audit.json
       working-directory: ./Source/MultiFunPlayer.Web
+    - name: Upload Web dependency audit report
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-dependency-audit
+        path: ./web-audit.json
     - name: Run Web browser smoke and screenshots
       run: npm run test:e2e
       working-directory: ./Source/MultiFunPlayer.Web

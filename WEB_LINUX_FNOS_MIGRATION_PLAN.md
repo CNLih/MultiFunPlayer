@@ -770,8 +770,10 @@ Validated in the current Linux environment:
 - The Web lockfile now pins Playwright 1.55.1 and Vite 6.4.3 (including the
   patched esbuild line). A clean `npm ci --ignore-scripts`, Web audit, Vite
   build, and the ten desktop/mobile browser executions all pass with zero npm
-  audit findings; the host still needs the documented Chromium shared-library
-  path or CI's installed browser dependencies.
+  audit findings. CI now uploads the full Web audit JSON and uses the exact
+  Web/Docs lockfile paths for npm cache keys; the host still needs the
+  documented Chromium shared-library path or CI's installed browser
+  dependencies.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
   falling back to the integrity-pinned npm package manifests and unambiguous
