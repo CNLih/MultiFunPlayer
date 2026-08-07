@@ -47,6 +47,8 @@ jobs:
             - 'Dockerfile'
             - '.dockerignore'
             - 'deploy/**'
+            - 'tools/generate-fpk-sbom.py'
+            - 'tools/generate-license-report.py'
             - 'SECURITY.md'
             - 'deploy/validate-packaging.py'
             - 'deploy/validate-packaging.sh'
