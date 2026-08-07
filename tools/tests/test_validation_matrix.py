@@ -19,7 +19,7 @@ class ValidationMatrixTests(unittest.TestCase):
     def test_build_checks_has_local_and_external_categories(self):
         checks = MODULE.build_checks(ROOT, include_browser=False)
         categories = {check.category for check in checks}
-        self.assertTrue({"unit", "integration", "contract", "browser", "interruption", "soak"}.issubset(categories))
+        self.assertTrue({"unit", "integration", "contract", "security", "browser", "interruption", "soak"}.issubset(categories))
         self.assertTrue({"container", "target-device"}.issubset(categories))
         playwright = next(check for check in checks if check.check_id == "browser-playwright")
         self.assertIsNone(playwright.command)

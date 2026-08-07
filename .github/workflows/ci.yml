@@ -94,6 +94,7 @@ jobs:
       with:
         path: ./Docs/build
     - name: Upload documentation audit report
+      if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: docs-dependency-audit
@@ -215,6 +216,7 @@ jobs:
         npm audit --audit-level=high --json > ../../web-audit.json
       working-directory: ./Source/MultiFunPlayer.Web
     - name: Upload Web dependency audit report
+      if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: web-dependency-audit

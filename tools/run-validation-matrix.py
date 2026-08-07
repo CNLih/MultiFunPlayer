@@ -122,6 +122,25 @@ def build_checks(root: Path, *, include_browser: bool) -> list[Check]:
             root,
         ),
         Check(
+            "security-dotnet-audit",
+            "security",
+            _command(dotnet, "list", "MultiFunPlayer.sln", "package", "--vulnerable",
+                     "--include-transitive", "--no-restore"),
+            root,
+        ),
+        Check(
+            "security-web-audit",
+            "security",
+            _command(npm, "audit", "--audit-level=high", "--prefix", "Source/MultiFunPlayer.Web"),
+            root,
+        ),
+        Check(
+            "security-docs-audit",
+            "security",
+            _command(npm, "audit", "--audit-level=high", "--prefix", "Docs"),
+            root,
+        ),
+        Check(
             "interruption-browser-disconnect",
             "interruption",
             _command(dotnet, "test", "Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj",
