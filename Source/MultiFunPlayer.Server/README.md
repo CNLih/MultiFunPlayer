@@ -90,6 +90,12 @@ do not terminate the host. A The Handy endpoint may point to a local HTTP
 simulator for integration testing, but production devices should use the
 official HTTPS API endpoint.
 
+`GET /api/v1/output-targets` also returns bounded diagnostics for each target:
+`sentFrames`, `droppedFrames`, `failedFrames`, `reconnects`, and
+`lastSentAtUtc`. A sent frame means the sink accepted it; a transport may
+complete the physical write asynchronously. Counters accumulate for the
+current server process across disconnect/reconnect and reset on restart.
+
 Media sources are managed through `/api/v1/media-sources` and the matching
 `connect`, `disconnect`, update, and delete subroutes. The `internal` source
 is directly available to the headless timeline. OFS is a direct WebSocket

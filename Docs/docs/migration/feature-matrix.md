@@ -21,7 +21,7 @@ This matrix is the Phase 0 baseline for the headless Web/Linux/fnOS migration. `
 | Source | Baseline | MVP treatment | Required deployment condition |
 | --- | --- | --- | --- |
 | Internal timeline | Baseline | MVP | Scripts and media are read from configured server volumes. |
-| Emby, Jellyfin, and Plex | Baseline | MVP | Network endpoint must be reachable from the service. |
+| Emby, Jellyfin, and Plex | Baseline | MVP (planned) | Network endpoint must be reachable from the service; direct adapters are not wired yet. |
 | VLC and MPC HTTP | Baseline | MVP | Enable the player's remote HTTP interface and firewall access. |
 | OFS WebSocket | Baseline | MVP | Configure the remote WebSocket endpoint. |
 | DeoVR, HereSphere, and Whirligig | Baseline | MVP (conditional) | Remote control/server mode must be enabled; no local process detection. |
@@ -35,7 +35,7 @@ This matrix is the Phase 0 baseline for the headless Web/Linux/fnOS migration. `
 | Serial TCode | Baseline | MVP | Pass the serial device into Docker and use stable `/dev/serial/by-id` paths. |
 | TCP, UDP, and WebSocket TCode | Baseline | MVP | Endpoint must be reachable from the service. |
 | The Handy | Baseline | MVP | API endpoint and connection key are configured server-side. |
-| Buttplug.io | Baseline | MVP (conditional) | Buttplug server WebSocket must be reachable from the service. |
+| Buttplug.io | Baseline | MVP (conditional, planned) | Buttplug server WebSocket must be reachable from the service; the direct adapter is not wired yet. |
 | File output | Baseline | MVP | Writes are restricted to configured server volume roots. |
 | Windows Named Pipe | Baseline | Deferred | Use a Unix socket or a Windows companion in a later release. |
 

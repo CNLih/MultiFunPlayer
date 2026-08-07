@@ -23,9 +23,13 @@ Windows feature list above.
 
 See [`WEB_LINUX_FNOS_MIGRATION_PLAN.md`](WEB_LINUX_FNOS_MIGRATION_PLAN.md),
 [`Source/MultiFunPlayer.Server/README.md`](Source/MultiFunPlayer.Server/README.md),
-and [`deploy/docker/README.md`](deploy/docker/README.md) for the compatibility
-matrix, API contract, storage volumes, authentication, and target-environment
-validation gates.
+[`deploy/docker/README.md`](deploy/docker/README.md), and the
+[headless operations guide](Docs/docs/migration/web-operations.md) for the
+compatibility matrix, API contract, storage volumes, authentication, backup,
+troubleshooting, and target-environment validation gates. The
+[architecture guide](Docs/docs/migration/web-architecture.md) and
+[contributor guide](Docs/docs/migration/contributing-headless.md) describe the
+portable ownership boundaries and verification expectations.
 
 # Downloads
 

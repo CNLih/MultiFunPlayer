@@ -27,6 +27,39 @@ export interface ApiSettings {
   authenticationRequired: boolean;
 }
 
+export interface ApiConfigurationMigrationStatus {
+  state: string;
+  sourceFile: string | null;
+  targetFile: string;
+  warningCount: number;
+  error: string | null;
+}
+
+export interface ApiTransportCapability {
+  id: string;
+  integration: string;
+  implementationStatus: string;
+  platforms: string[];
+  notes: string;
+}
+
+export interface ApiAdapterCapability {
+  id: string;
+  kind: string;
+  integration: string;
+  implementationStatus: string;
+  transport: string | null;
+  requiredServices: string[];
+  notes: string;
+}
+
+export interface ApiAdapterCapabilities {
+  apiVersion: string;
+  schemaVersion: string;
+  transports: ApiTransportCapability[];
+  adapters: ApiAdapterCapability[];
+}
+
 export interface ApiSerialDevice {
   stableId: string;
   devicePath: string;
@@ -82,6 +115,11 @@ export interface ApiOutputTarget {
   autoConnect: boolean;
   connected: boolean;
   lastError: string | null;
+  sentFrames: number;
+  droppedFrames: number;
+  failedFrames: number;
+  reconnects: number;
+  lastSentAtUtc: string | null;
 }
 
 export interface ApiOutputTargetRequest {
@@ -121,6 +159,14 @@ export class MfpApiClient {
 
   async getSettings(): Promise<ApiSettings> {
     return this.request<ApiSettings>('/settings');
+  }
+
+  async getConfigurationMigration(): Promise<ApiConfigurationMigrationStatus> {
+    return this.request<ApiConfigurationMigrationStatus>('/configuration/migration');
+  }
+
+  async getAdapters(): Promise<ApiAdapterCapabilities> {
+    return this.request<ApiAdapterCapabilities>('/adapters');
   }
 
   async listSerialDevices(): Promise<ApiSerialDevice[]> {

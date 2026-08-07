@@ -443,9 +443,9 @@ Tasks:
 - [x] P5-02 Build the runtime dashboard with media state, connection state, output state, and health.
 - [x] P5-03 Build media source list, configuration forms, connection controls, and capability messages.
 - [x] P5-04 Build script browser/load controls, time/offset/sync controls, and axis value visualization.
-- [ ] P5-05 Build output target creation, configuration, connection, update-rate, and diagnostics screens.
+- [x] P5-05 Build output target creation, configuration, connection, update-rate, and diagnostics screens.
 - [ ] P5-06 Build device axis, range, inversion, interpolation, and limit settings.
-- [ ] P5-07 Build repository, general, security, log, and diagnostic settings.
+- [x] P5-07 Build repository, general, security, log, and diagnostic settings.
 - [x] P5-08 Add responsive layouts for desktop, tablet, and phone without changing backend state ownership.
 - [x] P5-09 Add accessible keyboard navigation, labels, focus states, validation, loading, empty, error, and reconnect states.
 - [x] P5-10 Add PWA manifest and explicit cache/update behavior.
@@ -518,8 +518,8 @@ Tasks:
 - [ ] P7-01 Run unit, integration, contract, browser, container, and target-device matrices.
 - [ ] P7-02 Run an 8-hour playback/output soak test and record jitter, reconnects, memory, and CPU.
 - [ ] P7-03 Validate behavior under browser disconnect, network interruption, player restart, device removal, and container restart.
-- [ ] P7-04 Add first-run setup, pairing/authentication, backup/restore, and troubleshooting documentation.
-- [ ] P7-05 Publish API/OpenAPI, WebSocket/SignalR contract, architecture, and contribution guides.
+- [x] P7-04 Add first-run setup, pairing/authentication, backup/restore, and troubleshooting documentation.
+- [x] P7-05 Publish API/OpenAPI, WebSocket/SignalR contract, architecture, and contribution guides.
 - [ ] P7-06 Add security policy, secret-redaction checks, dependency audit, and container vulnerability scan.
 - [ ] P7-07 Produce an SBOM and list third-party licenses for distributed assets.
 - [x] P7-08 Publish a beta compatibility matrix that distinguishes direct, conditional, agent-required, and unsupported integrations.
@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. The build still reports 58 existing
   nullable/analyzer warnings in copied legacy Core/WPF code; they are not
   hidden by this migration.
-- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 21/21;
+- Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 22/22;
   Server tests: 22/22.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
@@ -614,6 +614,14 @@ Validated in the current Linux environment:
   create/list, file-output create/connect, script upload, and fixed-size
   persisted log download. The log endpoint snapshots JSONL under its lock so
   ongoing request logging cannot change the response content length.
+- Headless operations, architecture, and contribution guides now document
+  pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
+  REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
+  rehearsal remains an external validation gate.
+- The output view now shows per-target sent/dropped/failed frame counts,
+  reconnects, and last-send time; the diagnostics view consumes migration and
+  adapter capability endpoints and exposes repository, general, security,
+  serial, and log state with a real refresh action. Axis editing remains open.
 
 Still open and intentionally not advertised as complete:
 

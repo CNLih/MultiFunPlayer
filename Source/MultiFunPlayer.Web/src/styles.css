@@ -234,6 +234,8 @@ td strong { color: var(--text); font-size: 12px; }
 .settings-list div { padding: 11px 0; border-top: 1px solid var(--line-soft); }
 .settings-list dt { color: var(--subtle); font-size: 10px; }
 .settings-list dd { margin: 4px 0 0; overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.settings-note { margin: 0; padding: 0 24px 18px; color: var(--muted); font-size: 11px; }
+.diagnostics-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .diagnostics-grid { margin-top: 18px; }
 
 .toast-region { position: fixed; right: 22px; bottom: 22px; z-index: 5; }
@@ -267,7 +269,7 @@ td strong { color: var(--text); font-size: 12px; }
   .now-playing-summary { width: auto; min-height: 145px; border-top: 1px solid var(--line-soft); border-left: 0; }
   .transport { margin-top: 29px; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
-  .content-grid.two-thirds, .script-layout, .health-summary { grid-template-columns: 1fr; }
+  .content-grid.two-thirds, .diagnostics-settings-grid, .script-layout, .health-summary { grid-template-columns: 1fr; }
   .source-grid { grid-template-columns: 1fr; }
   .resource-form-grid { grid-template-columns: 1fr; }
   .resource-form-options .button { width: 100%; margin-left: 0; }

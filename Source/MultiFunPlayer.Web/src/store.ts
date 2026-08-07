@@ -1,4 +1,4 @@
-import type { ApiCapabilities, ApiLogsResponse, ApiMediaSource, ApiOutputTarget, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
+import type { ApiAdapterCapabilities, ApiCapabilities, ApiConfigurationMigrationStatus, ApiLogsResponse, ApiMediaSource, ApiOutputTarget, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
@@ -36,6 +36,11 @@ export interface OutputTarget {
   status: Status;
   rate: number;
   lastPacket: string;
+  sentFrames: number;
+  droppedFrames: number;
+  failedFrames: number;
+  reconnects: number;
+  lastSentAt: string;
   signal: number;
   error?: string;
   enabled?: boolean;
@@ -93,6 +98,8 @@ export interface AppState {
   health: HealthCheck[];
   lastSync: string;
   settings?: ApiSettings;
+  migration?: ApiConfigurationMigrationStatus;
+  adapters?: ApiAdapterCapabilities;
   serialDevices: ApiSerialDevice[];
 }
 
@@ -137,9 +144,9 @@ const initialState: AppState = {
     { id: 'script-slate', name: 'Slate / Device smoke test', format: 'JSON', duration: '01:00', updated: 'Aug 02', size: '84 KB', axes: 8 },
   ],
   outputs: [
-    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', signal: 94 },
-    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', signal: 58 },
-    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', signal: 0 },
+    { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', sentFrames: 12840, droppedFrames: 312, failedFrames: 0, reconnects: 1, lastSentAt: '09:47:22', signal: 94 },
+    { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
+    { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', sentFrames: 0, droppedFrames: 0, failedFrames: 0, reconnects: 0, lastSentAt: 'Never', signal: 0 },
   ],
   logs: [
     { id: 1, time: '09:47:22', level: 'info', message: 'Playback resumed at 60 Hz', source: 'runtime' },
@@ -155,6 +162,8 @@ const initialState: AppState = {
     { label: 'OFS relay', detail: 'Negotiating capabilities', status: 'warn' },
   ],
   lastSync: '09:47:22',
+  migration: { state: 'disabled', sourceFile: null, targetFile: 'migrated-configuration.json', warningCount: 0, error: null },
+  adapters: { apiVersion: 'v1', schemaVersion: '1.0', transports: [], adapters: [] },
   serialDevices: [],
 };
 
@@ -242,6 +251,10 @@ export function createMockStore() {
       notify();
       return undefined;
     },
+    async refreshDiagnostics(): Promise<void> {
+      appendLog('info', 'Diagnostics refreshed', 'diagnostics');
+      notify();
+    },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
       if (state.media.some((source) => source.id === input.id)) throw new Error('A media source with that id already exists.');
       const source: MediaSource = {
@@ -309,6 +322,11 @@ export function createMockStore() {
         status: input.enabled && input.autoConnect ? 'online' : 'offline',
         rate: input.rate,
         lastPacket: input.enabled && input.autoConnect ? 'Just now' : 'Never',
+        sentFrames: 0,
+        droppedFrames: 0,
+        failedFrames: 0,
+        reconnects: 0,
+        lastSentAt: 'Never',
         signal: input.enabled && input.autoConnect ? 86 : 0,
         enabled: input.enabled,
         autoConnect: input.autoConnect,
@@ -326,11 +344,13 @@ export function createMockStore() {
       output.protocol = input.protocol.toUpperCase();
       output.endpoint = input.endpoint;
       output.sourceAxis = input.sourceAxis;
+      output.rate = input.rate;
       output.enabled = input.enabled;
       output.autoConnect = input.autoConnect;
       output.status = input.enabled && input.autoConnect ? 'online' : 'offline';
       output.signal = output.status === 'online' ? 86 : 0;
       output.lastPacket = output.status === 'online' ? 'Just now' : 'Never';
+      output.lastSentAt = output.lastPacket;
       appendLog('info', `Updated ${output.name}`, 'outputs');
       notify();
       return output;
@@ -346,6 +366,7 @@ export function createMockStore() {
       output.status = 'online';
       output.signal = 86;
       output.lastPacket = 'Just now';
+      output.lastSentAt = 'Just now';
       appendLog('info', `${output.name} connected`, id);
       notify();
       return output;
@@ -356,6 +377,7 @@ export function createMockStore() {
       output.status = 'offline';
       output.signal = 0;
       output.lastPacket = 'Never';
+      output.lastSentAt = output.lastPacket;
       appendLog('warn', `${output.name} disconnected`, id);
       notify();
       return output;
@@ -374,6 +396,7 @@ export function createMockStore() {
       item.status = item.status === 'online' ? 'offline' : 'online';
       item.signal = item.status === 'online' ? 86 : 0;
       item.lastPacket = item.status === 'online' ? 'Just now' : 'Never';
+      item.lastSentAt = item.lastPacket;
       appendLog(item.status === 'online' ? 'info' : 'warn', `${item.name} ${item.status === 'online' ? 'connected' : 'disconnected'}`, id);
       notify();
     },
@@ -433,7 +456,12 @@ export function createRemoteStore(client: MfpApiClient) {
     sourceAxis: target.sourceAxis || 'L0',
     rate: target.updateRateHz || 20,
     status: statusFromConnection(target.connected, target.lastError),
-    lastPacket: target.connected ? 'Just now' : target.lastError ?? 'Never',
+    lastPacket: target.lastSentAtUtc ? new Date(target.lastSentAtUtc).toLocaleTimeString() : target.lastError ?? 'Never',
+    sentFrames: target.sentFrames ?? 0,
+    droppedFrames: target.droppedFrames ?? 0,
+    failedFrames: target.failedFrames ?? 0,
+    reconnects: target.reconnects ?? 0,
+    lastSentAt: target.lastSentAtUtc ? new Date(target.lastSentAtUtc).toLocaleTimeString() : 'Never',
     signal: target.connected ? 86 : 0,
     error: target.lastError ?? undefined,
     enabled: target.enabled,
@@ -473,10 +501,13 @@ export function createRemoteStore(client: MfpApiClient) {
     state.outputs = outputs.map(outputFromResponse);
   };
   const refresh = async () => {
-    const [status, scripts, settings, serialDevices, logs] = await Promise.all([
-      client.getStatus(), client.listScripts(), client.getSettings(), client.listSerialDevices(), client.getLogs(),
+    const [status, scripts, settings, migration, adapters, serialDevices, logs] = await Promise.all([
+      client.getStatus(), client.listScripts(), client.getSettings(), client.getConfigurationMigration(),
+      client.getAdapters(), client.listSerialDevices(), client.getLogs(),
     ]);
     state.settings = settings;
+    state.migration = migration;
+    state.adapters = adapters;
     state.serialDevices = serialDevices;
     state.logs = logsFromResponse(logs);
     state.scripts = scripts.map(scriptFromDescriptor);
@@ -535,6 +566,19 @@ export function createRemoteStore(client: MfpApiClient) {
     },
     async downloadLogs(): Promise<Blob> {
       return client.downloadLogs();
+    },
+    async refreshDiagnostics(): Promise<void> {
+      const [settings, migration, adapters, serialDevices, logs] = await Promise.all([
+        client.getSettings(), client.getConfigurationMigration(), client.getAdapters(),
+        client.listSerialDevices(), client.getLogs(),
+      ]);
+      state.settings = settings;
+      state.migration = migration;
+      state.adapters = adapters;
+      state.serialDevices = serialDevices;
+      state.logs = logsFromResponse(logs);
+      appendLog('info', 'Diagnostics refreshed', 'diagnostics');
+      notify();
     },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
       await client.createMediaSource(input);
