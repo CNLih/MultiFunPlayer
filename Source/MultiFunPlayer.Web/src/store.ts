@@ -192,6 +192,13 @@ export function createMockStore() {
       appendLog('info', `Loaded ${script.name}`, 'runtime');
       notify();
     },
+    async seek(positionSeconds: number): Promise<void> {
+      if (!Number.isFinite(positionSeconds) || positionSeconds < 0)
+        throw new Error('Position must be a non-negative number.');
+      state.elapsed = positionSeconds;
+      appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
+      notify();
+    },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
       const existingIndex = state.scripts.findIndex((script) => script.id === id);
       if (existingIndex >= 0 && !overwrite) throw new Error('A script with that name already exists.');
@@ -466,6 +473,14 @@ export function createRemoteStore(client: MfpApiClient) {
     togglePlayback() { command(() => client.command(state.playing ? 'pause' : 'play'), state.playing ? 'Playback paused' : 'Playback resumed'); },
     toggleEngine() { appendLog('warn', 'Engine lifecycle is owned by the server process'); notify(); },
     loadScript(script: ScriptResource) { command(() => client.loadScript(script.id), `Loaded ${script.name}`); },
+    async seek(positionSeconds: number): Promise<void> {
+      if (!Number.isFinite(positionSeconds) || positionSeconds < 0)
+        throw new Error('Position must be a non-negative number.');
+      const status = await client.seek(positionSeconds);
+      applyStatus(status);
+      appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
+      notify();
+    },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
       const descriptor = await client.uploadScript(id, content, overwrite);
       await refreshScripts();
