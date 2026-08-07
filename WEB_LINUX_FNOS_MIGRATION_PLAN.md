@@ -663,12 +663,13 @@ Validated in the current Linux environment:
   pairing, four-volume backup/restore, upgrade rollback, troubleshooting,
   REST/WebSocket ownership, and portable boundary checks. Docker/fnOS upgrade
   rehearsal remains an external validation gate.
-- The packaging contract validator reports 40/40 checks passed for the
+- The packaging contract validator reports 98/98 checks passed for the
   multi-stage Dockerfile, non-root/read-only compose defaults, four persistent
-  roots, health check, secret interpolation, and the structural fnOS manifest.
-  The same validator runs in the packaging CI job. Docker Buildx, `fnpack`,
-  official fnOS schema validation, image scanning, and target-NAS execution are
-  intentionally still external gates.
+  roots, health check, secret interpolation, the structural fnOS manifest, and
+  the canonical `fnpack` project. The same validator runs in the packaging CI
+  job, which now builds and inspects x86/ARM FPK archives with pinned official
+  `fnpack` 1.2.3. Docker Buildx, image scanning, official target-firmware
+  validation, and target-NAS execution remain external gates.
 - CI now contains a separate amd64/arm64 Buildx matrix that builds each image,
   starts it with temporary persistent roots, checks anonymous liveness,
   authenticated adapter access, and SPA fallback, then removes the container.
@@ -690,13 +691,12 @@ Validated in the current Linux environment:
   candidate.
 - `tools/generate-sbom.py` now produces a deterministic CycloneDX 1.5
   dependency SBOM from restored NuGet assets and committed npm lockfiles,
-  falling back to the integrity-pinned npm package manifests for legacy
-  license arrays. The current workspace contains 1,396 deduplicated
-  components and CI uploads the artifact together with a deterministic
-  `THIRD_PARTY_LICENSES.md` inventory. One legacy component, `require-like`,
-  currently has no license declaration and remains listed for release-owner
-  review. The exact runtime image/FPK SBOM and license review remain open until
-  those artifacts can be built in their target environments.
+  falling back to the integrity-pinned npm package manifests and unambiguous
+  license files for legacy metadata. The current workspace contains 1,396
+  deduplicated components and the generated inventory reports zero components
+  without a license declaration. The exact runtime image/FPK SBOM and license
+  review remain open until those artifacts can be built in their target
+  environments.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
   desktop and mobile Chromium journeys, viewport overflow assertions, and CI
   screenshot artifacts. The four tests pass locally against the production

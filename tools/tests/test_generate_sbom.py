@@ -73,6 +73,32 @@ class GenerateSbomTests(unittest.TestCase):
             generate_sbom.collect_npm(root, components)
             self.assertNotIn("licenses", components["pkg:npm/stale-package@1.2.3"])
 
+    def test_collect_npm_reads_unambiguous_license_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "Docs"
+            package = docs / "node_modules" / "legacy-package"
+            package.mkdir(parents=True)
+            (docs / "package-lock.json").write_text(json.dumps({
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {},
+                    "node_modules/legacy-package": {"version": "1.2.3"},
+                },
+            }), encoding="utf-8")
+            (package / "package.json").write_text(
+                json.dumps({"name": "legacy-package", "version": "1.2.3"}),
+                encoding="utf-8")
+            (package / "License").write_text(
+                "Permission is hereby granted, free of charge, to any person obtaining a copy.\n"
+                "THE SOFTWARE IS PROVIDED AS IS.\n",
+                encoding="utf-8")
+
+            components = {}
+            generate_sbom.collect_npm(root, components)
+            component = components["pkg:npm/legacy-package@1.2.3"]
+            self.assertEqual({"id": "MIT"}, component["licenses"][0]["license"])
+
 
 if __name__ == "__main__":
     unittest.main()

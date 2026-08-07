@@ -2,8 +2,9 @@
 """Generate a dependency-only CycloneDX SBOM for the repository.
 
 The generator consumes restored NuGet assets and committed npm lockfiles, with
-package metadata from the lockfile-pinned ``node_modules`` trees as a fallback
-for old npm packages whose license declaration is omitted from the lockfile.
+package metadata and unambiguous license files from the lockfile-pinned
+``node_modules`` trees as a fallback for old npm packages whose license
+declaration is omitted from the lockfile.
 It does not inspect a container image; image SBOM and vulnerability scanning
 remain release-environment gates.
 """
@@ -91,6 +92,30 @@ def npm_license_value(value: object) -> str | None:
     return None
 
 
+def npm_license_file(package_root: Path) -> str | None:
+    """Recognize a small set of unambiguous license-file headers.
+
+    Some old npm packages omit both ``license`` and ``licenses`` metadata but
+    ship an authoritative file in the package tarball. Only exact, well-known
+    text markers are accepted; package names and repository guesses are never
+    used as license evidence.
+    """
+    for candidate in sorted(package_root.iterdir() if package_root.is_dir() else ()):
+        if not candidate.is_file() or candidate.name.lower() not in {
+            "license", "license.md", "license.txt", "copying", "copying.md", "copying.txt",
+        }:
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="ignore").lower()
+        except OSError:
+            continue
+        if "permission is hereby granted, free of charge" in text and "the software is provided" in text:
+            return "MIT"
+        if "apache license" in text and "version 2.0" in text:
+            return "Apache-2.0"
+    return None
+
+
 def npm_license(lockfile: Path, package_path: str, metadata: dict) -> str | None:
     """Read a lockfile license, then the installed package manifest.
 
@@ -116,7 +141,7 @@ def npm_license(lockfile: Path, package_path: str, metadata: dict) -> str | None
         result = npm_license_value(package_metadata.get(key))
         if result:
             return result
-    return None
+    return npm_license_file(package_json.parent)
 
 
 def collect_nuget(root: Path, components: dict[str, dict]) -> int:
