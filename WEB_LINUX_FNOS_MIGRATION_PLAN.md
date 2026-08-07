@@ -550,7 +550,9 @@ by the Server, switch to the authenticated REST and bounded WebSocket store.
 Validated in the current Linux environment:
 
 - Locked .NET restore and Release solution build: 0 errors; WPF/XAML compiles
-  with `EnableWindowsTargeting=true`.
+  with `EnableWindowsTargeting=true`. The build still reports 58 existing
+  nullable/analyzer warnings in copied legacy Core/WPF code; they are not
+  hidden by this migration.
 - Core tests: 8/8; Application tests: 4/4; Infrastructure tests: 4/4;
   Server tests: 6/6.
 - Web `typecheck`, static contract check, and Vite production build pass.
