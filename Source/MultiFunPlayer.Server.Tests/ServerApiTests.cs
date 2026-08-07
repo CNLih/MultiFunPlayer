@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.WebSockets;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
@@ -317,6 +318,40 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Equal("persistent-payload", restored);
             Assert.Equal(keyFiles.Select(Path.GetFileName).OrderBy(name => name),
                 Directory.GetFiles(keysRoot, "*.xml").Select(Path.GetFileName).OrderBy(name => name));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", previousKeys);
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+        }
+    }
+
+    [Fact]
+    public void Removing_explicit_key_root_rejects_old_protected_data()
+    {
+        var previousKeys = Environment.GetEnvironmentVariable("MFP_KEYS_ROOT");
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        using var temp = new TemporaryDirectory();
+        var keysRoot = Path.Combine(temp.Path, "keys");
+        try
+        {
+            Environment.SetEnvironmentVariable("MFP_KEYS_ROOT", keysRoot);
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", Path.Combine(temp.Path, "config"));
+
+            string protectedValue;
+            using (var first = new WebApplicationFactory<MultiFunPlayer.Server.Program>())
+            {
+                var provider = first.Services.GetRequiredService<IDataProtectionProvider>();
+                protectedValue = provider.CreateProtector("migration-test").Protect("removed-payload");
+            }
+
+            foreach (var keyFile in Directory.GetFiles(keysRoot, "*.xml"))
+                File.Delete(keyFile);
+
+            using var restarted = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            var restartedProvider = restarted.Services.GetRequiredService<IDataProtectionProvider>();
+            Assert.Throws<CryptographicException>(() =>
+                restartedProvider.CreateProtector("migration-test").Unprotect(protectedValue));
         }
         finally
         {

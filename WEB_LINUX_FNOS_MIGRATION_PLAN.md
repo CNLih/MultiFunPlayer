@@ -553,7 +553,7 @@ Validated in the current Linux environment:
   with `EnableWindowsTargeting=true`. Legacy Core/WPF analyzer warnings remain
   outside the portable migration boundary and are not hidden by this work.
 - Core tests: 8/8; Application tests: 10/10; Infrastructure tests: 33/33;
-  Server tests: 29/29.
+  Server tests: 30/30.
 - Web `typecheck`, static contract check, and Vite production build pass.
 - Docusaurus migration documentation builds successfully with the upgraded
   3.10.2 toolchain and no build warnings.
@@ -595,9 +595,10 @@ Validated in the current Linux environment:
   external-player integrations. Internal sources connect directly; planned or
   blocked entries persist safely, reject embedded credentials, and surface an
   unavailable-adapter error instead of claiming a live connection. Server tests:
-  29/29, including The Handy registry integration, device-axis persistence,
+  30/30, including The Handy registry integration, device-axis persistence,
   network media registry behavior, redacted JSONL log persistence/download,
-  and explicit key-root reuse across independent host instances.
+  explicit key-root reuse across independent host instances, and rejection of
+  old protected data after the explicit key root is removed.
 - P4-01 now includes portable Infrastructure HTTP adapters for Emby,
   Jellyfin, and Plex wired into the media-source registry. Emby/Jellyfin
   validate `/System/Ping` and parse `/Sessions` `PlayState`/
@@ -702,7 +703,8 @@ Validated in the current Linux environment:
 - Configuration migration acceptance now rejects non-object JSON roots,
   preserves the source byte-for-byte, rejects missing/oversized/reparse-point
   sources and targets, honors cancellation, and proves the explicit Data
-  Protection key root can decrypt data after a separate host instance starts.
+  Protection key root can decrypt data after a separate host instance starts;
+  removing that key root is also proven to reject old protected data.
 
 Still open and intentionally not advertised as complete:
 
