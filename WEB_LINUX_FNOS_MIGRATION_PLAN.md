@@ -676,10 +676,10 @@ Validated in the current Linux environment:
   in both demo and remote modes. Media configuration now exposes the
   non-secret remote `deviceId` and environment-variable-only `secretRef`;
   API responses never return the secret reference, and ordinary updates retain
-  it when omitted. Eight desktop/mobile Playwright executions now exercise
-  media, output, axis, diagnostics CRUD, and authenticated remote
-  REST/WebSocket hydration paths; the focused harness is source-validated here
-  and requires the CI browser image for execution.
+  it when omitted. Ten desktop/mobile Playwright executions now exercise
+  media, output, axis, diagnostics CRUD, protected-server authentication, and
+  authenticated remote REST/WebSocket hydration paths; the focused harness is
+  source-validated here and requires the CI browser image for execution.
 - Local server smoke: anonymous liveness, protected API, OpenAPI, inline
   multi-axis Funscript load, play, seek, SPA fallback, authenticated
   WebSocket snapshot, settings, serial discovery, and redacted bounded logs
@@ -756,10 +756,10 @@ Validated in the current Linux environment:
   scanning and release-owner review remain external.
 - The Web project now includes a pinned Playwright 1.53.2 configuration with
   desktop and mobile Chromium journeys, viewport overflow assertions, and CI
-  screenshot artifacts. The four tests pass locally against the production
-  bundle after loading the Playwright headless shell with user-space Ubuntu
-  libraries; CI installs the browser and host dependencies before running
-  them.
+  screenshot artifacts. The five tests are enumerated for both projects;
+  execution on this host is dependency-limited by the missing Chromium
+  `libnspr4.so`, while CI installs the browser and host dependencies before
+  running them.
 - `tools/run-portable-soak.py` now provides a repeatable Linux headless soak
   entry point with temporary four-volume roots, output diagnostics, revision
   interval statistics, RSS/CPU sampling, graceful-stop reporting, explicit
