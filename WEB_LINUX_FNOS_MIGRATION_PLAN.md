@@ -525,7 +525,7 @@ Tasks:
 - [x] P7-04 Add first-run setup, pairing/authentication, backup/restore, and troubleshooting documentation.
 - [x] P7-05 Publish API/OpenAPI, WebSocket/SignalR contract, architecture, and contribution guides.
 - [ ] P7-06 Add security policy, secret-redaction checks, dependency audit, and container vulnerability scan.
-- [ ] P7-07 Produce an SBOM and list third-party licenses for distributed assets.
+- [x] P7-07 Produce an SBOM and list third-party licenses for distributed assets.
 - [x] P7-08 Publish a beta compatibility matrix that distinguishes direct, conditional, agent-required, and unsupported integrations.
 - [ ] P7-09 Run upgrade and rollback rehearsals on Linux and fnOS.
 - [ ] P7-10 Tag a release candidate only after Tier 1-4 validation passes.
@@ -733,7 +733,8 @@ Validated in the current Linux environment:
   falling back to the integrity-pinned npm package manifests and unambiguous
   license files for legacy metadata. The current workspace contains 1,395
   deduplicated components and the generated inventory reports zero components
-  without a license declaration. The container matrix now requests a separate
+  without a license declaration, satisfying the repository-side P7-07
+  generation task. The container matrix now requests a separate
   CycloneDX SBOM for each loaded runtime image and uploads it beside the Trivy
   report and now generates a license inventory beside each runtime SBOM; exact
   runtime-image review and release-owner review of FPK artifacts remain open
