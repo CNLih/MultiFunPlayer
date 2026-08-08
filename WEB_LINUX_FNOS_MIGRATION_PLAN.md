@@ -931,13 +931,15 @@ Validated in the current Linux environment:
   validates the harness path only, not a different-version upgrade. A
   versioned local rehearsal using the `e3f2f8a3` Server publish as baseline and
   rollback, with the current branch as upgrade
-  (`/tmp/mfp-versioned-upgrade-c4e91a59.json`), also passed all phases and
+  (`/tmp/mfp-versioned-upgrade-current.json`), also passed all phases and
   restored scripts, axis policy, logs, and all four persistent roots after
-  upgrade and rollback. This remains process-level
-  evidence only; Docker volume and fnOS package upgrade/rollback evidence
-  remains external. The report binds each baseline, upgrade, and rollback DLL
-  to its SHA-256 and size, and records the repository revision; the forced-stop
-  helper has a unit test.
+  upgrade and rollback. That report binds the baseline/rollback DLL to
+  `8e28b5caae793b0fe3baea99141c5d85791a6b9621f169f074e4aa28178ee43a8`
+  (237568 bytes), the upgrade DLL to
+  `a391331e1bfc232a3ca412a06d26e0224e91b5354c7d6a1fe6e01c2e15daf8a8`
+  (254464 bytes), and the run to revision `c3cc8c32`. This remains
+  process-level evidence only; Docker volume and fnOS package upgrade/rollback
+  evidence remains external. The forced-stop helper has a unit test.
 - The output view and `GET /api/v1/output-targets` now show per-target
   sent/coalesced/failed frame counts (`coalescedFrames` is canonical and
   `droppedFrames` remains a historical response alias),
