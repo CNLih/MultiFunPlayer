@@ -1012,8 +1012,9 @@ Validated in the current Linux environment:
   audits, all ten Playwright desktop/mobile executions, and a 10-second Linux
   soak smoke with explicit p95 and coalescing budgets. The report now records
   its top-level `repositoryRevision`, `endedAtUtc`, and `durationSeconds`; the
-  current run is bound to `4c9bbef6b97f3d6cd6c3e4e2d2644e42d123cf94` and took
-  56.313 seconds, while four target-environment gates remain pending. The
+  current rerun is recorded in `/tmp/mfp-validation-current-8.json`, bound to
+  `024817e6ec204dd635a732883758ca909c828c6b`, and took 67.364 seconds, while
+  four target-environment gates remain pending. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
