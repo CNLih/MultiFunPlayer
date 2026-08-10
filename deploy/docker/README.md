@@ -1,11 +1,21 @@
 # Linux container
 
+For the complete current source-run, test, deployment, and acceptance workflow,
+see [`Docs/docs/migration/current-usage-testing-deployment.md`](../../Docs/docs/migration/current-usage-testing-deployment.md).
+
 Build and start the combined server/UI image from the repository root:
 
 ```sh
 export MFP_AUTH_TOKEN='replace-with-a-long-random-token'
-docker compose -f deploy/docker/compose.yaml up --build -d
+./build.sh run docker
 ```
+
+Use `./build.sh package docker local` to build without starting,
+`./build.sh package docker amd64|arm64|all` for Buildx architecture images,
+`./build.sh status docker` and `./build.sh logs docker` for diagnostics, and
+`./build.sh stop docker` to stop while preserving named volumes. Starting an
+unauthenticated published port is rejected unless the caller explicitly sets
+`MFP_ALLOW_UNAUTHENTICATED=1` for an isolated local environment.
 
 Production deployments must set either `MFP_AUTH_TOKEN` or the documented
 `MFP_PAIRING_TOKEN` before exposing the port. Leaving both empty is intended

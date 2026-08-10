@@ -89,6 +89,7 @@ export interface ApiDeviceAxis {
   limitEnabled: boolean;
   limitMinimum: number;
   limitMaximum: number;
+  maximumTravel?: number | null;
 }
 
 export interface ApiDeviceAxisRequest {
@@ -100,6 +101,7 @@ export interface ApiDeviceAxisRequest {
   limitEnabled: boolean;
   limitMinimum: number;
   limitMaximum: number;
+  maximumTravel: number | null;
 }
 
 export interface ApiRuntimeLogEntry {
@@ -264,6 +266,13 @@ export class MfpApiClient {
 
   async listDeviceAxes(): Promise<ApiDeviceAxis[]> {
     return this.request<ApiDeviceAxis[]>('/device-axes');
+  }
+
+  async updateDeviceAxes(requests: ApiDeviceAxisRequest[]): Promise<ApiDeviceAxis[]> {
+    return this.request<ApiDeviceAxis[]>('/device-axes', {
+      method: 'PUT',
+      body: JSON.stringify({ axes: requests }),
+    });
   }
 
   async updateDeviceAxis(axis: string, request: ApiDeviceAxisRequest): Promise<ApiDeviceAxis> {

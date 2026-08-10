@@ -99,6 +99,8 @@ public sealed class EngineTests
             new AxisConfiguration("L0", Minimum: 0.8, Maximum: 0.2).Normalize());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new AxisConfiguration("L0", LimitMinimum: 0.9, LimitMaximum: 0.9).Normalize());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new AxisConfiguration("L0", MaximumTravel: 0).Normalize());
     }
 
     private static ScriptResource Resource(string name, IEnumerable<Keyframe> keyframes)

@@ -15,6 +15,7 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     private const double SamplingToleranceRatio = 0.10;
     private readonly IOutputSink _inner;
     private readonly IOutputSinkFaults? _innerFaults;
+    private readonly bool _samplingEnabled;
     private readonly TimeSpan _minimumInterval;
     private readonly TimeSpan _samplingTolerance;
     private TimeSpan? _lastPosition;
@@ -25,15 +26,18 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     private string? _lastError;
     private int _disposed;
 
-    public RateLimitedOutputSink(IOutputSink inner, int updateRateHz)
+    public RateLimitedOutputSink(IOutputSink inner, int updateRateHz, int? sourceRateHz = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         if (updateRateHz is < 1 or > 20)
             throw new ArgumentOutOfRangeException(nameof(updateRateHz), "Output rate must be between 1 and 20 Hz.");
+        if (sourceRateHz is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sourceRateHz), "Source rate must be positive.");
         _innerFaults = inner as IOutputSinkFaults;
         if (_innerFaults is not null)
             _innerFaults.Faulted += HandleInnerFault;
         UpdateRateHz = updateRateHz;
+        _samplingEnabled = sourceRateHz is null || updateRateHz < sourceRateHz;
         _minimumInterval = TimeSpan.FromSeconds(1d / updateRateHz);
         _samplingTolerance = TimeSpan.FromTicks(Math.Max(1,
             (long)(_minimumInterval.Ticks * SamplingToleranceRatio)));
@@ -61,7 +65,8 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         ArgumentNullException.ThrowIfNull(frame);
-        if (_lastPosition is { } previous
+        if (_samplingEnabled
+            && _lastPosition is { } previous
             && frame.Position >= previous
             && frame.Position - previous < _minimumInterval - _samplingTolerance)
         {

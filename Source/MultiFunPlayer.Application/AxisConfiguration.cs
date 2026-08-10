@@ -14,7 +14,8 @@ public sealed record AxisConfiguration(
     InterpolationType Interpolation = InterpolationType.Linear,
     bool LimitEnabled = false,
     double LimitMinimum = 0,
-    double LimitMaximum = 1)
+    double LimitMaximum = 1,
+    double? MaximumTravel = null)
 {
     public static AxisConfiguration Default(string axis)
         => new(axis);
@@ -34,6 +35,11 @@ public sealed record AxisConfiguration(
             || LimitMinimum < 0 || LimitMaximum > 1 || LimitMinimum >= LimitMaximum)
             throw new ArgumentOutOfRangeException(nameof(LimitMinimum),
                 "Axis limit must satisfy 0 <= limitMinimum < limitMaximum <= 1.");
+        if (MaximumTravel is not null
+            && (!double.IsFinite(MaximumTravel.Value) || MaximumTravel.Value <= 0
+                || MaximumTravel.Value > 1_000_000))
+            throw new ArgumentOutOfRangeException(nameof(MaximumTravel),
+                "Maximum travel must be greater than 0 and no more than 1000000.");
         return this;
     }
 

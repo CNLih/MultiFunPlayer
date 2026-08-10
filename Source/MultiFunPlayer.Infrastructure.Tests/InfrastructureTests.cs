@@ -177,6 +177,39 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public void RateLimitedSink_does_not_resample_when_target_rate_covers_source_rate()
+    {
+        var inner = new RecordingSink();
+        using var sink = new RateLimitedOutputSink(inner, updateRateHz: 20, sourceRateHz: 20);
+
+        foreach (var milliseconds in new[] { 0, 46, 90, 136, 180 })
+            sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(milliseconds),
+                new Dictionary<string, double> { ["L0"] = milliseconds / 1000d }));
+
+        Assert.Equal(5, sink.SentFrames);
+        Assert.Equal(0, sink.DroppedFrames);
+        Assert.Equal(5, inner.Positions.Count);
+    }
+
+    [Fact]
+    public void RateLimitedSink_still_samples_when_target_rate_is_below_source_rate()
+    {
+        var inner = new RecordingSink();
+        using var sink = new RateLimitedOutputSink(inner, updateRateHz: 10, sourceRateHz: 20);
+
+        sink.Publish(new OutputFrame(TimeSpan.Zero,
+            new Dictionary<string, double> { ["L0"] = 0 }));
+        sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(50),
+            new Dictionary<string, double> { ["L0"] = 0.05 }));
+        sink.Publish(new OutputFrame(TimeSpan.FromMilliseconds(100),
+            new Dictionary<string, double> { ["L0"] = 0.1 }));
+
+        Assert.Equal(2, sink.SentFrames);
+        Assert.Equal(1, sink.DroppedFrames);
+        Assert.Equal(new[] { 0d, 0.1d }, inner.Positions);
+    }
+
+    [Fact]
     public void RateLimitedSink_counts_forward_failures()
     {
         var inner = new ThrowingSink();

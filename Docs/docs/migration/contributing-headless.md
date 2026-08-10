@@ -11,14 +11,25 @@ exposed through an explicit capability entry before the SPA offers it.
 ## Local checks
 
 ```sh
-PATH=/home/henry/.dotnet:$PATH dotnet restore --locked-mode \
+dotnet restore --locked-mode \
   --disable-parallel -p:EnableWindowsTargeting=true
-PATH=/home/henry/.dotnet:$PATH dotnet test MultiFunPlayer.sln \
+
+dotnet test Source/MultiFunPlayer.Core.Tests/MultiFunPlayer.Core.Tests.csproj \
   --configuration Release --no-restore -p:EnableWindowsTargeting=true
-PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run typecheck
-PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run check:static
-PATH=/home/henry/.local/mfp-node/bin:$PATH npm --prefix Source/MultiFunPlayer.Web run build
-python tools/run-validation-matrix.py \
+dotnet test Source/MultiFunPlayer.Application.Tests/MultiFunPlayer.Application.Tests.csproj \
+  --configuration Release --no-restore -p:EnableWindowsTargeting=true
+dotnet test Source/MultiFunPlayer.Infrastructure.Tests/MultiFunPlayer.Infrastructure.Tests.csproj \
+  --configuration Release --no-restore -p:EnableWindowsTargeting=true
+dotnet test Source/MultiFunPlayer.Server.Tests/MultiFunPlayer.Server.Tests.csproj \
+  --configuration Release --no-restore -p:EnableWindowsTargeting=true \
+  -- xunit.parallelizeTestCollections=false
+
+npm run typecheck --prefix Source/MultiFunPlayer.Web
+npm run check:static --prefix Source/MultiFunPlayer.Web
+npm run build --prefix Source/MultiFunPlayer.Web
+
+MFP_DOTNET="$(command -v dotnet)" MFP_NPM="$(command -v npm)" \
+python3 tools/run-validation-matrix.py \
   --output artifacts/validation/validation-matrix.json
 ```
 

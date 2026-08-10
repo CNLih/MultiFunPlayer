@@ -1,5 +1,8 @@
 # fnOS package project
 
+For the complete current source-run, test, Docker, fnOS, and acceptance workflow,
+see [`Docs/docs/migration/current-usage-testing-deployment.md`](../../Docs/docs/migration/current-usage-testing-deployment.md).
+
 `fnpack/` is an official-template-shaped Docker application project for the
 MultiFunPlayer Web server. It contains the manifest, Docker Compose project,
 Web entry, icons, lifecycle scripts, resource/privilege declarations, and a
@@ -14,8 +17,10 @@ binary from the fnOS developer portal, then build an architecture-specific
 package:
 
 ```sh
-FNPACK=/path/to/fnpack ./deploy/fnos/build-fpk.sh --platform x86
-FNPACK=/path/to/fnpack ./deploy/fnos/build-fpk.sh --platform arm
+FNPACK=/path/to/fnpack ./build.sh package fnos x86
+FNPACK=/path/to/fnpack ./build.sh package fnos arm
+# Or build and validate both architectures:
+FNPACK=/path/to/fnpack ./build.sh package fnos all
 ```
 
 The wrapper maps fnOS `x86`/`arm` package labels to the Docker image's
@@ -32,7 +37,7 @@ an explicit device permission and is not enabled by default.
 Run the repository-owned static checks before using `fnpack`:
 
 ```sh
-./deploy/validate-packaging.sh
+./build.sh package validate
 ```
 
 This check confirms both the portable container contract and the canonical
@@ -40,11 +45,10 @@ fnpack project structure. Running `fnpack build` validates the package with the
 installed official tool, but does not replace installation, upgrade, rollback,
 uninstall, serial, or ARM tests on a real fnOS device.
 
-After building, verify the archive contents before transferring it to fnOS:
+`build.sh` invokes `deploy/validate-fpk.sh` automatically after each successful
+FPK build. Verify the generated checksum again before transferring it to fnOS:
 
 ```sh
-./deploy/validate-fpk.sh artifacts/fnos/x86/multifunplayer.fpk x86
-./deploy/validate-fpk.sh artifacts/fnos/arm/multifunplayer.fpk arm
 (cd artifacts/fnos/x86 && sha256sum --check multifunplayer.fpk.sha256)
 (cd artifacts/fnos/arm && sha256sum --check multifunplayer.fpk.sha256)
 ```

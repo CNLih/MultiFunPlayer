@@ -13,7 +13,8 @@ public sealed record DeviceAxisResponse(
     string Interpolation,
     bool LimitEnabled,
     double LimitMinimum,
-    double LimitMaximum);
+    double LimitMaximum,
+    double? MaximumTravel);
 
 public sealed record DeviceAxisRequest(
     string? Axis,
@@ -23,7 +24,10 @@ public sealed record DeviceAxisRequest(
     string Interpolation = "Linear",
     bool LimitEnabled = false,
     double LimitMinimum = 0,
-    double LimitMaximum = 1);
+    double LimitMaximum = 1,
+    double? MaximumTravel = null);
+
+public sealed record DeviceAxesRequest(IReadOnlyList<DeviceAxisRequest>? Axes);
 
 public enum DeviceAxisOperationStatus
 {
@@ -36,6 +40,11 @@ public enum DeviceAxisOperationStatus
 public sealed record DeviceAxisOperation(
     DeviceAxisOperationStatus Status,
     DeviceAxisResponse? Axis = null,
+    string? Error = null);
+
+public sealed record DeviceAxesOperation(
+    DeviceAxisOperationStatus Status,
+    IReadOnlyList<DeviceAxisResponse>? Axes = null,
     string? Error = null);
 
 /// <summary>
@@ -58,8 +67,12 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
     public DeviceAxisRegistry(StorageOptions storage, HeadlessPlayerEngine engine,
         ILogger<DeviceAxisRegistry> logger)
     {
+        DeviceAxis.InitializeDefaults();
         _engine = engine;
         _logger = logger;
+        foreach (var axis in DeviceAxis.All)
+            _axes[axis.Name] = AxisConfiguration.Default(axis.Name);
+        _engine.SetAxisConfigurations(_axes.Values);
         try
         {
             _config = new RootedFileStore(storage.ConfigRoot);
@@ -75,8 +88,7 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
         _gate.Wait();
         try
         {
-            return _axes.Values.Select(ToResponse)
-                .OrderBy(axis => axis.Axis, StringComparer.OrdinalIgnoreCase).ToArray();
+            return DeviceAxis.All.Select(axis => ToResponse(_axes[axis.Name])).ToArray();
         }
         finally
         {
@@ -156,7 +168,7 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
             return new(DeviceAxisOperationStatus.Invalid, Error: "The route axis must match the request axis.");
         var definition = new DeviceAxisDefinition(axis, request.Minimum, request.Maximum,
             request.Inverted, request.Interpolation, request.LimitEnabled,
-            request.LimitMinimum, request.LimitMaximum);
+            request.LimitMinimum, request.LimitMaximum, request.MaximumTravel);
         if (!TryConvert(definition, out var configuration, out var error))
             return new(DeviceAxisOperationStatus.Invalid, Error: error);
 
@@ -166,10 +178,62 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
             if (_config is null)
                 return new(DeviceAxisOperationStatus.Unavailable,
                     Error: "The configured root is not writable.");
-            _axes[configuration.Axis] = configuration;
-            _engine.SetAxisConfiguration(configuration);
-            await PersistLockedAsync(cancellationToken).ConfigureAwait(false);
+            var updated = new Dictionary<string, AxisConfiguration>(_axes,
+                StringComparer.OrdinalIgnoreCase)
+            {
+                [configuration.Axis] = configuration
+            };
+            await PersistAsync(updated.Values, cancellationToken).ConfigureAwait(false);
+            ReplaceLocked(updated.Values);
             return new(DeviceAxisOperationStatus.Success, ToResponse(configuration));
+        }
+        catch (IOException exception)
+        {
+            return new(DeviceAxisOperationStatus.Unavailable, Error: exception.Message);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<DeviceAxesOperation> ReplaceAsync(DeviceAxesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Axes is null)
+            return new(DeviceAxisOperationStatus.Invalid, Error: "axes is required.");
+
+        var configurations = new Dictionary<string, AxisConfiguration>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in request.Axes)
+        {
+            var definition = new DeviceAxisDefinition(item.Axis ?? string.Empty,
+                item.Minimum, item.Maximum, item.Inverted, item.Interpolation,
+                item.LimitEnabled, item.LimitMinimum, item.LimitMaximum,
+                item.MaximumTravel);
+            if (!TryConvert(definition, out var configuration, out var error))
+                return new(DeviceAxisOperationStatus.Invalid, Error: error);
+            if (!configurations.TryAdd(configuration.Axis, configuration))
+                return new(DeviceAxisOperationStatus.Invalid,
+                    Error: $"Axis '{configuration.Axis}' is duplicated.");
+        }
+
+        var missing = DeviceAxis.All.Where(axis => !configurations.ContainsKey(axis.Name))
+            .Select(axis => axis.Name).ToArray();
+        if (missing.Length > 0 || configurations.Count != DeviceAxis.All.Length)
+        {
+            return new(DeviceAxisOperationStatus.Invalid,
+                Error: $"The complete fixed axis set is required. Missing: {string.Join(", ", missing)}.");
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_config is null)
+                return new(DeviceAxisOperationStatus.Unavailable,
+                    Error: "The configured root is not writable.");
+            await PersistAsync(configurations.Values, cancellationToken).ConfigureAwait(false);
+            ReplaceLocked(configurations.Values);
+            return new(DeviceAxisOperationStatus.Success, ListLocked());
         }
         catch (IOException exception)
         {
@@ -186,17 +250,23 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(axis))
             return new(DeviceAxisOperationStatus.Invalid, Error: "An axis name is required.");
+        var standardAxis = DeviceAxis.All.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, axis, StringComparison.OrdinalIgnoreCase));
+        if (standardAxis is null)
+            return new(DeviceAxisOperationStatus.NotFound, Error: "Device axis setting not found.");
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_axes.TryGetValue(axis, out var configuration))
-                return new(DeviceAxisOperationStatus.NotFound, Error: "Device axis setting not found.");
             if (_config is null)
                 return new(DeviceAxisOperationStatus.Unavailable,
                     Error: "The configured root is not writable.");
-            _axes.Remove(configuration.Axis);
-            _engine.RemoveAxisConfiguration(axis);
-            await PersistLockedAsync(cancellationToken).ConfigureAwait(false);
+            var updated = new Dictionary<string, AxisConfiguration>(_axes,
+                StringComparer.OrdinalIgnoreCase)
+            {
+                [standardAxis.Name] = AxisConfiguration.Default(standardAxis.Name)
+            };
+            await PersistAsync(updated.Values, cancellationToken).ConfigureAwait(false);
+            ReplaceLocked(updated.Values);
             return new(DeviceAxisOperationStatus.Success);
         }
         catch (IOException exception)
@@ -218,13 +288,29 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
     }
 
     private async Task PersistLockedAsync(CancellationToken cancellationToken)
+        => await PersistAsync(_axes.Values, cancellationToken).ConfigureAwait(false);
+
+    private async Task PersistAsync(IEnumerable<AxisConfiguration> configurations,
+        CancellationToken cancellationToken)
     {
         if (_config is null)
             throw new IOException("The configured root is not writable.");
         var document = new AxisSettingsDocument(1,
-            _axes.Values.OrderBy(axis => axis.Axis, StringComparer.OrdinalIgnoreCase)
+            DeviceAxis.All.Select(axis => configurations.First(configuration =>
+                    string.Equals(configuration.Axis, axis.Name, StringComparison.OrdinalIgnoreCase)))
                 .Select(ToDefinition).ToArray());
         await _config.WriteJsonAsync(StoreFile, document, cancellationToken).ConfigureAwait(false);
+    }
+
+    private IReadOnlyList<DeviceAxisResponse> ListLocked()
+        => DeviceAxis.All.Select(axis => ToResponse(_axes[axis.Name])).ToArray();
+
+    private void ReplaceLocked(IEnumerable<AxisConfiguration> configurations)
+    {
+        _axes.Clear();
+        foreach (var configuration in configurations)
+            _axes[configuration.Axis] = configuration;
+        _engine.SetAxisConfigurations(_axes.Values);
     }
 
     private static bool TryConvert(DeviceAxisDefinition definition,
@@ -232,11 +318,11 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
     {
         configuration = AxisConfiguration.Default(definition.Axis);
         error = null;
-        if (string.IsNullOrWhiteSpace(definition.Axis) || definition.Axis.Length > 64
-            || definition.Axis.Any(character => !char.IsLetterOrDigit(character)
-                && character is not ('_' or '-')))
+        var standardAxis = DeviceAxis.All.FirstOrDefault(axis =>
+            string.Equals(axis.Name, definition.Axis, StringComparison.OrdinalIgnoreCase));
+        if (standardAxis is null)
         {
-            error = "axis must contain only letters, numbers, '-' or '_', and be at most 64 characters.";
+            error = $"axis must be one of: {string.Join(", ", DeviceAxis.All.Select(axis => axis.Name))}.";
             return false;
         }
         if (!Enum.TryParse<InterpolationType>(definition.Interpolation, true, out var interpolation)
@@ -247,9 +333,10 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
         }
         try
         {
-            configuration = new AxisConfiguration(definition.Axis, definition.Minimum,
+            configuration = new AxisConfiguration(standardAxis.Name, definition.Minimum,
                 definition.Maximum, definition.Inverted, interpolation, definition.LimitEnabled,
-                definition.LimitMinimum, definition.LimitMaximum).Normalize();
+                definition.LimitMinimum, definition.LimitMaximum,
+                definition.MaximumTravel).Normalize();
             return true;
         }
         catch (ArgumentException exception)
@@ -262,12 +349,14 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
     private static DeviceAxisResponse ToResponse(AxisConfiguration configuration)
         => new(configuration.Axis, configuration.Minimum, configuration.Maximum,
             configuration.Inverted, configuration.Interpolation.ToString(),
-            configuration.LimitEnabled, configuration.LimitMinimum, configuration.LimitMaximum);
+            configuration.LimitEnabled, configuration.LimitMinimum, configuration.LimitMaximum,
+            configuration.MaximumTravel);
 
     private static DeviceAxisDefinition ToDefinition(AxisConfiguration configuration)
         => new(configuration.Axis, configuration.Minimum, configuration.Maximum,
             configuration.Inverted, configuration.Interpolation.ToString(),
-            configuration.LimitEnabled, configuration.LimitMinimum, configuration.LimitMaximum);
+            configuration.LimitEnabled, configuration.LimitMinimum, configuration.LimitMaximum,
+            configuration.MaximumTravel);
 
     private sealed record AxisSettingsDocument(int SchemaVersion, DeviceAxisDefinition[] Axes);
 
@@ -279,5 +368,6 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
         string Interpolation,
         bool LimitEnabled,
         double LimitMinimum,
-        double LimitMaximum);
+        double LimitMaximum,
+        double? MaximumTravel);
 }

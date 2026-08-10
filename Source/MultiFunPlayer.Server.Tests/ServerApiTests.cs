@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -688,6 +689,45 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Output_target_at_engine_tick_rate_is_not_sampled_twice()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MultiFunPlayer:TickHz"] = "20"
+        }).Build();
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var registry = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance, configuration: configuration);
+        await registry.StartAsync(CancellationToken.None);
+
+        var created = await registry.CreateAsync(new OutputTargetDefinition(
+            "file-max-rate", "Maximum-rate file target", "file", "max-rate.tcode",
+            UpdateRateHz: 20));
+        Assert.Equal(OutputTargetOperationStatus.Success, created.Status);
+
+        var parsed = FunscriptReader.Default.FromText("max-rate.funscript", "test",
+            "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}");
+        Assert.True(parsed.IsSuccess);
+        engine.Load(parsed.Resource, "L0");
+        engine.Play();
+        var before = Assert.Single(registry.List());
+
+        foreach (var milliseconds in new[] { 0, 46, 90, 136, 180 })
+            engine.Tick(TimeSpan.FromMilliseconds(milliseconds));
+
+        var after = Assert.Single(registry.List());
+        Assert.Equal(before.SentFrames + 5, after.SentFrames);
+        Assert.Equal(before.CoalescedFrames, after.CoalescedFrames);
+        Assert.Equal(0, after.FailedFrames);
+    }
+
+    [Fact]
     public async Task Output_target_recovers_when_tcp_endpoint_becomes_available()
     {
         using var temp = new TemporaryDirectory();
@@ -1272,26 +1312,37 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         {
             using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
             using var client = factory.CreateClient();
-            var update = await client.PutAsJsonAsync("/api/v1/device-axes/L0", new
+            var defaults = await client.GetFromJsonAsync<JsonElement>("/api/v1/device-axes");
+            Assert.Equal(11, defaults.GetArrayLength());
+            var axes = defaults.EnumerateArray().Select(axis => new
             {
-                axis = "L0",
-                minimum = 0.2,
-                maximum = 0.6,
-                inverted = true,
+                axis = axis.GetProperty("axis").GetString(),
+                minimum = axis.GetProperty("axis").GetString() == "L0" ? 0.2 : 0,
+                maximum = axis.GetProperty("axis").GetString() == "L0" ? 0.6 : 1,
+                inverted = axis.GetProperty("axis").GetString() == "L0",
                 interpolation = "Linear",
-                limitEnabled = true,
-                limitMinimum = 0.3,
-                limitMaximum = 0.8
-            });
+                limitEnabled = axis.GetProperty("axis").GetString() == "L0",
+                limitMinimum = axis.GetProperty("axis").GetString() == "L0" ? 0.3 : 0,
+                limitMaximum = axis.GetProperty("axis").GetString() == "L0" ? 0.8 : 1,
+                maximumTravel = axis.GetProperty("axis").GetString() == "L0" ? 120.0 : (double?)null
+            }).ToArray();
+            var update = await client.PutAsJsonAsync("/api/v1/device-axes", new { axes });
             Assert.Equal(HttpStatusCode.OK, update.StatusCode);
-            var configured = await update.Content.ReadFromJsonAsync<JsonElement>();
+            var updatedAxes = await update.Content.ReadFromJsonAsync<JsonElement>();
+            var configured = updatedAxes.EnumerateArray().Single(axis =>
+                axis.GetProperty("axis").GetString() == "L0");
             Assert.Equal("L0", configured.GetProperty("axis").GetString());
             Assert.Equal(0.2, configured.GetProperty("minimum").GetDouble(), precision: 10);
             Assert.True(configured.GetProperty("inverted").GetBoolean());
+            Assert.Equal(120, configured.GetProperty("maximumTravel").GetDouble(), precision: 10);
 
             var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/device-axes");
+            Assert.Equal(11, list.GetArrayLength());
             Assert.Contains(list.EnumerateArray(), item => item.GetProperty("axis").GetString() == "L0");
-            Assert.True(File.Exists(Path.Combine(temp.Path, "config", "device-axis-settings.json")));
+            var persistedPath = Path.Combine(temp.Path, "config", "device-axis-settings.json");
+            Assert.True(File.Exists(persistedPath));
+            using (var persisted = JsonDocument.Parse(await File.ReadAllTextAsync(persistedPath)))
+                Assert.Equal(11, persisted.RootElement.GetProperty("axes").GetArrayLength());
 
             var load = await client.PostAsync("/api/v1/scripts/load", new StringContent(
                 "{\"name\":\"axis.funscript\",\"axis\":\"L0\",\"content\":{\"actions\":[{\"at\":0,\"pos\":25},{\"at\":1000,\"pos\":75}]}}",
@@ -1302,12 +1353,56 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
             var delete = await client.DeleteAsync("/api/v1/device-axes/L0");
             Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+            var reset = await client.GetFromJsonAsync<JsonElement>("/api/v1/device-axes");
+            var resetL0 = reset.EnumerateArray().Single(axis =>
+                axis.GetProperty("axis").GetString() == "L0");
+            Assert.Equal(0, resetL0.GetProperty("minimum").GetDouble());
+            Assert.Equal(1, resetL0.GetProperty("maximum").GetDouble());
+            Assert.False(resetL0.GetProperty("inverted").GetBoolean());
         }
         finally
         {
             Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
             Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", previousScripts);
         }
+    }
+
+    [Fact]
+    public async Task Device_axis_batch_rejects_incomplete_fixed_axis_set()
+    {
+        using var client = _factory.CreateClient();
+        var update = await client.PutAsJsonAsync("/api/v1/device-axes", new
+        {
+            axes = new[]
+            {
+                new
+                {
+                    axis = "L0",
+                    minimum = 0,
+                    maximum = 1,
+                    inverted = false,
+                    interpolation = "Linear",
+                    limitEnabled = false,
+                    limitMinimum = 0,
+                    limitMaximum = 1
+                }
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, update.StatusCode);
+        var problem = await update.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_device_axes", problem.GetProperty("code").GetString());
+
+        var unknown = await client.PutAsJsonAsync("/api/v1/device-axes/L9", new
+        {
+            axis = "L9",
+            minimum = 0,
+            maximum = 1,
+            interpolation = "Linear",
+            limitMinimum = 0,
+            limitMaximum = 1
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
     }
 
     [Fact]

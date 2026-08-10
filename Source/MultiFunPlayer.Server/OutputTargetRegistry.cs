@@ -61,6 +61,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     private readonly StorageOptions _storage;
     private readonly HeadlessPlayerEngine _engine;
     private readonly ILogger<OutputTargetRegistry> _logger;
+    private readonly int _engineTickHz;
     private readonly Func<string?> _theHandyConnectionKeyProvider;
     private readonly Func<HttpMessageHandler?>? _theHandyHandlerFactory;
     private readonly RootedFileStore? _config;
@@ -70,11 +71,13 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     public OutputTargetRegistry(StorageOptions storage, HeadlessPlayerEngine engine,
         ILogger<OutputTargetRegistry> logger, Func<string?>? theHandyConnectionKeyProvider = null,
-        Func<HttpMessageHandler?>? theHandyHandlerFactory = null)
+        Func<HttpMessageHandler?>? theHandyHandlerFactory = null,
+        IConfiguration? configuration = null)
     {
         _storage = storage;
         _engine = engine;
         _logger = logger;
+        _engineTickHz = configuration is null ? 20 : ServerOptions.ResolveTickHz(configuration);
         _theHandyConnectionKeyProvider = theHandyConnectionKeyProvider
             ?? (() => Environment.GetEnvironmentVariable("MFP_THE_HANDY_CONNECTION_KEY"));
         _theHandyHandlerFactory = theHandyHandlerFactory;
@@ -346,7 +349,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     target.Registration?.Dispose();
                     target.Registration = null;
                 };
-                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz);
+                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
+                    _engineTickHz);
                 target.Registration = _engine.AddSink(sink);
                 target.Adapter = adapter;
                 target.Sink = sink;
@@ -372,7 +376,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     target.Registration?.Dispose();
                     target.Registration = null;
                 };
-                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz);
+                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
+                    _engineTickHz);
                 target.Registration = _engine.AddSink(sink);
                 target.Adapter = adapter;
                 target.Sink = sink;
@@ -382,7 +387,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 transport = CreateTransport(target.Definition);
                 await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 var sink = new RateLimitedOutputSink(new TCodeOutputSink(transport),
-                    target.Definition.UpdateRateHz);
+                    target.Definition.UpdateRateHz, _engineTickHz);
                 sink.Faulted += exception =>
                 {
                     target.LastError = exception.Message;

@@ -1,5 +1,8 @@
 # MultiFunPlayer Server
 
+For the current end-to-end source run, test, Docker, and fnOS procedures, see
+[`Docs/docs/migration/current-usage-testing-deployment.md`](../../Docs/docs/migration/current-usage-testing-deployment.md).
+
 The server is the Linux/fnOS host boundary for the portable `Core` and
 `Application` assemblies. It owns HTTP, WebSocket, scheduling, storage and
 authentication; it does not reference WPF, Stylet, registry, or Windows device
@@ -7,15 +10,17 @@ APIs.
 
 Build the SPA first for a local combined host:
 
-    npm --prefix Source/MultiFunPlayer.Web ci
-    npm --prefix Source/MultiFunPlayer.Web run build
-    dotnet run --project Source/MultiFunPlayer.Server
+    ./build.sh run server
 
-The server copies Source/MultiFunPlayer.Web/dist into its output and serves
+The root script resolves user-local .NET/Node installations, restores locked
+dependencies when needed, builds the SPA, creates `.local/mfp` persistent
+roots, and starts the Release server on loopback. Use `./build.sh help` for Web
+Demo, tests, Docker, server archive, and fnOS package modes. The server copies
+Source/MultiFunPlayer.Web/dist into its output and serves
 the SPA with a fallback route. Without a built dist directory it serves the
 small static preview instead.
 
-Run from the repository root with `dotnet run --project Source/MultiFunPlayer.Server`.
+Run from the repository root with `./build.sh run server`.
 Set `MFP_SCRIPTS_PATH` (or `MFP_SCRIPTS_ROOT`) to a directory containing
 `.funscript` files. If
 `MFP_AUTH_TOKEN` is non-empty, all API and WebSocket requests require either
@@ -111,6 +116,20 @@ without blocking other output targets. Counters accumulate for the current
 server process across disconnect/reconnect and reset on restart. A successful
 later write clears the transient `lastError`; reconnect remains an
 explicit lifecycle operation.
+
+Device-axis behavior is managed as one fixed TCode 0.3 configuration containing
+`L0`, `L1`, `L2`, `R0`, `R1`, `R2`, `V0`, `V1`, `A0`, `A1`, and `A2`.
+`GET /api/v1/device-axes` always returns all 11 effective settings. Replace the
+complete configuration atomically with `PUT /api/v1/device-axes` and a body of
+`{ "axes": [...] }`; incomplete, duplicate, or unknown axes are rejected before
+anything is applied. The full set is persisted once in
+`device-axis-settings.json` below the config root. The legacy per-axis `PUT`
+route remains available for compatibility, while per-axis `DELETE` resets that
+axis to its default policy instead of removing it from the fixed set. Each axis
+may also persist an optional positive `maximumTravel` calibration value. The Web
+UI interprets this as millimeters for `L` axes, degrees for `R` axes, and percent
+for `V/A` axes. It is visualization metadata and does not change normalized
+TCode output or bypass the configured range and limit policy.
 
 Media sources are managed through `/api/v1/media-sources` and the matching
 `connect`, `disconnect`, update, and delete subroutes. Connected network-native

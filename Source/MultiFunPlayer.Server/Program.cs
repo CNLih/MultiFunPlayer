@@ -225,6 +225,10 @@ public static class ServerProgram
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
         app.MapGet("/api/v1/device-axes", (DeviceAxisRegistry registry) => Results.Ok(registry.List()));
+        app.MapPut("/api/v1/device-axes", async (DeviceAxesRequest request,
+            DeviceAxisRegistry registry, CancellationToken cancellationToken) =>
+            MapDeviceAxesOperation(await registry.ReplaceAsync(request, cancellationToken)
+                .ConfigureAwait(false)));
         app.MapPut("/api/v1/device-axes/{axis}", async (string axis, DeviceAxisRequest request,
             DeviceAxisRegistry registry, CancellationToken cancellationToken) =>
             MapDeviceAxisOperation(await registry.UpsertAsync(axis, request, cancellationToken)
@@ -395,6 +399,18 @@ public static class ServerProgram
                 operation.Error ?? "The device axis operation failed.", "device_axis_failed")
         };
 
+    private static IResult MapDeviceAxesOperation(DeviceAxesOperation operation)
+        => operation.Status switch
+        {
+            DeviceAxisOperationStatus.Success => Results.Ok(operation.Axes),
+            DeviceAxisOperationStatus.Invalid => Problem(StatusCodes.Status400BadRequest,
+                "Invalid device axes", operation.Error ?? "The device axis settings are invalid.", "invalid_device_axes"),
+            DeviceAxisOperationStatus.Unavailable => Problem(StatusCodes.Status503ServiceUnavailable,
+                "Device axis storage unavailable", operation.Error ?? "The device axis settings could not be persisted.", "device_axes_unavailable"),
+            _ => Problem(StatusCodes.Status400BadRequest, "Device axis operation failed",
+                operation.Error ?? "The device axis operation failed.", "device_axes_failed")
+        };
+
     private static async Task HandleWebSocket(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -543,8 +559,8 @@ internal static class OpenApiDocument
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/logs/file"] = new { get = Operation("Download redacted persisted runtime logs") },
-            ["/api/v1/device-axes"] = new { get = Operation("List device axis settings") },
-            ["/api/v1/device-axes/{axis}"] = new { put = Operation("Update device axis settings"), delete = Operation("Delete device axis settings") },
+            ["/api/v1/device-axes"] = new { get = Operation("List the fixed device axis settings"), put = Operation("Replace the complete device axis configuration") },
+            ["/api/v1/device-axes/{axis}"] = new { put = Operation("Update one fixed device axis setting"), delete = Operation("Reset one fixed device axis setting") },
             ["/api/v1/scripts"] = new { get = Operation("List scripts"), post = Operation("Upload a JSON script") },
             ["/api/v1/scripts/load"] = new { post = Operation("Load a Funscript") },
             ["/api/v1/player/play"] = new { post = Operation("Play") },

@@ -33,6 +33,62 @@ const routes: { id: Route; label: string; hint: string }[] = [
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] ?? character));
 const statusClass = (status: Status | 'pass' | 'warn'): string => status === 'pass' ? 'status-online' : `status-${status}`;
 const statusDot = (status: Status | 'pass' | 'warn'): string => `<span class="status-dot ${statusClass(status)}" aria-hidden="true"></span>`;
+const axisFriendlyNames: Record<string, string> = {
+  L0: 'Up / Down', L1: 'Forward / Backward', L2: 'Left / Right',
+  R0: 'Twist', R1: 'Roll', R2: 'Pitch', V0: 'Vibrate', V1: 'Pump',
+  A0: 'Valve', A1: 'Suction', A2: 'Lube',
+};
+const axisTravelUnit = (axis: string): string => axis.startsWith('L') ? 'mm' : axis.startsWith('R') ? '°' : '%';
+const percent = (value: number): string => `${Math.round(value * 100)}%`;
+
+function effectiveAxisBounds(axis: DeviceAxisSetting): [number, number] {
+  const sourceMinimum = axis.limitEnabled ? axis.limitMinimum : 0;
+  const sourceMaximum = axis.limitEnabled ? axis.limitMaximum : 1;
+  return [
+    axis.minimum + (axis.maximum - axis.minimum) * sourceMinimum,
+    axis.minimum + (axis.maximum - axis.minimum) * sourceMaximum,
+  ];
+}
+
+function axisOrDefault(axes: DeviceAxisSetting[], name: string): DeviceAxisSetting {
+  return axes.find((axis) => axis.axis === name) ?? {
+    axis: name, minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear',
+    limitEnabled: false, limitMinimum: 0, limitMaximum: 1, maximumTravel: null,
+  };
+}
+
+function renderDeviceAxisVisualization(axes: DeviceAxisSetting[]): string {
+  const bounds = Object.fromEntries(['L0', 'L1', 'L2'].map((name) => [name, effectiveAxisBounds(axisOrDefault(axes, name))])) as Record<string, [number, number]>;
+  const project = (x: number, y: number, z: number) => ({ x: 145 + x * 300 + z * 75, y: 290 - y * 200 - z * 48 });
+  const cubePoints = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => [
+    project(x0, y0, z0), project(x1, y0, z0), project(x1, y1, z0), project(x0, y1, z0),
+    project(x0, y0, z1), project(x1, y0, z1), project(x1, y1, z1), project(x0, y1, z1),
+  ];
+  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  const lines = (points: { x: number; y: number }[], className: string) => edges.map(([from, to]) => `<line class="${className}" x1="${points[from].x}" y1="${points[from].y}" x2="${points[to].x}" y2="${points[to].y}" />`).join('');
+  const outer = cubePoints(0, 1, 0, 1, 0, 1);
+  const active = cubePoints(bounds.L2[0], bounds.L2[1], bounds.L0[0], bounds.L0[1], bounds.L1[0], bounds.L1[1]);
+  const directionMarker = (axis: string) => axisOrDefault(axes, axis).inverted
+    ? 'marker-start="url(#axis-arrow)"' : 'marker-end="url(#axis-arrow)"';
+  const travelCards = axes.map((axis) => {
+    const [minimum, maximum] = effectiveAxisBounds(axis);
+    const span = maximum - minimum;
+    const unit = axisTravelUnit(axis.axis);
+    const travel = axis.maximumTravel == null || !Number.isFinite(axis.maximumTravel) || axis.maximumTravel <= 0
+      ? `${percent(span)} normalized travel · full travel not calibrated`
+      : `${axis.maximumTravel.toFixed(1)} ${unit} full · ${(axis.maximumTravel * span).toFixed(1)} ${unit} active`;
+    const start = axis.inverted ? maximum : minimum;
+    const end = axis.inverted ? minimum : maximum;
+    return `<article class="axis-travel-card" data-axis-travel-summary="${escapeHtml(axis.axis)}"><div><strong>${escapeHtml(axis.axis)}</strong><span>${escapeHtml(axisFriendlyNames[axis.axis] ?? 'Standard axis')}</span></div><b>${percent(start)} → ${percent(end)}${axis.inverted ? ' · reversed' : ''}</b><small>${escapeHtml(travel)}</small></article>`;
+  }).join('');
+  return `<div class="axis-spatial-layout"><div class="axis-cuboid-wrap"><svg class="axis-cuboid" viewBox="0 0 590 350" role="img" aria-label="Normalized device axis movement volume"><defs><marker id="axis-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>${lines(outer, 'axis-cube-outer')}${lines(active, 'axis-cube-active')}<line class="axis-direction l2" x1="120" y1="318" x2="500" y2="318" ${directionMarker('L2')} /><text x="505" y="323">L2 · Left / Right</text><line class="axis-direction l0" x1="115" y1="300" x2="115" y2="52" ${directionMarker('L0')} /><text x="44" y="42">L0 · Up / Down</text><line class="axis-direction l1" x1="130" y1="305" x2="230" y2="240" ${directionMarker('L1')} /><text x="225" y="230">L1 · Forward / Backward</text><path class="axis-rotation" d="M 250 74 C 320 35, 410 52, 437 105" ${directionMarker('R0')} /><text x="344" y="36">R0 · Twist</text><path class="axis-rotation" d="M 470 130 C 535 170, 528 250, 470 278" ${directionMarker('R1')} /><text x="492" y="210">R1 · Roll</text><path class="axis-rotation" d="M 205 286 C 170 245, 171 170, 205 135" ${directionMarker('R2')} /><text x="126" y="206">R2 · Pitch</text></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Full normalized volume</span><span><i class="legend-active"></i> Effective movement volume</span></div></div><div class="axis-travel-grid">${travelCards}</div></div>`;
+}
+
+function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', minimum: number, maximum: number): string {
+  const minimumField = group === 'output' ? 'minimum' : 'limitMinimum';
+  const maximumField = group === 'output' ? 'maximum' : 'limitMaximum';
+  return `<div class="dual-range-control${group === 'limit' && !axis.limitEnabled ? ' is-disabled' : ''}" data-axis-range="${group}" style="--range-start:${minimum * 100}%;--range-end:${maximum * 100}%"><div class="dual-range-track"><span></span></div><input class="dual-range-input range-lower" data-axis-field="${minimumField}" aria-label="${escapeHtml(axis.axis)} ${group === 'output' ? 'minimum' : 'limit minimum'}" type="range" min="0" max="1" step="0.01" value="${minimum}" /><input class="dual-range-input range-upper" data-axis-field="${maximumField}" aria-label="${escapeHtml(axis.axis)} ${group === 'output' ? 'maximum' : 'limit maximum'}" type="range" min="0" max="1" step="0.01" value="${maximum}" /><div class="dual-range-values"><output data-range-value="minimum">${percent(minimum)}</output><output data-range-value="maximum">${percent(maximum)}</output></div></div>`;
+}
 
 function renderAuthScreen(message = '') {
   appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label for="auth-access-token">Access token<input id="auth-access-token" name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label for="auth-pairing-token">Pairing token<input id="auth-pairing-token" name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label for="auth-new-token">New access token<input id="auth-new-token" name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
@@ -213,15 +269,18 @@ function renderOutputForm(): string {
 }
 
 function renderDeviceSettings(state: AppState): string {
-  return `${pageHeading('Devices', 'Axis settings', 'Tune the normalized values sent to every configured output.', '<button class="button button-primary" data-action="focus-axis-form">Add axis policy</button>')}
-    <div class="notice notice-info"><strong>Backend-owned policy.</strong><span>Changes are persisted by the server and take effect on the next engine snapshot.</span></div>
-    ${renderDeviceAxisForm()}
-    <section class="panel table-panel" aria-labelledby="device-axis-title"><div class="panel-heading"><div><p class="eyebrow">Persisted policies</p><h2 id="device-axis-title">Configured axes</h2></div><span class="result-count">${state.deviceAxes.length} axes</span></div><div class="responsive-table"><table><thead><tr><th>Axis</th><th>Range</th><th>Interpolation</th><th>Inversion</th><th>Limit</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.deviceAxes.length === 0 ? '<tr><td colspan="6">No axis policies configured; engine defaults are active.</td></tr>' : state.deviceAxes.map((axis) => `<tr><td><strong>${escapeHtml(axis.axis)}</strong></td><td>${axis.minimum.toFixed(2)} - ${axis.maximum.toFixed(2)}</td><td>${escapeHtml(axis.interpolation)}</td><td>${axis.inverted ? 'Inverted' : 'Normal'}</td><td>${axis.limitEnabled ? `${axis.limitMinimum.toFixed(2)} - ${axis.limitMaximum.toFixed(2)}` : 'Disabled'}</td><td><div class="resource-actions"><button class="button button-secondary" data-axis-edit="${escapeHtml(axis.axis)}">Edit</button><button class="button button-danger" data-axis-delete="${escapeHtml(axis.axis)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>
+  return `${pageHeading('Devices', 'Axis settings', 'Tune the fixed TCode axis set and save it as one device configuration.', '<button class="button button-primary" data-action="focus-axis-form">Edit axis configuration</button>')}
+    <div class="notice notice-info"><strong>One configuration, 11 fixed axes.</strong><span>All rows are validated together, persisted in one server file, and applied to the engine as one snapshot.</span></div>
+    <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Live configuration preview</p><h2 id="axis-map-title">Axis motion map</h2></div><span class="result-count">Normalized + calibrated travel</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes)}</div></section>
+    ${renderDeviceAxisForm(state.deviceAxes)}
     ${renderServerSettings(state)}`;
 }
 
-function renderDeviceAxisForm(): string {
-  return `<form class="resource-form panel" data-resource-form="axis"><div class="panel-heading"><div><p class="eyebrow">Axis policy</p><h2>Set device axis behavior</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="axis-name">Axis<input id="axis-name" name="axis" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="L0" /></label><label for="axis-minimum">Minimum<input id="axis-minimum" name="minimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label for="axis-maximum">Maximum<input id="axis-maximum" name="maximum" type="number" min="0" max="1" step="0.01" value="1" required /></label><label for="axis-interpolation">Interpolation<select id="axis-interpolation" name="interpolation"><option>Linear</option><option>Pchip</option><option>Makima</option><option>Step</option></select></label><label for="axis-limit-minimum">Limit minimum<input id="axis-limit-minimum" name="limitMinimum" type="number" min="0" max="1" step="0.01" value="0" required /></label><label for="axis-limit-maximum">Limit maximum<input id="axis-limit-maximum" name="limitMaximum" type="number" min="0" max="1" step="0.01" value="1" required /></label></div><div class="resource-form-options"><label><input type="checkbox" name="inverted" /> Invert value</label><label><input type="checkbox" name="limitEnabled" /> Enable limit</label><button class="button button-primary" type="submit">Save axis policy</button><button class="button button-secondary" type="button" data-resource-cancel="axis">Clear</button></div></form>`;
+function renderDeviceAxisForm(axes: DeviceAxisSetting[]): string {
+  const interpolationOptions = (selected: string) => ['Linear', 'Pchip', 'Makima', 'Step']
+    .map((value) => `<option${value === selected ? ' selected' : ''}>${value}</option>`).join('');
+  const rows = axes.map((axis) => `<tr data-axis-row="${escapeHtml(axis.axis)}"><td><strong>${escapeHtml(axis.axis)}</strong><span class="table-subtext">${escapeHtml(axisFriendlyNames[axis.axis] ?? 'Standard axis')}</span></td><td>${renderDualRange(axis, 'output', axis.minimum, axis.maximum)}</td><td><div class="axis-limit-control"><label class="axis-checkbox"><input data-axis-field="limitEnabled" aria-label="${escapeHtml(axis.axis)} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Enable limit</label>${renderDualRange(axis, 'limit', axis.limitMinimum, axis.limitMaximum)}</div></td><td><div class="axis-behavior-control"><select data-axis-field="interpolation" aria-label="${escapeHtml(axis.axis)} interpolation">${interpolationOptions(axis.interpolation)}</select><label class="axis-checkbox"><input data-axis-field="inverted" aria-label="${escapeHtml(axis.axis)} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> Reverse direction</label></div></td><td><label class="axis-travel-input"><span class="sr-only">${escapeHtml(axis.axis)} maximum travel</span><input data-axis-field="maximumTravel" aria-label="${escapeHtml(axis.axis)} maximum travel" type="number" min="0.1" max="1000000" step="0.1" value="${axis.maximumTravel ?? ''}" placeholder="Not set" /><span>${axisTravelUnit(axis.axis)}</span></label></td></tr>`).join('');
+  return `<form class="resource-form panel axis-configuration-form" data-resource-form="axis"><div class="panel-heading"><div><p class="eyebrow">Device configuration</p><h2>Set device axis behavior</h2></div><span class="result-count">${axes.length} fixed axes</span></div><div class="responsive-table axis-config-table"><table><thead><tr><th>Axis</th><th>Output range</th><th>Safety limit</th><th>Curve & direction</th><th>Full travel</th></tr></thead><tbody>${rows}</tbody></table></div><p class="form-hint">Drag both handles to set a range. Full travel is optional device calibration: millimeters for L axes, degrees for R axes, and percent for V/A axes.</p><div class="resource-form-options"><button class="button button-secondary" type="button" data-axis-reset-all>Reset all defaults</button><button class="button button-primary" type="submit">Save axis configuration</button></div></form>`;
 }
 
 function renderServerSettings(state: AppState): string {
@@ -323,7 +382,7 @@ function handleClick(event: MouseEvent) {
     document.querySelector<HTMLInputElement>('[data-resource-form="output"] input[name="id"]')?.focus();
   }
   if (action === 'focus-axis-form') {
-    document.querySelector<HTMLInputElement>('[data-resource-form="axis"] input[name="axis"]')?.focus();
+    document.querySelector<HTMLInputElement>('[data-resource-form="axis"] [data-axis-field="minimum"]')?.focus();
   }
   const mediaEditId = target.closest<HTMLElement>('[data-media-edit]')?.dataset.mediaEdit;
   if (mediaEditId) {
@@ -372,21 +431,27 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('name') as HTMLInputElement).focus();
     }
   }
-  const axisEditId = target.closest<HTMLElement>('[data-axis-edit]')?.dataset.axisEdit;
-  if (axisEditId) {
-    const axis = store.getState().deviceAxes.find((item) => item.axis.toLowerCase() === axisEditId.toLowerCase());
-    const form = document.querySelector<HTMLFormElement>('[data-resource-form="axis"]');
-    if (axis && form) {
-      (form.elements.namedItem('axis') as HTMLInputElement).value = axis.axis;
-      (form.elements.namedItem('minimum') as HTMLInputElement).value = String(axis.minimum);
-      (form.elements.namedItem('maximum') as HTMLInputElement).value = String(axis.maximum);
-      (form.elements.namedItem('interpolation') as HTMLSelectElement).value = axis.interpolation;
-      (form.elements.namedItem('limitMinimum') as HTMLInputElement).value = String(axis.limitMinimum);
-      (form.elements.namedItem('limitMaximum') as HTMLInputElement).value = String(axis.limitMaximum);
-      (form.elements.namedItem('inverted') as HTMLInputElement).checked = axis.inverted;
-      (form.elements.namedItem('limitEnabled') as HTMLInputElement).checked = axis.limitEnabled;
-      form.scrollIntoView({ behavior: 'auto', block: 'center' });
-    }
+  const resetAxes = target.closest<HTMLElement>('[data-axis-reset-all]');
+  if (resetAxes) {
+    document.querySelectorAll<HTMLElement>('[data-axis-row]').forEach((row) => {
+      const setValue = (field: string, value: string) => {
+        const input = row.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-axis-field="${field}"]`);
+        if (input) input.value = value;
+      };
+      setValue('minimum', '0');
+      setValue('maximum', '1');
+      setValue('interpolation', 'Linear');
+      setValue('limitMinimum', '0');
+      setValue('limitMaximum', '1');
+      setValue('maximumTravel', '');
+      const inverted = row.querySelector<HTMLInputElement>('[data-axis-field="inverted"]');
+      const limitEnabled = row.querySelector<HTMLInputElement>('[data-axis-field="limitEnabled"]');
+      if (inverted) inverted.checked = false;
+      if (limitEnabled) limitEnabled.checked = false;
+      synchronizeAxisRow(row);
+    });
+    const form = resetAxes.closest<HTMLFormElement>('[data-resource-form="axis"]');
+    if (form) updateAxisVisualization(form);
   }
   const cancelKind = target.closest<HTMLElement>('[data-resource-cancel]')?.dataset.resourceCancel;
   if (cancelKind) {
@@ -397,7 +462,7 @@ function handleClick(event: MouseEvent) {
       const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
       if (idInput) idInput.readOnly = false;
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-      if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : cancelKind === 'output' ? 'Create target' : 'Save axis policy';
+      if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : 'Create target';
     }
   }
   if (action === 'import-script') importInput.click();
@@ -465,12 +530,6 @@ function handleClick(event: MouseEvent) {
       .then(() => showToast('Output target deleted'))
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target deletion failed.', 'error'));
   }
-  const axisDeleteId = target.closest<HTMLElement>('[data-axis-delete]')?.dataset.axisDelete;
-  if (axisDeleteId) {
-    void store.deleteDeviceAxis(axisDeleteId)
-      .then(() => showToast('Axis policy deleted'))
-      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Axis policy deletion failed.', 'error'));
-  }
   const scriptId = target.closest<HTMLElement>('[data-load-script]')?.dataset.loadScript;
   if (scriptId) {
     const script = store.getState().scripts.find((item) => item.id === scriptId);
@@ -532,38 +591,93 @@ async function handleSubmit(event: SubmitEvent) {
         showToast('Output target created');
       }
     } else {
-      const input: DeviceAxisSetting = {
-        axis: value('axis'),
-        minimum: Number(value('minimum')),
-        maximum: Number(value('maximum')),
-        inverted: checked('inverted'),
-        interpolation: value('interpolation'),
-        limitEnabled: checked('limitEnabled'),
-        limitMinimum: Number(value('limitMinimum')),
-        limitMaximum: Number(value('limitMaximum')),
-      };
-      if (!input.axis || !Number.isFinite(input.minimum) || !Number.isFinite(input.maximum)
-        || input.minimum >= input.maximum || input.minimum < 0 || input.maximum > 1)
-        throw new Error('Axis range must satisfy 0 <= minimum < maximum <= 1.');
-      if (!Number.isFinite(input.limitMinimum) || !Number.isFinite(input.limitMaximum)
-        || input.limitMinimum >= input.limitMaximum || input.limitMinimum < 0 || input.limitMaximum > 1)
-        throw new Error('Axis limit must satisfy 0 <= limit minimum < limit maximum <= 1.');
-      await store.updateDeviceAxis(input);
-      showToast('Axis policy saved');
+      const inputs = readDeviceAxisForm(form);
+      if (inputs.length === 0) throw new Error('The fixed axis configuration is unavailable.');
+      for (const input of inputs) {
+        if (!input.axis || !Number.isFinite(input.minimum) || !Number.isFinite(input.maximum)
+          || input.minimum >= input.maximum || input.minimum < 0 || input.maximum > 1)
+          throw new Error(`${input.axis || 'Axis'} range must satisfy 0 <= minimum < maximum <= 1.`);
+        if (!Number.isFinite(input.limitMinimum) || !Number.isFinite(input.limitMaximum)
+          || input.limitMinimum >= input.limitMaximum || input.limitMinimum < 0 || input.limitMaximum > 1)
+          throw new Error(`${input.axis} limit must satisfy 0 <= limit minimum < limit maximum <= 1.`);
+        if (input.maximumTravel !== null && (!Number.isFinite(input.maximumTravel)
+          || input.maximumTravel <= 0 || input.maximumTravel > 1_000_000))
+          throw new Error(`${input.axis} maximum travel must be greater than 0 and no more than 1000000.`);
+      }
+      await store.updateDeviceAxes(inputs);
+      showToast('Axis configuration saved');
+      return;
     }
     delete form.dataset.editingId;
     form.reset();
     const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
     if (idInput) idInput.readOnly = false;
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-    if (submit) submit.textContent = kind === 'media' ? 'Create source' : kind === 'output' ? 'Create target' : 'Save axis policy';
+    if (submit) submit.textContent = kind === 'media' ? 'Create source' : 'Create target';
   } catch (error) {
     showToast(error instanceof Error ? error.message : 'Resource creation failed.', 'error');
   }
 }
 
+function readDeviceAxisForm(form: HTMLFormElement): DeviceAxisSetting[] {
+  return Array.from(form.querySelectorAll<HTMLElement>('[data-axis-row]')).map((row): DeviceAxisSetting => {
+    const numberValue = (field: string) => Number(row.querySelector<HTMLInputElement>(`[data-axis-field="${field}"]`)?.value);
+    const checkedValue = (field: string) => row.querySelector<HTMLInputElement>(`[data-axis-field="${field}"]`)?.checked ?? false;
+    const travelValue = row.querySelector<HTMLInputElement>('[data-axis-field="maximumTravel"]')?.value.trim() ?? '';
+    return {
+      axis: row.dataset.axisRow ?? '',
+      minimum: numberValue('minimum'),
+      maximum: numberValue('maximum'),
+      inverted: checkedValue('inverted'),
+      interpolation: row.querySelector<HTMLSelectElement>('[data-axis-field="interpolation"]')?.value ?? '',
+      limitEnabled: checkedValue('limitEnabled'),
+      limitMinimum: numberValue('limitMinimum'),
+      limitMaximum: numberValue('limitMaximum'),
+      maximumTravel: travelValue === '' ? null : Number(travelValue),
+    };
+  });
+}
+
+function synchronizeAxisRow(row: HTMLElement, changedField = '') {
+  const synchronizeRange = (group: 'output' | 'limit', minimumField: string, maximumField: string) => {
+    const minimumInput = row.querySelector<HTMLInputElement>(`[data-axis-field="${minimumField}"]`);
+    const maximumInput = row.querySelector<HTMLInputElement>(`[data-axis-field="${maximumField}"]`);
+    const range = row.querySelector<HTMLElement>(`[data-axis-range="${group}"]`);
+    if (!minimumInput || !maximumInput || !range) return;
+    let minimum = Number(minimumInput.value);
+    let maximum = Number(maximumInput.value);
+    if (minimum >= maximum) {
+      if (changedField === minimumField) minimum = Math.max(0, maximum - 0.01);
+      else maximum = Math.min(1, minimum + 0.01);
+    }
+    minimumInput.value = String(Number(minimum.toFixed(2)));
+    maximumInput.value = String(Number(maximum.toFixed(2)));
+    range.style.setProperty('--range-start', `${minimum * 100}%`);
+    range.style.setProperty('--range-end', `${maximum * 100}%`);
+    const minimumOutput = range.querySelector<HTMLOutputElement>('[data-range-value="minimum"]');
+    const maximumOutput = range.querySelector<HTMLOutputElement>('[data-range-value="maximum"]');
+    if (minimumOutput) minimumOutput.value = percent(minimum);
+    if (maximumOutput) maximumOutput.value = percent(maximum);
+  };
+  synchronizeRange('output', 'minimum', 'maximum');
+  synchronizeRange('limit', 'limitMinimum', 'limitMaximum');
+  const limitEnabled = row.querySelector<HTMLInputElement>('[data-axis-field="limitEnabled"]')?.checked ?? false;
+  row.querySelector<HTMLElement>('[data-axis-range="limit"]')?.classList.toggle('is-disabled', !limitEnabled);
+}
+
+function updateAxisVisualization(form: HTMLFormElement) {
+  const preview = document.querySelector<HTMLElement>('[data-axis-visualization]');
+  if (preview) preview.innerHTML = renderDeviceAxisVisualization(readDeviceAxisForm(form));
+}
+
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  const axisRow = target.closest<HTMLElement>('[data-axis-row]');
+  if (axisRow && target.dataset.axisField) {
+    synchronizeAxisRow(axisRow, target.dataset.axisField);
+    const form = axisRow.closest<HTMLFormElement>('[data-resource-form="axis"]');
+    if (form) updateAxisVisualization(form);
+  }
   if (target.id === 'script-filter') {
     const query = target.value.trim().toLowerCase();
     document.querySelectorAll<HTMLElement>('.script-item').forEach((item) => { item.hidden = query.length > 0 && !item.textContent?.toLowerCase().includes(query); });

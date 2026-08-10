@@ -173,6 +173,49 @@ h2 { margin-bottom: 7px; font-size: 17px; line-height: 1.25; }
 .resource-form-options label { display: flex; align-items: center; gap: 6px; }
 .resource-form-options input[type="checkbox"] { accent-color: var(--teal); }
 .resource-form-options .button { margin-left: auto; }
+.axis-configuration-form .resource-form-options .button:first-child { margin-left: auto; }
+.axis-spatial-panel { margin-bottom: 18px; overflow: hidden; }
+.axis-spatial-layout { display: grid; grid-template-columns: minmax(420px, 1.15fr) minmax(300px, .85fr); gap: 18px; padding: 0 24px 24px; }
+.axis-cuboid-wrap { min-width: 0; border: 1px solid var(--line-soft); border-radius: 7px; background: radial-gradient(circle at 50% 45%, #172a30 0, #10181d 68%); }
+.axis-cuboid { display: block; width: 100%; min-height: 310px; }
+.axis-cuboid text { fill: var(--muted); font-size: 11px; }
+.axis-cube-outer { stroke: #43535d; stroke-width: 1.2; stroke-dasharray: 5 5; }
+.axis-cube-active { stroke: var(--teal); stroke-width: 2.5; filter: drop-shadow(0 0 4px rgba(58, 210, 192, .35)); }
+.axis-direction, .axis-rotation { fill: none; stroke: var(--amber); stroke-width: 1.7; }
+.axis-cuboid marker path { fill: var(--amber); }
+.axis-visual-legend { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 18px 16px; color: var(--muted); font-size: 10px; }
+.axis-visual-legend span { display: flex; align-items: center; gap: 6px; }
+.axis-visual-legend i { width: 18px; height: 3px; border-radius: 2px; }
+.legend-outer { background: #43535d; }
+.legend-active { background: var(--teal); box-shadow: 0 0 5px rgba(58, 210, 192, .4); }
+.axis-travel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 8px; }
+.axis-travel-card { min-width: 0; padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 5px; background: #111a20; }
+.axis-travel-card div { display: flex; align-items: baseline; gap: 7px; }
+.axis-travel-card strong { color: var(--text); font-size: 11px; }
+.axis-travel-card span, .axis-travel-card small { overflow: hidden; color: var(--subtle); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.axis-travel-card b { display: block; margin-top: 8px; color: var(--teal); font-size: 11px; }
+.axis-travel-card small { display: block; margin-top: 3px; }
+.axis-config-table table { min-width: 1120px; }
+.axis-config-table th:nth-child(2), .axis-config-table th:nth-child(3) { min-width: 245px; }
+.axis-config-table input[type="number"], .axis-config-table select { width: 100%; min-width: 92px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; background: #111a20; color: var(--text); }
+.axis-config-table select { min-width: 115px; }
+.axis-checkbox { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.axis-checkbox input { accent-color: var(--teal); }
+.axis-limit-control, .axis-behavior-control { display: grid; gap: 9px; }
+.axis-travel-input { display: flex; align-items: center; min-width: 135px; border: 1px solid var(--line); border-radius: 4px; background: #111a20; }
+.axis-travel-input input[type="number"] { min-width: 0; border: 0; background: transparent; }
+.axis-travel-input span:last-child { padding-right: 9px; color: var(--subtle); font-size: 10px; }
+.dual-range-control { position: relative; min-width: 205px; height: 48px; --range-start: 0%; --range-end: 100%; }
+.dual-range-track { position: absolute; top: 15px; right: 7px; left: 7px; height: 5px; overflow: hidden; border-radius: 4px; background: #30404a; }
+.dual-range-track span { position: absolute; top: 0; bottom: 0; left: var(--range-start); width: calc(var(--range-end) - var(--range-start)); background: var(--teal); }
+.dual-range-input { position: absolute; top: 8px; left: 0; z-index: 2; width: 100%; height: 20px; margin: 0; appearance: none; pointer-events: none; background: transparent; }
+.dual-range-input.range-upper { z-index: 3; }
+.dual-range-input::-webkit-slider-runnable-track { height: 5px; background: transparent; }
+.dual-range-input::-webkit-slider-thumb { width: 15px; height: 15px; margin-top: -5px; appearance: none; border: 2px solid #d9fffb; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 2px #102427; cursor: grab; pointer-events: auto; }
+.dual-range-input::-moz-range-track { height: 5px; background: transparent; }
+.dual-range-input::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid #d9fffb; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 2px #102427; cursor: grab; pointer-events: auto; }
+.dual-range-values { position: absolute; right: 2px; bottom: 0; left: 2px; display: flex; justify-content: space-between; color: var(--subtle); font-size: 9px; }
+.dual-range-control.is-disabled { opacity: .42; }
 .resource-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .button-danger { border-color: #75404a; background: var(--red-soft); color: #ffc3c8; }
 .button-danger:hover { border-color: var(--red); }
@@ -264,6 +307,7 @@ td strong { color: var(--text); font-size: 12px; }
   .now-playing-summary { width: 220px; }
   .source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .resource-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .axis-spatial-layout { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 780px) {
@@ -290,6 +334,9 @@ td strong { color: var(--text); font-size: 12px; }
   .resource-form-grid { grid-template-columns: 1fr; }
   .resource-form-options .button { width: 100%; margin-left: 0; }
   .health-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .axis-spatial-layout { padding: 0 16px 18px; }
+  .axis-cuboid { min-width: 520px; }
+  .axis-cuboid-wrap { overflow-x: auto; }
 }
 
 @media (max-width: 500px) {
@@ -302,6 +349,7 @@ td strong { color: var(--text); font-size: 12px; }
   .topbar-actions { gap: 8px; }
   .breadcrumbs span:first-child, .breadcrumbs span[aria-hidden="true"] { display: none; }
   .now-playing-main { padding: 22px 19px; }
+  .axis-travel-grid { grid-template-columns: 1fr; }
   .now-playing-summary { padding: 22px 19px; }
   .meta-row { gap: 8px; }
   .meta-row span + span::before, .axis-meta span + span::before { margin-right: 6px; }

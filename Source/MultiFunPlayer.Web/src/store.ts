@@ -95,7 +95,21 @@ export interface DeviceAxisSetting {
   limitEnabled: boolean;
   limitMinimum: number;
   limitMaximum: number;
+  maximumTravel: number | null;
 }
+
+const fixedDeviceAxisNames = ['L0', 'L1', 'L2', 'R0', 'R1', 'R2', 'V0', 'V1', 'A0', 'A1', 'A2'];
+const defaultDeviceAxes = (): DeviceAxisSetting[] => fixedDeviceAxisNames.map((axis) => ({
+  axis,
+  minimum: 0,
+  maximum: 1,
+  inverted: false,
+  interpolation: 'Linear',
+  limitEnabled: false,
+  limitMinimum: 0,
+  limitMaximum: 1,
+  maximumTravel: null,
+}));
 
 export interface ActivityLog {
   id: number;
@@ -179,10 +193,7 @@ const initialState: AppState = {
     { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, coalescedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
     { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', sentFrames: 0, droppedFrames: 0, coalescedFrames: 0, failedFrames: 0, reconnects: 0, lastSentAt: 'Never', signal: 0 },
   ],
-  deviceAxes: [
-    { axis: 'L0', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 },
-    { axis: 'L1', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 },
-  ],
+  deviceAxes: defaultDeviceAxes(),
   logs: [
     { id: 1, time: '09:47:22', level: 'info', message: 'Playback resumed at 60 Hz', source: 'runtime' },
     { id: 2, time: '09:47:20', level: 'info', message: 'Studio bridge acknowledged output stream', source: 'output-1' },
@@ -433,18 +444,11 @@ export function createMockStore() {
       appendLog('warn', 'Output target removed', id);
       notify();
     },
-    async updateDeviceAxis(input: DeviceAxisSetting): Promise<DeviceAxisSetting> {
-      const index = state.deviceAxes.findIndex((axis) => axis.axis.toLowerCase() === input.axis.toLowerCase());
-      if (index >= 0) state.deviceAxes[index] = { ...input };
-      else state.deviceAxes = [...state.deviceAxes, { ...input }];
-      appendLog('info', `Updated ${input.axis} axis policy`, 'device-axes');
+    async updateDeviceAxes(inputs: DeviceAxisSetting[]): Promise<DeviceAxisSetting[]> {
+      state.deviceAxes = inputs.map((input) => ({ ...input }));
+      appendLog('info', `Saved ${inputs.length} axis policies`, 'device-axes');
       notify();
-      return input;
-    },
-    async deleteDeviceAxis(axis: string): Promise<void> {
-      state.deviceAxes = state.deviceAxes.filter((item) => item.axis.toLowerCase() !== axis.toLowerCase());
-      appendLog('warn', `Removed ${axis} axis policy`, 'device-axes');
-      notify();
+      return state.deviceAxes;
     },
     async connectOutputTarget(id: string): Promise<OutputTarget> {
       const output = state.outputs.find((item) => item.id === id);
@@ -576,6 +580,7 @@ export function createRemoteStore(client: MfpApiClient) {
     limitEnabled: axis.limitEnabled,
     limitMinimum: axis.limitMinimum,
     limitMaximum: axis.limitMaximum,
+    maximumTravel: axis.maximumTravel ?? null,
   });
   const logsFromResponse = (response: ApiLogsResponse): ActivityLog[] => response.items.map((item, index) => ({
     id: Date.parse(item.timestampUtc) || Date.now() + index,
@@ -654,6 +659,7 @@ export function createRemoteStore(client: MfpApiClient) {
     limitEnabled: input.limitEnabled,
     limitMinimum: input.limitMinimum,
     limitMaximum: input.limitMaximum,
+    maximumTravel: input.maximumTravel,
   });
   const command = (action: () => Promise<StatusResponse>, message: string) => {
     void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
@@ -831,18 +837,12 @@ export function createRemoteStore(client: MfpApiClient) {
       notify();
       return target;
     },
-    async updateDeviceAxis(input: DeviceAxisSetting): Promise<DeviceAxisSetting> {
-      const updated = await client.updateDeviceAxis(input.axis, axisRequest(input));
-      state.deviceAxes = [...state.deviceAxes.filter((axis) => axis.axis.toLowerCase() !== input.axis.toLowerCase()), axisFromResponse(updated)];
-      appendLog('info', `Updated ${updated.axis} axis policy`, 'device-axes');
+    async updateDeviceAxes(inputs: DeviceAxisSetting[]): Promise<DeviceAxisSetting[]> {
+      const updated = await client.updateDeviceAxes(inputs.map(axisRequest));
+      state.deviceAxes = updated.map(axisFromResponse);
+      appendLog('info', `Saved ${updated.length} axis policies`, 'device-axes');
       notify();
-      return axisFromResponse(updated);
-    },
-    async deleteDeviceAxis(axis: string): Promise<void> {
-      await client.deleteDeviceAxis(axis);
-      state.deviceAxes = state.deviceAxes.filter((item) => item.axis.toLowerCase() !== axis.toLowerCase());
-      appendLog('warn', `Removed ${axis} axis policy`, 'device-axes');
-      notify();
+      return state.deviceAxes;
     },
     toggleMedia(id: string) {
       const source = state.media.find((item) => item.id === id);

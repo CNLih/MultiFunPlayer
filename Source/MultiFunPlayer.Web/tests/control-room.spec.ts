@@ -37,10 +37,12 @@ test.describe('control room demo journey', () => {
     expect(pageBounds.bodyRight).toBeLessThanOrEqual((viewport?.width ?? pageBounds.bodyRight) + 1);
     expect(pageBounds.appShellRight).toBeLessThanOrEqual((viewport?.width ?? pageBounds.appShellRight) + 1);
 
-    await page.getByLabel('Axis', { exact: true }).fill('L9');
-    await page.getByRole('button', { name: 'Save axis policy' }).click();
-    await expect(page.getByText('Axis policy saved')).toBeVisible();
-    await expect(page.getByText('L9')).toBeVisible();
+    await page.getByLabel('L0 minimum', { exact: true }).fill('0.1');
+    await page.getByLabel('L0 maximum travel', { exact: true }).fill('120');
+    await page.getByRole('button', { name: 'Save axis configuration' }).click();
+    await expect(page.getByText('Axis configuration saved')).toBeVisible();
+    await expect(page.getByLabel('L0 minimum', { exact: true })).toHaveValue('0.1');
+    await expect(page.locator('[data-axis-travel-summary="L0"]')).toContainText('120.0 mm full');
 
     for (const route of ['media', 'outputs', 'logs']) {
       await page.locator(`button.nav-item[data-route="${route}"]`).click();
@@ -52,7 +54,7 @@ test.describe('control room demo journey', () => {
     }
   });
 
-  test('completes media, output, axis, and diagnostics CRUD journeys', async ({ page }) => {
+  test('completes media, output, axis configuration, and diagnostics journeys', async ({ page }) => {
     await page.goto('/?demo=1#media');
 
     await page.getByLabel('Id', { exact: true }).fill('playwright-media');
@@ -94,14 +96,16 @@ test.describe('control room demo journey', () => {
     await expect(editedOutput).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Device settings' }).click();
-    await page.getByLabel('Axis', { exact: true }).fill('L8');
-    await page.getByRole('button', { name: 'Save axis policy' }).click();
-    const axisRow = page.locator('tr').filter({ hasText: 'L8' });
-    await axisRow.getByRole('button', { name: 'Edit' }).click();
-    await page.getByLabel('Minimum', { exact: true }).fill('0.1');
-    await page.getByRole('button', { name: 'Save axis policy' }).click();
-    await axisRow.getByRole('button', { name: 'Delete' }).click();
-    await expect(axisRow).toHaveCount(0);
+    await expect(page.locator('[data-axis-row]')).toHaveCount(11);
+    await page.getByLabel('L0 minimum', { exact: true }).fill('0.1');
+    await page.getByLabel('L0 maximum', { exact: true }).fill('0.9');
+    await page.getByLabel('L0 inverted', { exact: true }).check();
+    await page.getByRole('button', { name: 'Save axis configuration' }).click();
+    await expect(page.getByText('Axis configuration saved')).toBeVisible();
+    await expect(page.getByLabel('L0 minimum', { exact: true })).toHaveValue('0.1');
+    await page.getByRole('button', { name: 'Reset all defaults' }).click();
+    await expect(page.getByLabel('L0 minimum', { exact: true })).toHaveValue('0');
+    await expect(page.getByLabel('L0 inverted', { exact: true })).not.toBeChecked();
 
     await page.getByRole('button', { name: 'Logs and health' }).click();
     await page.getByLabel('Filter log level').selectOption('warn');
@@ -233,7 +237,10 @@ test.describe('control room demo journey', () => {
       if (url.pathname === '/api/v1/adapters') return json({ apiVersion: 'v1', schemaVersion: '1.0', transports: [{ id: 'tcp', integration: 'direct', implementationStatus: 'ready', platforms: ['linux'], notes: 'loopback' }], adapters: [{ id: 'output.tcp', kind: 'output', integration: 'direct', implementationStatus: 'ready', transport: 'tcp', requiredServices: [], notes: 'loopback' }] });
       if (url.pathname === '/api/v1/devices/serial') return json([]);
       if (url.pathname === '/api/v1/logs') return json({ items: [{ timestampUtc: '2026-08-07T00:00:00Z', level: 'Information', category: 'remote-test', eventId: 1, message: 'Remote state loaded', traceId: null, properties: {} }], truncated: false, capacity: 500 });
-      if (url.pathname === '/api/v1/device-axes') return json([{ axis: 'L0', minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 }]);
+      if (url.pathname === '/api/v1/device-axes') {
+        if (request.method() === 'PUT') return json((request.postDataJSON() as { axes: unknown[] }).axes);
+        return json(['L0', 'L1', 'L2', 'R0', 'R1', 'R2', 'V0', 'V1', 'A0', 'A1', 'A2'].map((axis) => ({ axis, minimum: 0, maximum: 1, inverted: false, interpolation: 'Linear', limitEnabled: false, limitMinimum: 0, limitMaximum: 1 })));
+      }
       if (url.pathname === '/api/v1/media-sources/remote-media/pause') {
         mediaSource.mediaState.playing = false;
         return json(mediaSource);

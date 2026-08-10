@@ -15,13 +15,26 @@ MultiFunPlayer synchronizes your devices with video files using scripts. The pla
 The migration branch retains the Windows/WPF host while adding a headless
 ASP.NET Core server and a same-origin Web SPA. The portable path preserves the
 Core/Application timing and TCode logic, exposes versioned REST/WebSocket
-contracts, and currently wires Internal media time plus TCP, UDP, WebSocket,
-File, and Serial output registries. Network media integrations and Windows
-player integrations are reported as planned, external-proxy, or unsupported
-until their adapters are validated; the Web host does not claim the complete
-Windows feature list above.
+contracts, and currently wires Internal, OFS, Emby, Jellyfin, Plex, VLC, and
+MPC-HC/BE media sources plus TCP, UDP, WebSocket, File, Serial, The Handy, and
+Buttplug output registries. Remaining player integrations are reported as
+planned, external-proxy, or unsupported; the Web host does not claim the
+complete Windows feature list above.
 
-See [`WEB_LINUX_FNOS_MIGRATION_PLAN.md`](WEB_LINUX_FNOS_MIGRATION_PLAN.md),
+Start with the
+[current usage, testing, running, and deployment guide](Docs/docs/migration/current-usage-testing-deployment.md).
+The repository root `build.sh` is the canonical command entry point:
+
+```sh
+./build.sh doctor
+./build.sh run server
+./build.sh run web
+./build.sh package server linux-x64
+./build.sh package docker local
+FNPACK=/path/to/fnpack ./build.sh package fnos all
+```
+
+See also [`WEB_LINUX_FNOS_MIGRATION_PLAN.md`](WEB_LINUX_FNOS_MIGRATION_PLAN.md),
 [`Source/MultiFunPlayer.Server/README.md`](Source/MultiFunPlayer.Server/README.md),
 [`deploy/docker/README.md`](deploy/docker/README.md), and the
 [headless operations guide](Docs/docs/migration/web-operations.md) for the

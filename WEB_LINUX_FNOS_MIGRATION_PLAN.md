@@ -616,10 +616,20 @@ Validated in the current Linux environment:
 - The remote SPA now consumes bounded runtime logs, non-secret settings, and
   stable serial discovery, and renders those diagnostics without taking
   ownership of backend playback state.
+- The repository root now provides a single `build.sh` command surface for
+  local Server/Web/WPF startup, Docker and simulator lifecycle, portable tests,
+  validation/soak runs, Server tar archives, architecture-specific Docker
+  images, and validated x86/ARM fnOS FPK output. It resolves the user-local
+  Linux .NET and Node installations before inherited Windows tools under WSL.
 - The script view binds its axis visualization to normalized `status.axes`
   values (with a deterministic demo fallback); offset is applied to seek
-  requests and the selected clock mode is retained in SPA state. Persisted
-  range, inversion, interpolation, and limit editing is covered; broader
+  requests and the selected clock mode is retained in SPA state. The device
+  settings view exposes the fixed 11-axis TCode 0.3 set and saves range,
+  inversion, interpolation, and limit policies atomically as one persisted
+  configuration. Its range and safety-limit controls use dual-handle sliders;
+  a live cuboid maps L0/L1/L2 to height/depth/width, shows R0/R1/R2 rotation
+  directions, and converts normalized spans with optional per-axis maximum
+  travel calibration metadata; broader
   media-clock arbitration and device/browser matrix validation remain open.
 - The Infrastructure migration reader accepts the sanitized desktop JSON shape,
   emits versioned portable records, normalizes path separators, and omits
@@ -910,16 +920,24 @@ Validated in the current Linux environment:
   CPU time 9.14 s. That run failed only the diagnostic 60-frame coalescing
   budget; it does not indicate transport loss (`failedFrames` stayed zero), but
   it also does not satisfy the budgeted soak gate. CI runs a 10-second smoke with
-  the same p95/coalescing budgets and uploads the report. Neither run replaces the
-  required eight-hour Linux/fnOS soak or target-device failure matrix. A fresh
-  eight-hour Linux run was started on 2026-08-08 05:26:47 CST with
-  `--duration-seconds 28800`, a 100 ms revision-interval budget, and a 5,760
-  coalesced-frame budget. Its detached process is still active; health and
-  `Playing` status probes remain successful, but no final JSON evidence exists
-  yet, so P7-02 remains unchecked until graceful completion and report review.
-  That process predates the new minimum-duration option; its final evidence
-  must therefore be checked against the measured timestamps/elapsed process
-  time, while subsequent runs use `--min-duration-seconds 28800` directly.
+  the same p95/coalescing budgets and uploads the report. The eight-hour Linux
+  run completed on 2026-08-08 at 13:41:01 CST and shut down gracefully. It sent
+  569,609 frames with 0 failed frames and 0 reconnects; p95 revision interval
+  was 50.326 ms under the 100 ms budget, peak RSS was about 130 MiB, and CPU time
+  was 613.56 s. Its only acceptance failure was 6,401 coalesced frames against
+  the 5,760-frame budget. The report predates measured-duration evidence but its
+  timestamps span more than the requested eight hours. Investigation showed
+  that a 20 Hz target was being sampled again after the engine had already
+  produced frames at the configured 20 Hz cadence, so normal scheduler jitter
+  accumulated false coalescing diagnostics. The Server now passes its resolved
+  engine tick rate into `RateLimitedOutputSink`, which bypasses sampling when
+  the target rate covers the source rate and retains sampling for lower-rate
+  targets. Infrastructure tests pass 45/45, Server tests pass 44/44, and the
+  Release solution build completes with 0 errors. A 30.356-second Release
+  Server soak using a zero-coalescing budget passed with 611 sent, 0 coalesced,
+  0 failed, and 0 reconnects; p95 revision interval was 50.753 ms and shutdown
+  was graceful. P7-02 remains unchecked until the patched build completes a new
+  eight-hour run; neither local run replaces fnOS or physical-device evidence.
 - `tools/run-portable-upgrade.py` now starts independent Server processes
   against the same four roots, exercises both graceful shutdown and a forced
   process interruption, and verifies restoration of an uploaded script, an
@@ -1014,7 +1032,15 @@ Validated in the current Linux environment:
   its top-level `repositoryRevision`, `endedAtUtc`, and `durationSeconds`; the
   current rerun is recorded in `/tmp/mfp-validation-current-8.json`, bound to
   `024817e6ec204dd635a732883758ca909c828c6b`, and took 67.364 seconds, while
-  four target-environment gates remain pending. The
+  four target-environment gates remain pending. A post-fix working-tree rerun
+  on 2026-08-10 used `--skip-browser` because the current shell lacks the local
+  Chromium host-library path and passed 23 checks with 0 failures in 113.510
+  seconds. Its five pending entries are the deliberately skipped browser check
+  plus Docker multi-architecture execution, container replacement, fnOS/NAS,
+  and physical-output acceptance. It reran all portable unit/integration tests,
+  dependency audits, Web type/static/build checks, interruption simulations,
+  process restart persistence, and the 10-second soak; that soak recorded 207
+  sent, 0 coalesced, 0 failed, and 0 reconnects. The
   interruption subset covers active-playback browser
   disconnect, output-endpoint recovery, TCP/WS peer restart, network-player
   restart protocol simulation, Buttplug device removal, and persistent-volume
