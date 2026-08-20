@@ -34,6 +34,9 @@ public static class ServerProgram
         ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
+        builder.Services.AddSingleton<RuntimeScriptEvaluator>();
+        builder.Services.AddSingleton<RuntimeScriptMatcher>();
+        builder.Services.AddSingleton<ResourceDiscoveryService>();
         builder.Services.AddSingleton<IOfsMediaSourceAdapterFactory, OfsMediaSourceAdapterFactory>();
         builder.Services.AddSingleton<INetworkMediaSourceAdapterFactory, NetworkMediaSourceAdapterFactory>();
         builder.Services.AddSingleton<ConfigurationMigrationHostedService>();
@@ -45,6 +48,9 @@ public static class ServerProgram
         builder.Services.AddSingleton<MediaSourceRegistry>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<MediaSourceRegistry>());
+        builder.Services.AddSingleton<RuntimeRoutingRegistry>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<RuntimeRoutingRegistry>());
         builder.Services.AddSingleton<DeviceAxisRegistry>();
         builder.Services.AddSingleton<IHostedService>(services =>
             services.GetRequiredService<DeviceAxisRegistry>());
@@ -53,6 +59,7 @@ public static class ServerProgram
         builder.Services.AddSingleton(runtimeLogStore);
         builder.Logging.AddProvider(new RuntimeLogProvider(runtimeLogStore));
         builder.Services.AddHostedService<EngineTicker>();
+        builder.Services.AddHostedService<RuntimeRouteTicker>();
     }
 
     private static void ConfigureKeyPersistence(WebApplicationBuilder builder, StorageOptions storage)
@@ -134,11 +141,51 @@ public static class ServerProgram
         {
             var hz = ServerOptions.ResolveTickHz(config);
             return Results.Ok(new CapabilitiesResponse("v1", hz,
-                ["play", "pause", "stop", "seek", "load", "media.play", "media.pause", "media.seek"],
+                ["play", "pause", "stop", "seek", "load", "media.play", "media.pause", "media.seek",
+                    "media.speed", "runtime.routes"],
                 ["funscript", .. InfrastructureCapabilities.All.Where(capability => capability.Available).Select(capability => capability.Id)],
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")), "/hubs/state"));
         });
         app.MapGet("/api/v1/adapters", () => Results.Ok(AdapterCapabilityCatalog.Current));
+        app.MapPost("/api/v1/discovery/media-servers", async (MediaServerDiscoveryRequest request,
+            ResourceDiscoveryService discovery, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await discovery.DiscoverMediaServersAsync(request.Kind ?? string.Empty,
+                    request.TimeoutMilliseconds, cancellationToken).ConfigureAwait(false));
+            }
+            catch (ArgumentException exception)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "Invalid media discovery request",
+                    exception.Message, "invalid_discovery_request");
+            }
+            catch (System.Net.Sockets.SocketException exception)
+            {
+                return Problem(StatusCodes.Status502BadGateway, "Media discovery failed",
+                    exception.Message, "discovery_failed");
+            }
+        });
+        app.MapPost("/api/v1/discovery/buttplug-devices", async (ButtplugDeviceDiscoveryRequest request,
+            ResourceDiscoveryService discovery, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await discovery.DiscoverButtplugDevicesAsync(request.Endpoint ?? string.Empty,
+                    request.ScanMilliseconds, cancellationToken).ConfigureAwait(false));
+            }
+            catch (ArgumentException exception)
+            {
+                return Problem(StatusCodes.Status400BadRequest, "Invalid Buttplug discovery request",
+                    exception.Message, "invalid_discovery_request");
+            }
+            catch (Exception exception) when (exception is IOException or WebSocketException
+                or InvalidOperationException)
+            {
+                return Problem(StatusCodes.Status502BadGateway, "Buttplug discovery failed",
+                    exception.Message, "discovery_failed");
+            }
+        });
         app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage) =>
         {
             var tickHz = ServerOptions.ResolveTickHz(config);
@@ -155,14 +202,27 @@ public static class ServerProgram
             OutputTargetRegistry registry, CancellationToken cancellationToken) =>
             MapOutputTargetOperation(await registry.CreateAsync(ToDefinition(request.Id, request), cancellationToken)
                 .ConfigureAwait(false), created: true));
+        app.MapPost("/api/v1/output-targets/test", async (OutputTargetRequest request,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.TestAsync(ToTestDefinition(request), cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/output-targets/{id}/test", async (string id,
+            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
+            MapOutputTargetOperation(await registry.TestAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
         app.MapPut("/api/v1/output-targets/{id}", async (string id, OutputTargetRequest request,
             OutputTargetRegistry registry, CancellationToken cancellationToken) =>
             MapOutputTargetOperation(await registry.UpdateAsync(id, ToDefinition(id, request), cancellationToken)
                 .ConfigureAwait(false), created: false));
         app.MapDelete("/api/v1/output-targets/{id}", async (string id,
-            OutputTargetRegistry registry, CancellationToken cancellationToken) =>
-            MapOutputTargetOperation(await registry.DeleteAsync(id, cancellationToken)
-                .ConfigureAwait(false), created: false));
+            OutputTargetRegistry registry, RuntimeRoutingRegistry routing,
+            CancellationToken cancellationToken) =>
+        {
+            var operation = await registry.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            if (operation.Status == OutputTargetOperationStatus.Success)
+                await routing.RemoveOutputAsync(id, cancellationToken).ConfigureAwait(false);
+            return MapOutputTargetOperation(operation, created: false);
+        });
         app.MapPost("/api/v1/output-targets/{id}/connect", async (string id,
             OutputTargetRegistry registry, CancellationToken cancellationToken) =>
             MapOutputTargetOperation(await registry.ConnectAsync(id, cancellationToken)
@@ -177,14 +237,27 @@ public static class ServerProgram
             MediaSourceRegistry registry, CancellationToken cancellationToken) =>
             MapMediaSourceOperation(await registry.CreateAsync(ToDefinition(request.Id, request), cancellationToken)
                 .ConfigureAwait(false), created: true));
+        app.MapPost("/api/v1/media-sources/test", async (MediaSourceRequest request,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.TestAsync(ToTestDefinition(request), cancellationToken)
+                .ConfigureAwait(false), created: false));
+        app.MapPost("/api/v1/media-sources/{id}/test", async (string id,
+            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.TestAsync(id, cancellationToken)
+                .ConfigureAwait(false), created: false));
         app.MapPut("/api/v1/media-sources/{id}", async (string id, MediaSourceRequest request,
             MediaSourceRegistry registry, CancellationToken cancellationToken) =>
             MapMediaSourceOperation(await registry.UpdateAsync(id, ToDefinition(id, request), cancellationToken)
                 .ConfigureAwait(false), created: false));
         app.MapDelete("/api/v1/media-sources/{id}", async (string id,
-            MediaSourceRegistry registry, CancellationToken cancellationToken) =>
-            MapMediaSourceOperation(await registry.DeleteAsync(id, cancellationToken)
-                .ConfigureAwait(false), created: false));
+            MediaSourceRegistry registry, RuntimeRoutingRegistry routing,
+            CancellationToken cancellationToken) =>
+        {
+            var operation = await registry.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            if (operation.Status == MediaSourceOperationStatus.Success)
+                await routing.RemoveSourceAsync(id, cancellationToken).ConfigureAwait(false);
+            return MapMediaSourceOperation(operation, created: false);
+        });
         app.MapPost("/api/v1/media-sources/{id}/connect", async (string id,
             MediaSourceRegistry registry, CancellationToken cancellationToken) =>
             MapMediaSourceOperation(await registry.ConnectAsync(id, cancellationToken)
@@ -211,6 +284,22 @@ public static class ServerProgram
             return MapMediaSourceOperation(await registry.SeekAsync(id,
                     TimeSpan.FromSeconds(request.PositionSeconds), cancellationToken)
                 .ConfigureAwait(false), created: false);
+        });
+        app.MapPost("/api/v1/media-sources/{id}/speed", async (string id,
+            PlaybackSpeedRequest request, MediaSourceRegistry registry,
+            CancellationToken cancellationToken) =>
+            MapMediaSourceOperation(await registry.SetPlaybackSpeedAsync(id, request.PlaybackSpeed,
+                    cancellationToken).ConfigureAwait(false), created: false));
+        app.MapGet("/api/v1/runtime/routes", (RuntimeRoutingRegistry registry) =>
+            Results.Ok(registry.List()));
+        app.MapPut("/api/v1/runtime/routes", async (RuntimeRoutesRequest request,
+            RuntimeRoutingRegistry registry, CancellationToken cancellationToken) =>
+        {
+            var routes = (request.Routes ?? []).Select(route => new RuntimeSourceRouteDefinition(
+                route.SourceId ?? string.Empty, route.OutputIds ?? [], route.LoopEnabled,
+                route.ScriptId, route.ScriptMatchMode ?? "exact"));
+            return MapRuntimeRoutingOperation(await registry.SetAsync(routes, cancellationToken)
+                .ConfigureAwait(false));
         });
         app.MapGet("/api/v1/devices/serial", (HttpContext context) =>
         {
@@ -257,7 +346,8 @@ public static class ServerProgram
             catalog.TryRead(id, out var response)
                 ? Results.Ok(response)
                 : Problem(StatusCodes.Status404NotFound, "Script not found", "The requested script id is not in the catalog.", "script_not_found"));
-        app.MapPost("/api/v1/scripts", (ScriptUploadRequest request, ScriptCatalog catalog) =>
+        app.MapPost("/api/v1/scripts", (ScriptUploadRequest request, ScriptCatalog catalog,
+            RuntimeScriptEvaluator evaluator) =>
         {
             if (!catalog.TryWrite(request.Id, request.Content, request.Overwrite,
                     out var descriptor, out var error, out var conflict))
@@ -269,7 +359,8 @@ public static class ServerProgram
                     error ?? "The script upload was rejected.", "invalid_script_upload");
             }
 
-            return Results.Created($"/api/v1/scripts/{Uri.EscapeDataString(descriptor!.Id)}", descriptor);
+            evaluator.Invalidate(descriptor!.Id);
+            return Results.Created($"/api/v1/scripts/{Uri.EscapeDataString(descriptor.Id)}", descriptor);
         });
         app.MapPost("/api/v1/scripts/load", (LoadScriptRequest request, ScriptCatalog catalog,
             HeadlessPlayerEngine engine) =>
@@ -346,6 +437,14 @@ public static class ServerProgram
             request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
             request.DeviceId, request.SecretRef);
 
+    private static OutputTargetDefinition ToTestDefinition(OutputTargetRequest request)
+        => ToDefinition(string.IsNullOrWhiteSpace(request.Id) ? "connection-test" : request.Id,
+            request) with { Name = string.IsNullOrWhiteSpace(request.Name) ? "Connection test" : request.Name };
+
+    private static MediaSourceDefinition ToTestDefinition(MediaSourceRequest request)
+        => ToDefinition(string.IsNullOrWhiteSpace(request.Id) ? "connection-test" : request.Id,
+            request) with { Name = string.IsNullOrWhiteSpace(request.Name) ? "Connection test" : request.Name };
+
     private static IResult MapOutputTargetOperation(OutputTargetOperation operation, bool created)
         => operation.Status switch
         {
@@ -382,6 +481,19 @@ public static class ServerProgram
                 "Media source storage unavailable", operation.Error ?? "The media source could not be persisted.", "media_source_unavailable"),
             _ => Problem(StatusCodes.Status502BadGateway,
                 "Media source connection unavailable", operation.Error ?? "The media source adapter is unavailable.", "media_source_failed")
+        };
+
+    private static IResult MapRuntimeRoutingOperation(RuntimeRoutingOperation operation)
+        => operation.Status switch
+        {
+            RuntimeRoutingOperationStatus.Success => Results.Ok(operation.Routes),
+            RuntimeRoutingOperationStatus.Invalid => Problem(StatusCodes.Status409Conflict,
+                "Invalid runtime routing", operation.Error ?? "The runtime routes are invalid.",
+                "invalid_runtime_routing"),
+            _ => Problem(StatusCodes.Status503ServiceUnavailable,
+                "Runtime routing storage unavailable",
+                operation.Error ?? "The runtime routes could not be persisted.",
+                "runtime_routing_unavailable")
         };
 
     private static IResult MapDeviceAxisOperation(DeviceAxisOperation operation)
@@ -539,6 +651,8 @@ internal static class OpenApiDocument
             ["/api/v1/auth/pair"] = new { post = Operation("Initial administrator pairing") },
             ["/api/v1/capabilities"] = new { get = Operation("Server capabilities") },
             ["/api/v1/adapters"] = new { get = Operation("Adapter and integration capabilities") },
+            ["/api/v1/discovery/media-servers"] = new { post = Operation("Discover Emby or Jellyfin servers") },
+            ["/api/v1/discovery/buttplug-devices"] = new { post = Operation("Scan devices through a Buttplug server") },
             ["/api/v1/settings"] = new { get = Operation("Effective non-secret settings") },
             ["/api/v1/configuration/migration"] = new { get = Operation("Legacy configuration migration status") },
             ["/api/v1/output-targets"] = new
@@ -546,16 +660,26 @@ internal static class OpenApiDocument
                 get = Operation("List output targets", "#/components/schemas/OutputTargetList"),
                 post = Operation("Create output target")
             },
+            ["/api/v1/output-targets/test"] = new { post = Operation("Test an output target without saving it") },
             ["/api/v1/output-targets/{id}"] = new { put = Operation("Update output target"), delete = Operation("Delete output target") },
+            ["/api/v1/output-targets/{id}/test"] = new { post = Operation("Retest a saved output target") },
             ["/api/v1/output-targets/{id}/connect"] = new { post = Operation("Connect output target") },
             ["/api/v1/output-targets/{id}/disconnect"] = new { post = Operation("Disconnect output target") },
             ["/api/v1/media-sources"] = new { get = Operation("List media sources"), post = Operation("Create media source") },
+            ["/api/v1/media-sources/test"] = new { post = Operation("Test a media source without saving it") },
             ["/api/v1/media-sources/{id}"] = new { put = Operation("Update media source"), delete = Operation("Delete media source") },
+            ["/api/v1/media-sources/{id}/test"] = new { post = Operation("Retest a saved media source") },
             ["/api/v1/media-sources/{id}/connect"] = new { post = Operation("Connect media source") },
             ["/api/v1/media-sources/{id}/disconnect"] = new { post = Operation("Disconnect media source") },
             ["/api/v1/media-sources/{id}/play"] = new { post = Operation("Play remote media source") },
             ["/api/v1/media-sources/{id}/pause"] = new { post = Operation("Pause remote media source") },
             ["/api/v1/media-sources/{id}/seek"] = new { post = Operation("Seek remote media source") },
+            ["/api/v1/media-sources/{id}/speed"] = new { post = Operation("Set remote media playback speed") },
+            ["/api/v1/runtime/routes"] = new
+            {
+                get = Operation("List persisted source-to-output runtime routes"),
+                put = Operation("Replace persisted source-to-output runtime routes")
+            },
             ["/api/v1/devices/serial"] = new { get = Operation("Stable Linux serial devices") },
             ["/api/v1/logs"] = new { get = Operation("Bounded redacted runtime logs") },
             ["/api/v1/logs/file"] = new { get = Operation("Download redacted persisted runtime logs") },

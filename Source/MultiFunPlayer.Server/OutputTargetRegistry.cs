@@ -58,6 +58,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         { "tcp", "udp", "websocket", "file", "serial", "the-handy", "buttplug" };
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, RuntimeTarget> _targets = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _runtimeRoutedOutputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly StorageOptions _storage;
     private readonly HeadlessPlayerEngine _engine;
     private readonly ILogger<OutputTargetRegistry> _logger;
@@ -98,6 +99,58 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         {
             return _targets.Values.Select(ToResponse).OrderBy(target => target.Id,
                 StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public bool Contains(string id)
+    {
+        _gate.Wait();
+        try { return _targets.ContainsKey(id); }
+        finally { _gate.Release(); }
+    }
+
+    public async Task SetRuntimeRoutedOutputsAsync(IEnumerable<string> outputIds,
+        CancellationToken cancellationToken = default)
+    {
+        var routed = new HashSet<string>(outputIds, StringComparer.OrdinalIgnoreCase);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _runtimeRoutedOutputs.Clear();
+            _runtimeRoutedOutputs.UnionWith(routed);
+            foreach (var target in _targets.Values)
+            {
+                if (_runtimeRoutedOutputs.Contains(target.Definition.Id))
+                {
+                    target.Registration?.Dispose();
+                    target.Registration = null;
+                }
+                else
+                {
+                    RegisterWithEngine(target);
+                }
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public bool PublishRouted(string outputId, OutputFrame frame)
+    {
+        _gate.Wait();
+        try
+        {
+            if (!_targets.TryGetValue(outputId, out var target) || target.Sink is null
+                || !_runtimeRoutedOutputs.Contains(outputId))
+                return false;
+            target.Sink.Publish(frame);
+            return true;
         }
         finally
         {
@@ -262,6 +315,44 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     public Task<OutputTargetOperation> DisconnectAsync(string id, CancellationToken cancellationToken = default)
         => RunLifecycleAsync(id, connect: false, cancellationToken);
 
+    public async Task<OutputTargetOperation> TestAsync(OutputTargetDefinition definition,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = ValidateDefinition(definition);
+        if (validation is not null)
+            return new(OutputTargetOperationStatus.Invalid, Error: validation);
+        var target = new RuntimeTarget(definition with { Enabled = true, AutoConnect = false });
+        try
+        {
+            var connected = await ConnectLockedAsync(target, cancellationToken, registerSink: false)
+                .ConfigureAwait(false);
+            return new(connected ? OutputTargetOperationStatus.Success : OutputTargetOperationStatus.Failed,
+                ToResponse(target), connected ? null : target.LastError);
+        }
+        finally
+        {
+            await DisconnectLockedAsync(target, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<OutputTargetOperation> TestAsync(string id,
+        CancellationToken cancellationToken = default)
+    {
+        OutputTargetDefinition definition;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_targets.TryGetValue(id, out var target))
+                return new(OutputTargetOperationStatus.NotFound, Error: "Output target not found.");
+            definition = target.Definition;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        return await TestAsync(definition, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -315,7 +406,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         }
     }
 
-    private async Task<bool> ConnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
+    private async Task<bool> ConnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken,
+        bool registerSink = true)
     {
         if (target.LastError is null
             && (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true))
@@ -349,11 +441,14 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     target.Registration?.Dispose();
                     target.Registration = null;
                 };
-                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
-                    _engineTickHz);
-                target.Registration = _engine.AddSink(sink);
                 target.Adapter = adapter;
-                target.Sink = sink;
+                if (registerSink)
+                {
+                    var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
+                        _engineTickHz);
+                    target.Sink = sink;
+                    RegisterWithEngine(target);
+                }
             }
             else if (string.Equals(target.Definition.Protocol, "buttplug", StringComparison.OrdinalIgnoreCase))
             {
@@ -376,30 +471,36 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                     target.Registration?.Dispose();
                     target.Registration = null;
                 };
-                var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
-                    _engineTickHz);
-                target.Registration = _engine.AddSink(sink);
                 target.Adapter = adapter;
-                target.Sink = sink;
+                if (registerSink)
+                {
+                    var sink = new RateLimitedOutputSink(adapter, target.Definition.UpdateRateHz,
+                        _engineTickHz);
+                    target.Sink = sink;
+                    RegisterWithEngine(target);
+                }
             }
             else
             {
                 transport = CreateTransport(target.Definition);
                 await transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
-                var sink = new RateLimitedOutputSink(new TCodeOutputSink(transport),
-                    target.Definition.UpdateRateHz, _engineTickHz);
-                sink.Faulted += exception =>
-                {
-                    target.LastError = exception.Message;
-                    target.Registration?.Dispose();
-                    target.Registration = null;
-                    // The sink owns disposal of the failed transport. Mark it
-                    // unavailable so the next connect call rebuilds both.
-                    target.Transport = null;
-                };
-                target.Registration = _engine.AddSink(sink);
                 target.Transport = transport;
-                target.Sink = sink;
+                if (registerSink)
+                {
+                    var sink = new RateLimitedOutputSink(new TCodeOutputSink(transport),
+                        target.Definition.UpdateRateHz, _engineTickHz);
+                    sink.Faulted += exception =>
+                    {
+                        target.LastError = exception.Message;
+                        target.Registration?.Dispose();
+                        target.Registration = null;
+                        // The sink owns disposal of the failed transport. Mark it
+                        // unavailable so the next connect call rebuilds both.
+                        target.Transport = null;
+                    };
+                    target.Sink = sink;
+                    RegisterWithEngine(target);
+                }
             }
             if (target.HasConnected)
                 target.Reconnects++;
@@ -420,6 +521,13 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         }
     }
 
+    private void RegisterWithEngine(RuntimeTarget target)
+    {
+        if (target.Sink is not null && target.Registration is null
+            && !_runtimeRoutedOutputs.Contains(target.Definition.Id))
+            target.Registration = _engine.AddSink(target.Sink);
+    }
+
     private static async Task DisconnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
     {
         CaptureDiagnostics(target);
@@ -432,6 +540,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             else if (target.Sink is IDisposable disposableSink)
                 disposableSink.Dispose();
         }
+        else if (target.Adapter is not null)
+            await target.Adapter.DisposeAsync().ConfigureAwait(false);
         else if (target.Transport is not null)
             await target.Transport.DisposeAsync().ConfigureAwait(false);
         target.Sink = null;

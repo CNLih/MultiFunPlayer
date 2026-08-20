@@ -1,5 +1,5 @@
-import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type Status, type SyncMode } from './store';
-import { ApiError, MfpApiClient } from './api';
+import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type RuntimeSourceRoute, type ScriptMatchMode, type Status, type StoreChange, type SyncMode } from './store';
+import { ApiError, MfpApiClient, type ApiMediaServerDiscovery } from './api';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -10,6 +10,8 @@ const demoStore = createMockStore();
 const apiClient = new MfpApiClient();
 let store = demoStore;
 let unsubscribeStore: () => void = () => {};
+let renderedRoute: Route | null = null;
+let routingDrag: { sourceId: string; pointerId: number } | null = null;
 const importInput = document.createElement('input');
 importInput.type = 'file';
 importInput.className = 'sr-only';
@@ -17,6 +19,7 @@ importInput.accept = '.funscript,.json,application/json';
 importInput.setAttribute('aria-label', 'Select a script file to import');
 document.body.append(importInput);
 const toastRegion = document.createElement('div');
+let toastTimer: number | undefined;
 toastRegion.className = 'toast-region';
 toastRegion.setAttribute('aria-live', 'polite');
 toastRegion.setAttribute('aria-atomic', 'true');
@@ -29,6 +32,32 @@ const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'settings', label: 'Device settings', hint: 'Axis range and limits' },
   { id: 'logs', label: 'Logs and health', hint: 'Events and diagnostics' },
 ];
+
+const mediaEndpointDefaults: Record<string, string> = {
+  internal: '',
+  emby: 'http://127.0.0.1:8096',
+  jellyfin: 'http://127.0.0.1:8096',
+  plex: 'http://127.0.0.1:32400',
+  vlc: 'http://127.0.0.1:8080',
+  mpc: 'http://127.0.0.1:13579',
+  ofs: 'ws://127.0.0.1:8080/ofs',
+  mpv: 'http://127.0.0.1:5000',
+};
+const mediaSecretDefaults: Record<string, string> = {
+  emby: 'MFP_EMBY_API_KEY',
+  jellyfin: 'MFP_JELLYFIN_API_KEY',
+  plex: 'MFP_PLEX_TOKEN',
+  vlc: 'MFP_VLC_PASSWORD',
+};
+const outputEndpointDefaults: Record<string, string> = {
+  tcp: '127.0.0.1:8080',
+  udp: 'tcode.local:8000',
+  websocket: 'ws://127.0.0.1/ws',
+  file: 'output.tcode',
+  serial: '',
+  'the-handy': 'https://www.handyfeeling.com/api/handy/v2/',
+  buttplug: 'ws://127.0.0.1:12345',
+};
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] ?? character));
 const statusClass = (status: Status | 'pass' | 'warn'): string => status === 'pass' ? 'status-online' : `status-${status}`;
@@ -91,6 +120,7 @@ function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', min
 }
 
 function renderAuthScreen(message = '') {
+  renderedRoute = null;
   appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label for="auth-access-token">Access token<input id="auth-access-token" name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label for="auth-pairing-token">Pairing token<input id="auth-pairing-token" name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label for="auth-new-token">New access token<input id="auth-new-token" name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
 }
 
@@ -102,7 +132,6 @@ async function connectRemoteStore(showError = false): Promise<boolean> {
     store = remoteStore;
     unsubscribeStore = store.subscribe(render);
     if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
-    render(store.getState());
     return true;
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
@@ -119,7 +148,7 @@ async function connectRemoteStore(showError = false): Promise<boolean> {
   }
 }
 
-function render(state: AppState) {
+function renderShell() {
   appRoot.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
@@ -127,41 +156,86 @@ function render(state: AppState) {
           <div class="brand-mark" aria-hidden="true">MFP</div>
           <div><strong>MultiFunPlayer</strong><span>Control room</span></div>
         </div>
-        <div class="demo-chip"><span class="live-dot" aria-hidden="true"></span> ${state.mode === 'server' ? 'Server API connected' : 'Local demo mode'}</div>
+        <div class="demo-chip"><span class="live-dot" aria-hidden="true"></span><span data-bind="connection-mode"></span></div>
         <nav class="nav-list">
-          ${routes.map((route) => `<button class="nav-item ${state.route === route.id ? 'active' : ''}" data-route="${route.id}" aria-current="${state.route === route.id ? 'page' : 'false'}"><span class="nav-label">${route.label}</span><span class="nav-hint">${route.hint}</span></button>`).join('')}
+          ${routes.map((route) => `<button class="nav-item" data-route="${route.id}" aria-current="false"><span class="nav-label">${route.label}</span><span class="nav-hint">${route.hint}</span></button>`).join('')}
         </nav>
         <div class="sidebar-footer">
-          <div class="engine-toggle-row"><span>Engine</span><button class="switch ${state.engineRunning ? 'on' : ''}" data-action="engine" aria-pressed="${state.engineRunning}" aria-label="${state.engineRunning ? 'Stop engine' : 'Start engine'}"><span></span></button></div>
+          <div class="engine-toggle-row"><span>Engine</span><button class="switch" data-action="engine" aria-pressed="false" aria-label="Start engine"><span></span></button></div>
           <div class="version-line"><span>Web prototype</span><span>v0.1</span></div>
         </div>
       </aside>
       <div class="workspace">
         <header class="topbar">
-          <div class="breadcrumbs"><span>Workspace</span><span aria-hidden="true">/</span><strong>${routes.find((item) => item.id === state.route)?.label}</strong></div>
+          <div class="breadcrumbs"><span>Workspace</span><span aria-hidden="true">/</span><strong data-bind="route-label"></strong></div>
           <div class="topbar-actions">
-            <span class="sync-state">${statusDot('pass')} Synced ${escapeHtml(state.lastSync)}</span>
+            <span class="sync-state">${statusDot('pass')}<span data-bind="last-sync"></span></span>
             <button class="icon-button" data-action="refresh" aria-label="Reload workspace" title="Reload workspace">Reload</button>
             <button class="avatar" aria-label="Open account menu">MP</button>
           </div>
         </header>
-        <main class="main-content" tabindex="-1">
-          ${renderRoute(state)}
-        </main>
+        <main class="main-content" tabindex="-1"></main>
       </div>
     </div>
   `;
-  document.querySelectorAll<HTMLSelectElement>('.resource-form label > select').forEach((select) => {
-    const labelText = Array.from(select.parentElement?.childNodes ?? [])
+}
+
+function prepareRouteControls(main: HTMLElement) {
+  main.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.resource-form label > input, .resource-form label > select').forEach((control) => {
+    const labelText = Array.from(control.parentElement?.childNodes ?? [])
       .find((node) => node.nodeType === Node.TEXT_NODE)?.textContent?.trim();
-    if (labelText) select.setAttribute('aria-label', labelText);
+    if (labelText && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', labelText);
   });
-  document.querySelectorAll<HTMLInputElement>('.resource-form input[pattern]').forEach((input) => {
+  main.querySelectorAll<HTMLInputElement>('.resource-form input[pattern]').forEach((input) => {
     const pattern = input.getAttribute('pattern');
     // Chromium's current HTML pattern grammar uses the Unicode `v` flag,
     // where a literal hyphen in a character class must be escaped.
     if (pattern?.includes('_-')) input.setAttribute('pattern', pattern.replace('_-', '_\\x2d'));
   });
+  const mediaForm = main.querySelector<HTMLFormElement>('[data-resource-form="media"]');
+  if (mediaForm) synchronizeMediaForm(mediaForm, true);
+  const outputForm = main.querySelector<HTMLFormElement>('[data-resource-form="output"]');
+  if (outputForm) synchronizeOutputForm(outputForm, true);
+  if (main.querySelector('[data-runtime-router]'))
+    window.requestAnimationFrame(() => drawRuntimeWires());
+}
+
+function updateChrome(state: AppState) {
+  const setText = (selector: string, value: string) => {
+    const element = appRoot.querySelector<HTMLElement>(selector);
+    if (element && element.textContent !== value) element.textContent = value;
+  };
+  setText('[data-bind="connection-mode"]', state.mode === 'server' ? 'Server API connected' : 'Local demo mode');
+  setText('[data-bind="route-label"]', routes.find((item) => item.id === state.route)?.label ?? 'Workspace');
+  setText('[data-bind="last-sync"]', `Synced ${state.lastSync}`);
+  appRoot.querySelectorAll<HTMLButtonElement>('.nav-item[data-route]').forEach((button) => {
+    const active = button.dataset.route === state.route;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  const engine = appRoot.querySelector<HTMLButtonElement>('[data-action="engine"]');
+  if (engine) {
+    engine.classList.toggle('on', state.engineRunning);
+    engine.setAttribute('aria-pressed', String(state.engineRunning));
+    engine.setAttribute('aria-label', state.engineRunning ? 'Stop engine' : 'Start engine');
+  }
+}
+
+function render(state: AppState, change: StoreChange = 'full') {
+  if (!appRoot.querySelector('.app-shell')) {
+    renderShell();
+    renderedRoute = null;
+  }
+  updateChrome(state);
+  const main = appRoot.querySelector<HTMLElement>('.main-content');
+  if (!main) return;
+  if (change === 'status' && renderedRoute === state.route) {
+    updateStatusBindings(state);
+    return;
+  }
+  main.innerHTML = renderRoute(state);
+  renderedRoute = state.route;
+  prepareRouteControls(main);
 }
 
 function pageHeading(eyebrow: string, title: string, description: string, actions = ''): string {
@@ -180,22 +254,26 @@ function renderRoute(state: AppState): string {
 }
 
 function renderRuntime(state: AppState): string {
-  const currentSeconds = Math.min(state.elapsed, 512);
-  const progress = Math.round((currentSeconds / 512) * 100);
+  const durationSeconds = durationFromLabel(state.nowPlaying.duration);
+  const currentSeconds = durationSeconds > 0 ? Math.min(state.elapsed, durationSeconds) : Math.max(0, state.elapsed);
+  const progress = durationSeconds > 0 ? Math.round((currentSeconds / durationSeconds) * 100) : 0;
   const onlineOutputs = state.outputs.filter((output) => output.status === 'online').length;
+  const cadence = state.settings?.tickHz ?? 60;
   return `
-    ${pageHeading('Overview', 'Runtime dashboard', 'A calm view of playback, connections, and output health.', '<button class="button button-primary" data-action="load-next">Load latest script</button>')}
+    ${pageHeading('Overview', 'Runtime dashboard', 'Route media clocks to device outputs and control every active session.', `<button class="button button-primary" data-action="load-next" ${state.scripts.length === 0 ? 'disabled' : ''}>Load latest script</button>`)}
+    ${renderRuntimeRouter(state)}
+    ${renderRoutedPlayback(state)}
     <section class="now-playing panel" aria-labelledby="now-playing-title">
       <div class="now-playing-main">
-        <div class="section-kicker"><span class="pulse-ring" aria-hidden="true"></span> Now playing</div>
-        <h2 id="now-playing-title">${escapeHtml(state.nowPlaying.name)}</h2>
-        <div class="meta-row"><span>${state.nowPlaying.format}</span><span>${state.nowPlaying.axes} axes</span><span>${state.nowPlaying.size}</span></div>
+        <div class="section-kicker"><span class="pulse-ring" aria-hidden="true"></span> Global engine</div>
+        <h2 id="now-playing-title" data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2>
+        <div class="meta-row"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-axes">${state.nowPlaying.axes} axes</span><span data-bind="script-size">${state.nowPlaying.size}</span></div>
         <div class="transport" aria-label="Playback controls">
           <button class="play-button" data-action="playback" aria-label="${state.playing ? 'Pause playback' : 'Resume playback'}" title="${state.playing ? 'Pause playback' : 'Resume playback'}">${state.playing ? 'Pause' : 'Play'}</button>
-          <div class="timeline"><div class="timeline-track"><span style="width:${progress}%"></span></div><div class="timeline-labels"><span>${formatTime(currentSeconds)}</span><span>${state.nowPlaying.duration}</span></div></div>
+          <div class="timeline"><div class="timeline-track"><span data-bind="timeline-progress" style="width:${progress}%"></span></div><div class="timeline-labels"><span data-bind="timeline-elapsed">${formatTime(currentSeconds)}</span><span data-bind="timeline-duration">${state.nowPlaying.duration}</span></div></div>
         </div>
       </div>
-      <div class="now-playing-summary"><div class="summary-label">Engine cadence</div><strong>60 <small>Hz</small></strong><span class="trend-up">+0.2% stable</span><div class="waveform" aria-label="Output cadence visualization">${Array.from({ length: 20 }, (_, index) => `<i style="height:${18 + ((index * 17) % 42)}%"></i>`).join('')}</div></div>
+      <div class="now-playing-summary"><div class="summary-label">Engine cadence</div><strong>${cadence} <small>Hz</small></strong><span class="trend-up">Server configured rate</span><div class="waveform" aria-label="Output cadence visualization">${Array.from({ length: 20 }, (_, index) => `<i style="height:${18 + ((index * 17) % 42)}%"></i>`).join('')}</div></div>
     </section>
     <section class="metric-grid" aria-label="Runtime metrics">
       ${metricCard('Media source', `${state.media.filter((source) => source.status === 'online').length} / ${state.media.length}`, 'sources connected', 'online')}
@@ -209,8 +287,8 @@ function renderRuntime(state: AppState): string {
         <div class="output-list">${state.outputs.map(renderOutputRow).join('')}</div>
       </section>
       <section class="panel" aria-labelledby="health-title">
-        <div class="panel-heading"><div><p class="eyebrow">System checks</p><h2 id="health-title">Health</h2></div><span class="health-score">${state.health.filter((check) => check.status === 'pass').length}/${state.health.length}</span></div>
-        <div class="health-list">${state.health.map((check) => `<div class="health-item">${statusDot(check.status)}<div><strong>${check.label}</strong><span>${check.detail}</span></div></div>`).join('')}</div>
+        <div class="panel-heading"><div><p class="eyebrow">System checks</p><h2 id="health-title">Health</h2></div><span class="health-score" data-bind="health-score">${state.health.filter((check) => check.status === 'pass').length}/${state.health.length}</span></div>
+        <div class="health-list">${renderHealthItems(state)}</div>
       </section>
     </div>
     <section class="panel activity-panel" aria-labelledby="activity-title">
@@ -219,8 +297,112 @@ function renderRuntime(state: AppState): string {
     </section>`;
 }
 
+function durationFromLabel(value: string): number {
+  const parts = value.split(':').map(Number);
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) return 0;
+  return Math.max(0, parts[0] * 60 + parts[1]);
+}
+
+function outputAssignment(state: AppState, outputId: string): string | null {
+  return state.runtimeRoutes.find((route) => route.outputIds.includes(outputId))?.sourceId ?? null;
+}
+
+function renderRuntimeRouter(state: AppState): string {
+  const connectionCount = state.runtimeRoutes.reduce((count, route) => count + route.outputIds.length, 0);
+  const sourceRows = state.media.length === 0 ? '<div class="router-empty">No sources</div>' : state.media.map((source) => {
+    const routedCount = state.runtimeRoutes.find((route) => route.sourceId === source.id)?.outputIds.length ?? 0;
+    return `<div class="router-node router-source" data-router-source="${escapeHtml(source.id)}"><div class="router-node-copy"><span class="status-dot ${statusClass(source.status)}" aria-hidden="true"></span><div><strong>${escapeHtml(source.name)}</strong><span>${escapeHtml(source.kind)} · ${routedCount} routed</span></div></div><button class="router-port router-port-source" type="button" data-route-source-port="${escapeHtml(source.id)}" aria-label="Route ${escapeHtml(source.name)}" title="Drag to an output"></button></div>`;
+  }).join('');
+  const sourceOptions = state.media.map((source) => `<option value="${escapeHtml(source.id)}">${escapeHtml(source.name)}</option>`).join('');
+  const outputRows = state.outputs.length === 0 ? '<div class="router-empty">No outputs</div>' : state.outputs.map((output) => {
+    const assignedSourceId = outputAssignment(state, output.id);
+    const assignedSource = state.media.find((source) => source.id === assignedSourceId);
+    return `<div class="router-node router-output ${assignedSource ? 'is-routed' : ''}" data-router-output="${escapeHtml(output.id)}"><button class="router-port router-port-output" type="button" data-route-output-port="${escapeHtml(output.id)}" aria-label="Connect ${escapeHtml(output.name)}" title="Drop a source here"></button><div class="router-node-copy"><span class="status-dot ${statusClass(output.status)}" aria-hidden="true"></span><div><strong>${escapeHtml(output.name)}</strong><span>${escapeHtml(output.protocol)} · ${assignedSource ? escapeHtml(assignedSource.name) : 'Unassigned'}</span></div></div>${assignedSource ? `<button class="router-disconnect" type="button" data-runtime-unroute="${escapeHtml(output.id)}" aria-label="Disconnect ${escapeHtml(output.name)}" title="Remove route">&times;</button>` : ''}<label class="router-assignment"><span class="sr-only">Source for ${escapeHtml(output.name)}</span><select data-runtime-output-assignment="${escapeHtml(output.id)}"><option value="">Unassigned</option>${sourceOptions.replace(`value="${escapeHtml(assignedSourceId ?? '')}"`, `value="${escapeHtml(assignedSourceId ?? '')}" selected`)}</select></label></div>`;
+  }).join('');
+  return `<section class="runtime-routing" aria-labelledby="runtime-routing-title"><div class="panel-heading"><div><p class="eyebrow">Signal routing</p><h2 id="runtime-routing-title">Source to output</h2></div><span class="result-count">${connectionCount} connections</span></div><div class="runtime-router panel" data-runtime-router><svg class="router-wires" data-router-wires aria-hidden="true"></svg><div class="router-column"><div class="router-column-title"><span>Sources</span><small>${state.media.length}</small></div><div class="router-list">${sourceRows}</div></div><div class="router-column router-column-output"><div class="router-column-title"><span>Outputs</span><small>${state.outputs.length}</small></div><div class="router-list">${outputRows}</div></div></div></section>`;
+}
+
+function renderRoutedPlayback(state: AppState): string {
+  const routed = state.runtimeRoutes.map((route) => ({
+    route,
+    source: state.media.find((source) => source.id === route.sourceId),
+    outputs: route.outputIds.map((id) => state.outputs.find((output) => output.id === id)).filter(Boolean),
+  })).filter((item) => item.source);
+  const controls = routed.map(({ route, source, outputs }) => {
+    if (!source) return '';
+    const media = source.mediaState;
+    const duration = Math.max(0, media?.durationSeconds ?? 0);
+    const position = Math.min(duration || Number.MAX_SAFE_INTEGER, Math.max(0, media?.positionSeconds ?? 0));
+    const available = source.status === 'online' && media !== undefined;
+    const outputBadges = outputs.map((output) => output ? `<span>${escapeHtml(output.name)}</span>` : '').join('');
+    const emptyScriptLabel = route.scriptMatchMode === 'exact' ? 'No exact match'
+      : route.scriptMatchMode === 'fuzzy' ? 'No fuzzy match'
+        : route.scriptMatchMode === 'global' && state.nowPlaying.id ? `Global: ${state.nowPlaying.name}` : 'No script selected';
+    const scriptOptions = state.scripts.map((script) => `<option value="${escapeHtml(script.id)}" ${route.scriptId === script.id ? 'selected' : ''}>${escapeHtml(script.name)}</option>`).join('');
+    const matchMode = route.scriptMatchMode === 'global' ? 'manual' : route.scriptMatchMode;
+    const matchButtons = (['exact', 'fuzzy', 'manual'] as ScriptMatchMode[]).map((mode) => `<button type="button" class="script-match-button ${matchMode === mode ? 'is-active' : ''}" data-runtime-script-match="${escapeHtml(source.id)}" data-script-match-mode="${mode}">${mode[0].toUpperCase()}${mode.slice(1)}</button>`).join('');
+    const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => `<option value="${speed}" ${Math.abs((media?.playbackSpeed ?? 1) - speed) < 0.001 ? 'selected' : ''}>${speed}x</option>`).join('');
+    return `<article class="routed-playback panel" data-runtime-playback="${escapeHtml(source.id)}"><div class="routed-playback-heading"><div><div class="section-kicker"><span class="status-dot ${statusClass(source.status)}" data-runtime-source-status aria-hidden="true"></span>${escapeHtml(source.kind)}</div><h2>${escapeHtml(source.name)}</h2><p data-runtime-media-path>${escapeHtml(media?.path ?? source.endpoint)}</p></div><div class="routed-output-badges">${outputBadges}</div></div><div class="routed-script-binding"><div class="routed-script-binding-heading"><span>Script</span><div class="script-match-modes" role="group" aria-label="${escapeHtml(source.name)} script matching mode">${matchButtons}</div></div><div class="routed-script-fields"><label><span class="sr-only">Search scripts for ${escapeHtml(source.name)}</span><input type="search" data-runtime-script-search="${escapeHtml(source.id)}" placeholder="Search scripts" autocomplete="off" /></label><label><span class="sr-only">Script for ${escapeHtml(source.name)}</span><select data-runtime-source-script="${escapeHtml(source.id)}"><option value="">${escapeHtml(emptyScriptLabel)}</option>${scriptOptions}</select></label></div></div><div class="routed-progress"><input type="range" min="0" max="${Math.max(0.1, duration)}" step="0.1" value="${position}" data-runtime-source-seek="${escapeHtml(source.id)}" aria-label="${escapeHtml(source.name)} playback position" ${!available || !source.controls.canSeek ? 'disabled' : ''}/><div><span data-runtime-source-position>${formatTime(position)}</span><span data-runtime-source-duration>${duration > 0 ? formatTime(duration) : '--:--'}</span></div></div><div class="routed-controls"><button class="button button-primary" type="button" data-runtime-source-toggle="${escapeHtml(source.id)}" ${!available || !source.controls.canPlayPause ? 'disabled' : ''}>${media?.playing ? 'Pause' : 'Play'}</button><label class="compact-select"><span>Speed</span><select data-runtime-source-speed="${escapeHtml(source.id)}" ${!available || !source.controls.canSetPlaybackSpeed ? 'disabled' : ''}>${speedOptions}</select></label><label class="toggle-option"><input type="checkbox" data-runtime-source-loop="${escapeHtml(source.id)}" ${route.loopEnabled ? 'checked' : ''} ${!source.controls.canLoop ? 'disabled' : ''}/><span>Loop</span></label></div></article>`;
+  }).join('');
+  return `<section class="routed-playback-section" aria-labelledby="routed-playback-title"><div class="panel-heading"><div><p class="eyebrow">Playing</p><h2 id="routed-playback-title">Routed sessions</h2></div><span class="result-count">${routed.length} active sources</span></div><div class="routed-playback-list">${controls || '<div class="empty-state panel">No routed sources.</div>'}</div></section>`;
+}
+
+function routerPath(startX: number, startY: number, endX: number, endY: number): string {
+  const bend = Math.max(48, Math.abs(endX - startX) * 0.45);
+  return `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
+}
+
+function drawRuntimeWires(pointer?: { x: number; y: number }) {
+  const router = document.querySelector<HTMLElement>('[data-runtime-router]');
+  const svg = router?.querySelector<SVGSVGElement>('[data-router-wires]');
+  if (!router || !svg) return;
+  const bounds = router.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+  const center = (element: Element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left - bounds.left + rect.width / 2, y: rect.top - bounds.top + rect.height / 2 };
+  };
+  const paths: string[] = [];
+  store.getState().runtimeRoutes.forEach((route, routeIndex) => {
+    const source = router.querySelector<HTMLElement>(`[data-route-source-port="${route.sourceId}"]`);
+    if (!source) return;
+    const start = center(source);
+    route.outputIds.forEach((outputId) => {
+      const output = router.querySelector<HTMLElement>(`[data-route-output-port="${outputId}"]`);
+      if (!output) return;
+      const end = center(output);
+      paths.push(`<path class="router-wire" style="--wire-index:${routeIndex}" d="${routerPath(start.x, start.y, end.x, end.y)}" data-runtime-unroute="${escapeHtml(outputId)}"/>`);
+    });
+  });
+  if (routingDrag && pointer) {
+    const source = router.querySelector<HTMLElement>(`[data-route-source-port="${routingDrag.sourceId}"]`);
+    if (source) {
+      const start = center(source);
+      paths.push(`<path class="router-wire router-wire-preview" d="${routerPath(start.x, start.y, pointer.x - bounds.left, pointer.y - bounds.top)}"/>`);
+    }
+  }
+  svg.innerHTML = paths.join('');
+}
+
+async function setRuntimeOutputAssignment(outputId: string, sourceId: string | null) {
+  const routes = store.getState().runtimeRoutes.map((route): RuntimeSourceRoute => ({
+    ...route,
+    outputIds: route.outputIds.filter((id) => id !== outputId),
+  })).filter((route) => route.outputIds.length > 0);
+  if (sourceId) {
+    const existing = routes.find((route) => route.sourceId === sourceId);
+    if (existing) existing.outputIds.push(outputId);
+    else routes.push({ sourceId, outputIds: [outputId], loopEnabled: false, scriptId: null, scriptMatchMode: 'exact' });
+  }
+  await store.setRuntimeRoutes(routes);
+}
+
 function metricCard(label: string, value: string, detail: string, status: string): string {
   return `<article class="metric-card"><div class="metric-label">${label}${status === 'neutral' ? '' : statusDot(status as Status)}</div><strong>${value}</strong><span>${detail}</span></article>`;
+}
+
+function renderHealthItems(state: AppState): string {
+  return state.health.map((check, index) => `<div class="health-item" data-health-index="${index}">${statusDot(check.status)}<div><strong data-health-label>${check.label}</strong><span data-health-detail>${check.detail}</span></div></div>`).join('');
 }
 
 function renderOutputRow(output: AppState['outputs'][number]): string {
@@ -240,32 +422,153 @@ function renderMediaSourceCard(source: AppState['media'][number]): string {
     <div class="media-position"><span>${mediaState.playing ? 'Playing' : 'Paused'}</span><span>${formatTime(mediaState.positionSeconds)}${mediaState.durationSeconds > 0 ? ` / ${formatTime(mediaState.durationSeconds)}` : ''}</span></div>
     <div class="resource-actions"><button class="button button-secondary" data-media-play="${escapeHtml(source.id)}">Play</button><button class="button button-secondary" data-media-pause="${escapeHtml(source.id)}">Pause</button><input class="media-seek-input" data-media-seek-value="${escapeHtml(source.id)}" type="number" min="0" step="0.1" value="${Math.max(0, mediaState.positionSeconds).toFixed(1)}" aria-label="Seek position in seconds" /><button class="button button-secondary" data-media-seek="${escapeHtml(source.id)}">Seek</button></div>
   </div>` : '';
-  return `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}${controls}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-media-edit="${escapeHtml(source.id)}">Edit</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`;
+  return `<article class="source-card panel"><div class="card-topline"><span class="protocol-label">${escapeHtml(source.kind)}</span><span class="status-badge ${statusClass(source.status)}">${statusDot(source.status)}${statusLabel(source.status)}</span></div><h2>${escapeHtml(source.name)}</h2><p class="muted">${escapeHtml(source.endpoint)}</p><div class="capability-list">${source.capabilities.map((capability) => `<span>${escapeHtml(capability)}</span>`).join('')}</div>${source.error ? `<p class="resource-error">${escapeHtml(source.error)}</p>` : ''}${controls}<div class="source-footer"><span>${source.latency ? `${source.latency} ms latency` : 'No heartbeat'}</span><div class="resource-actions"><button class="button button-secondary" data-media-retest="${escapeHtml(source.id)}">Test</button><button class="button button-secondary" data-media-toggle="${escapeHtml(source.id)}">${source.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-media-edit="${escapeHtml(source.id)}">Edit</button><button class="button button-danger" data-media-delete="${escapeHtml(source.id)}">Delete</button></div></div></article>`;
 }
 
 function renderMediaForm(): string {
-  return `<form class="resource-form panel" data-resource-form="media"><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-id">Id<input id="media-id" name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="media-main" /></label><label for="media-name">Name<input id="media-name" name="name" required placeholder="Main media library" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="vlc">VLC</option><option value="mpc">MPC-HC/BE</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option></select></label><label for="media-endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="https://media.example/api" /></label><label for="media-device-id">Remote device id<input id="media-device-id" name="deviceId" maxlength="256" placeholder="Optional session or client id" /></label><label for="media-secret-ref">Secret environment variable<input id="media-secret-ref" name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="MFP_EMBY_API_KEY" /></label></div><p class="form-hint">Only the environment variable name is stored. The secret value stays on the server; leave this blank while editing to retain the current reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="media"><input type="hidden" name="id" /><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-name">Name <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-name" name="name" placeholder="Generated from kind" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="vlc">VLC</option><option value="mpc">MPC-HC/BE</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option></select></label><label for="media-endpoint" data-media-field="endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="Select a kind to fill its default" /></label><label for="media-device-id" data-media-field="device">Remote device id <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-device-id" name="deviceId" maxlength="256" placeholder="Session or playback client id" /></label><label for="media-secret-ref" data-media-field="secret">Secret environment variable <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-secret-ref" name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="Uses the standard variable when empty" /></label></div><div class="form-assist"><button class="button button-secondary" type="button" data-action="discover-media">Scan local network</button><button class="button button-secondary" type="button" data-action="test-media-draft">Test connection</button><a class="form-help-link" data-media-key-help target="_blank" rel="noopener noreferrer" hidden>Get API key</a></div><div class="discovery-results" data-discovery-results="media" aria-live="polite" hidden></div><p class="form-hint">Credentials stay in server environment variables. An empty secret field uses the standard variable for the selected type; editing with it empty retains the saved reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
+}
+
+function renderAxisRows(state: AppState): string {
+  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
+  return axes.map(([axis, value]) => {
+    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
+    return `<div class="axis-row" data-axis-value="${escapeHtml(axis)}"><span>${escapeHtml(axis)}</span><div class="axis-track"><span style="width:${percentage}%"></span></div><strong>${percentage}%</strong></div>`;
+  }).join('');
 }
 
 function renderScripts(state: AppState): string {
-  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
-  const axisRows = axes.map(([axis, value]) => {
-    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
-    return `<div class="axis-row"><span>${escapeHtml(axis)}</span><div class="axis-track"><span style="width:${percentage}%"></span></div><strong>${percentage}%</strong></div>`;
-  }).join('');
+  const axisRows = renderAxisRows(state);
   return `${pageHeading('Library', 'Scripts', 'Browse, load, and inspect axis coverage before sending a script to the engine.', '<button class="button button-primary" data-action="import-script">Import script</button>')}
-    <div class="script-layout"><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or format" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${state.scripts.map((script) => `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`).join('')}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2>${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span>${state.nowPlaying.format}</span><span>${state.nowPlaying.duration}</span><span>${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
+    <div class="script-layout"><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or format" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${state.scripts.map((script) => `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`).join('')}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2 data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-duration">${state.nowPlaying.duration}</span><span data-bind="script-channels">${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
+}
+
+function updateStatusBindings(state: AppState) {
+  const main = appRoot.querySelector<HTMLElement>('.main-content');
+  if (!main) return;
+  const setText = (selector: string, value: string) => {
+    const element = main.querySelector<HTMLElement>(selector);
+    if (element && element.textContent !== value) element.textContent = value;
+  };
+  if (state.route === 'runtime') {
+    const durationSeconds = durationFromLabel(state.nowPlaying.duration);
+    const currentSeconds = durationSeconds > 0 ? Math.min(state.elapsed, durationSeconds) : Math.max(0, state.elapsed);
+    const progress = durationSeconds > 0 ? Math.round((currentSeconds / durationSeconds) * 100) : 0;
+    setText('[data-bind="script-name"]', state.nowPlaying.name);
+    setText('[data-bind="script-format"]', state.nowPlaying.format);
+    setText('[data-bind="script-axes"]', `${state.nowPlaying.axes} axes`);
+    setText('[data-bind="script-size"]', state.nowPlaying.size);
+    setText('[data-bind="timeline-elapsed"]', formatTime(currentSeconds));
+    setText('[data-bind="timeline-duration"]', state.nowPlaying.duration);
+    setText('[data-bind="health-score"]', `${state.health.filter((check) => check.status === 'pass').length}/${state.health.length}`);
+    setText('.metric-grid .metric-card:nth-child(4) strong', String(state.logs.length));
+    const progressBar = main.querySelector<HTMLElement>('[data-bind="timeline-progress"]');
+    if (progressBar) progressBar.style.width = `${progress}%`;
+    const playback = main.querySelector<HTMLButtonElement>('[data-action="playback"]');
+    if (playback) {
+      const label = state.playing ? 'Pause playback' : 'Resume playback';
+      playback.textContent = state.playing ? 'Pause' : 'Play';
+      playback.setAttribute('aria-label', label);
+      playback.title = label;
+    }
+    main.querySelectorAll<HTMLElement>('[data-runtime-playback]').forEach((control) => {
+      const source = state.media.find((item) => item.id === control.dataset.runtimePlayback);
+      if (!source) return;
+      const media = source.mediaState;
+      const duration = Math.max(0, media?.durationSeconds ?? 0);
+      const positionValue = Math.min(duration || Number.MAX_SAFE_INTEGER,
+        Math.max(0, media?.positionSeconds ?? 0));
+      const available = source.status === 'online' && media !== undefined;
+      const dot = control.querySelector<HTMLElement>('[data-runtime-source-status]');
+      if (dot) dot.className = `status-dot ${statusClass(source.status)}`;
+      const path = control.querySelector<HTMLElement>('[data-runtime-media-path]');
+      if (path) path.textContent = media?.path ?? source.endpoint;
+      const position = control.querySelector<HTMLElement>('[data-runtime-source-position]');
+      const durationLabel = control.querySelector<HTMLElement>('[data-runtime-source-duration]');
+      if (position) position.textContent = formatTime(positionValue);
+      if (durationLabel) durationLabel.textContent = duration > 0 ? formatTime(duration) : '--:--';
+      const seek = control.querySelector<HTMLInputElement>('[data-runtime-source-seek]');
+      if (seek) {
+        seek.max = String(Math.max(0.1, duration));
+        seek.disabled = !available || !source.controls.canSeek;
+        if (document.activeElement !== seek) seek.value = String(positionValue);
+      }
+      const toggle = control.querySelector<HTMLButtonElement>('[data-runtime-source-toggle]');
+      if (toggle) {
+        toggle.textContent = media?.playing ? 'Pause' : 'Play';
+        toggle.disabled = !available || !source.controls.canPlayPause;
+      }
+      const speed = control.querySelector<HTMLSelectElement>('[data-runtime-source-speed]');
+      if (speed) {
+        speed.disabled = !available || !source.controls.canSetPlaybackSpeed;
+        if (document.activeElement !== speed) speed.value = String(media?.playbackSpeed ?? 1);
+      }
+    });
+    const healthList = main.querySelector<HTMLElement>('.health-list');
+    const healthRows = healthList?.querySelectorAll<HTMLElement>('[data-health-index]');
+    if (healthList && healthRows?.length !== state.health.length) {
+      healthList.innerHTML = renderHealthItems(state);
+    } else {
+      state.health.forEach((check, index) => {
+        const row = healthRows?.item(index);
+        const dot = row?.querySelector<HTMLElement>('.status-dot');
+        const label = row?.querySelector<HTMLElement>('[data-health-label]');
+        const detail = row?.querySelector<HTMLElement>('[data-health-detail]');
+        if (dot) dot.className = `status-dot ${statusClass(check.status)}`;
+        if (label && label.textContent !== check.label) label.textContent = check.label;
+        if (detail && detail.textContent !== check.detail) detail.textContent = check.detail;
+      });
+    }
+    const activity = main.querySelector<HTMLElement>('.activity-panel .log-list');
+    const logs = state.logs.slice(0, 4);
+    if (activity && activity.dataset.logSignature !== logSignature(logs)) {
+      const template = document.createElement('template');
+      template.innerHTML = renderLogTable(logs);
+      const replacement = template.content.firstElementChild;
+      if (replacement) activity.replaceWith(replacement);
+    }
+    return;
+  }
+  if (state.route !== 'scripts') return;
+  setText('[data-bind="script-name"]', state.nowPlaying.name);
+  setText('[data-bind="script-format"]', state.nowPlaying.format);
+  setText('[data-bind="script-duration"]', state.nowPlaying.duration);
+  setText('[data-bind="script-channels"]', `${state.nowPlaying.axes} channels`);
+  const position = main.querySelector<HTMLInputElement>('#script-position');
+  if (position && document.activeElement !== position) position.value = state.elapsed.toFixed(1);
+  main.querySelectorAll<HTMLButtonElement>('[data-load-script]').forEach((button) => {
+    const selected = button.dataset.loadScript === state.nowPlaying.id;
+    button.classList.toggle('selected', selected);
+    const loadLabel = button.querySelector<HTMLElement>('.load-label');
+    if (loadLabel) loadLabel.textContent = selected ? 'Loaded' : 'Load';
+  });
+  const axisChart = main.querySelector<HTMLElement>('.axis-chart');
+  if (!axisChart) return;
+  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
+  const rows = Array.from(axisChart.querySelectorAll<HTMLElement>('[data-axis-value]'));
+  const sameAxes = rows.length === axes.length && rows.every((row, index) => row.dataset.axisValue === axes[index][0]);
+  if (!sameAxes) {
+    axisChart.innerHTML = renderAxisRows(state) || '<span class="muted">No axis values reported</span>';
+    return;
+  }
+  axes.forEach(([, value], index) => {
+    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
+    const bar = rows[index].querySelector<HTMLElement>('.axis-track span');
+    const label = rows[index].querySelector<HTMLElement>('strong');
+    if (bar) bar.style.width = `${percentage}%`;
+    if (label) label.textContent = `${percentage}%`;
+  });
 }
 
 function renderOutputs(state: AppState): string {
   return `${pageHeading('Devices', 'Output targets', 'Keep protocol connections visible, bounded, and easy to recover.', '<button class="button button-primary" data-action="focus-output-form">Add target</button>')}
     <div class="notice notice-info"><strong>Bounded transports.</strong><span>TCP, UDP, WebSocket, file, serial, The Handy, and Buttplug targets use the server transport registry.</span></div>
     ${renderOutputForm()}
-    <section class="panel table-panel" aria-labelledby="targets-title"><div class="panel-heading"><div><p class="eyebrow">Configured targets</p><h2 id="targets-title">All outputs</h2></div><span class="result-count">${state.outputs.length} targets</span></div><div class="responsive-table"><table><thead><tr><th scope="col">Target</th><th scope="col">Protocol</th><th scope="col">Status</th><th scope="col">Rate</th><th scope="col">Diagnostics</th><th scope="col">Last send</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.outputs.length === 0 ? '<tr><td colspan="7">No output targets configured.</td></tr>' : state.outputs.map((output) => `<tr><td><strong>${escapeHtml(output.name)}</strong><span class="table-subtext">${escapeHtml(output.endpoint)} · ${escapeHtml(output.sourceAxis)}</span>${output.error ? `<span class="table-subtext resource-error">${escapeHtml(output.error)}</span>` : ''}</td><td>${escapeHtml(output.protocol)}</td><td><span class="status-badge ${statusClass(output.status)}">${statusDot(output.status)}${statusLabel(output.status)}</span></td><td><span class="rate-value">${output.rate} Hz</span></td><td><span class="table-subtext">${output.sentFrames.toLocaleString()} sent / ${output.coalescedFrames.toLocaleString()} coalesced</span><span class="table-subtext">${output.failedFrames.toLocaleString()} failed / ${output.reconnects.toLocaleString()} reconnects</span></td><td>${escapeHtml(output.lastSentAt)}</td><td><div class="resource-actions"><button class="button button-secondary" data-output-toggle="${escapeHtml(output.id)}">${output.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-output-edit="${escapeHtml(output.id)}">Edit</button><button class="button button-danger" data-output-delete="${escapeHtml(output.id)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>`;
+    <section class="panel table-panel" aria-labelledby="targets-title"><div class="panel-heading"><div><p class="eyebrow">Configured targets</p><h2 id="targets-title">All outputs</h2></div><span class="result-count">${state.outputs.length} targets</span></div><div class="responsive-table"><table><thead><tr><th scope="col">Target</th><th scope="col">Protocol</th><th scope="col">Status</th><th scope="col">Rate</th><th scope="col">Diagnostics</th><th scope="col">Last send</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>${state.outputs.length === 0 ? '<tr><td colspan="7">No output targets configured.</td></tr>' : state.outputs.map((output) => `<tr><td><strong>${escapeHtml(output.name)}</strong><span class="table-subtext">${escapeHtml(output.endpoint)} · ${escapeHtml(output.sourceAxis)}</span>${output.error ? `<span class="table-subtext resource-error">${escapeHtml(output.error)}</span>` : ''}</td><td>${escapeHtml(output.protocol)}</td><td><span class="status-badge ${statusClass(output.status)}">${statusDot(output.status)}${statusLabel(output.status)}</span></td><td><span class="rate-value">${output.rate} Hz</span></td><td><span class="table-subtext">${output.sentFrames.toLocaleString()} sent / ${output.coalescedFrames.toLocaleString()} coalesced</span><span class="table-subtext">${output.failedFrames.toLocaleString()} failed / ${output.reconnects.toLocaleString()} reconnects</span></td><td>${escapeHtml(output.lastSentAt)}</td><td><div class="resource-actions"><button class="button button-secondary" data-output-retest="${escapeHtml(output.id)}">Test</button><button class="button button-secondary" data-output-toggle="${escapeHtml(output.id)}">${output.status === 'online' ? 'Disconnect' : 'Connect'}</button><button class="button button-secondary" data-output-edit="${escapeHtml(output.id)}">Edit</button><button class="button button-danger" data-output-delete="${escapeHtml(output.id)}">Delete</button></div></td></tr>`).join('')}</tbody></table></div></section>`;
 }
 
 function renderOutputForm(): string {
-  return `<form class="resource-form panel" data-resource-form="output"><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="output-id">Id<input id="output-id" name="id" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="studio-bridge" /></label><label for="output-name">Name<input id="output-name" name="name" required placeholder="Studio bridge" /></label><label for="output-protocol">Protocol<select id="output-protocol" name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option><option value="the-handy">The Handy</option><option value="buttplug">Buttplug.io</option></select></label><label for="output-endpoint">Endpoint<input id="output-endpoint" name="endpoint" required placeholder="127.0.0.1:8000 or ws://buttplug:12345" /></label><label for="output-source-axis">Source axis<input id="output-source-axis" name="sourceAxis" required pattern="[a-zA-Z0-9_-]+" value="L0" placeholder="L0" /></label><label for="output-rate">Update rate<input id="output-rate" name="rate" type="number" min="1" max="20" step="1" value="20" required /></label><label for="output-device-name">Buttplug device name<input id="output-device-name" name="deviceName" maxlength="256" placeholder="Optional device name" /></label><label for="output-device-index">Buttplug device index<input id="output-device-index" name="deviceIndex" type="number" min="0" step="1" placeholder="Auto-select" /></label><label for="output-actuator-type">Buttplug actuator<select id="output-actuator-type" name="actuatorType"><option value="Vibrate">Vibrate</option><option value="Oscillate">Oscillate</option><option value="Constrict">Constrict</option><option value="Inflate">Inflate</option><option value="Linear">Linear</option><option value="Rotate">Rotate</option></select></label><label for="output-actuator-index">Actuator index<input id="output-actuator-index" name="actuatorIndex" type="number" min="0" step="1" value="0" /></label><label for="output-duration">Linear duration<input id="output-duration" name="durationMilliseconds" type="number" min="1" max="60000" step="1" value="50" /></label></div><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="output"><input type="hidden" name="id" /><div class="panel-heading"><div><p class="eyebrow">New device</p><h2>Register output target</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="output-name">Name <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-name" name="name" placeholder="Generated from protocol" /></label><label for="output-protocol">Protocol<select id="output-protocol" name="protocol"><option value="tcp">TCP</option><option value="udp">UDP</option><option value="websocket">WebSocket</option><option value="file">File</option><option value="serial">Serial</option><option value="the-handy">The Handy</option><option value="buttplug">Buttplug.io</option></select></label><label for="output-endpoint">Endpoint<input id="output-endpoint" name="endpoint" required placeholder="Select a protocol to fill its default" /></label><label for="output-source-axis">Source axis <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-source-axis" name="sourceAxis" pattern="[a-zA-Z0-9_-]+" value="L0" placeholder="L0" /></label><label for="output-rate">Update rate <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-rate" name="rate" type="number" min="1" max="20" step="1" value="20" /></label><label for="output-device-name" data-output-field="buttplug">Buttplug device name <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-device-name" name="deviceName" maxlength="256" placeholder="First discovered device" /></label><label for="output-device-index" data-output-field="buttplug">Buttplug device index <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-device-index" name="deviceIndex" type="number" min="0" step="1" placeholder="Auto-select" /></label><label for="output-actuator-type" data-output-field="buttplug">Buttplug actuator <span class="optional-marker" aria-hidden="true">Optional</span><select id="output-actuator-type" name="actuatorType"><option value="Vibrate">Vibrate</option><option value="Oscillate">Oscillate</option><option value="Constrict">Constrict</option><option value="Inflate">Inflate</option><option value="Linear">Linear</option><option value="Rotate">Rotate</option></select></label><label for="output-actuator-index" data-output-field="buttplug">Actuator index <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-actuator-index" name="actuatorIndex" type="number" min="0" step="1" value="0" /></label><label for="output-duration" data-output-field="buttplug">Linear duration <span class="optional-marker" aria-hidden="true">Optional</span><input id="output-duration" name="durationMilliseconds" type="number" min="1" max="60000" step="1" value="50" /></label></div><div class="form-assist"><button class="button button-secondary" type="button" data-action="discover-output">Scan devices</button><button class="button button-secondary" type="button" data-action="test-output-draft">Test connection</button><a class="form-help-link" data-handy-key-help href="https://www.handyfeeling.com/" target="_blank" rel="noopener noreferrer" hidden>Get connection key</a></div><div class="discovery-results" data-discovery-results="output" aria-live="polite" hidden></div><p class="form-hint">Serial scans stable Linux device paths. Buttplug scans through the selected WebSocket server. Other protocols use their common default endpoint and a direct connection test.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create target</button><button class="button button-secondary" type="button" data-resource-cancel="output">Cancel</button></div></form>`;
 }
 
 function renderDeviceSettings(state: AppState): string {
@@ -323,13 +626,21 @@ function renderServerDiagnostics(state: AppState): string {
   <section class="content-grid two-thirds diagnostics-grid"><section class="panel table-panel" aria-labelledby="adapter-title"><div class="panel-heading"><div><p class="eyebrow">Capabilities</p><h2 id="adapter-title">Adapter inventory</h2></div><span class="result-count">${readyAdapters} ready · ${plannedAdapters} planned · ${blockedAdapters} blocked</span></div><div class="responsive-table"><table><thead><tr><th>Adapter</th><th>Status</th><th>Boundary</th></tr></thead><tbody>${adapterRows}</tbody></table></div></section><section class="panel table-panel" aria-labelledby="serial-title"><div class="panel-heading"><div><p class="eyebrow">Device discovery</p><h2 id="serial-title">Serial devices</h2></div><span class="result-count">${state.serialDevices.length} found</span></div><div class="responsive-table"><table><thead><tr><th>Stable ID</th><th>Path</th><th>Link target</th></tr></thead><tbody>${serialRows}</tbody></table></div></section></section>`;
 }
 
+function logSignature(logs: AppState['logs']): string {
+  return logs.map((log) => log.id).join(':');
+}
+
 function renderLogTable(logs: AppState['logs']): string {
-  return `<div class="log-list">${logs.map((log) => `<div class="log-row"><span class="log-time">${log.time}</span><span class="log-level level-${log.level}">${log.level}</span><span class="log-message">${escapeHtml(log.message)}</span><span class="log-source">${escapeHtml(log.source)}</span></div>`).join('')}</div>`;
+  return `<div class="log-list" data-log-signature="${logSignature(logs)}">${logs.map((log) => `<div class="log-row"><span class="log-time">${log.time}</span><span class="log-level level-${log.level}">${log.level}</span><span class="log-message">${escapeHtml(log.message)}</span><span class="log-source">${escapeHtml(log.source)}</span></div>`).join('')}</div>`;
 }
 
 function showToast(message: string, variant: 'success' | 'error' = 'success') {
+  if (toastTimer !== undefined) window.clearTimeout(toastTimer);
   toastRegion.innerHTML = `<div class="toast toast-${variant}" role="status">${escapeHtml(message)}</div>`;
-  window.setTimeout(() => { toastRegion.innerHTML = ''; }, 2600);
+  toastTimer = window.setTimeout(() => {
+    toastRegion.innerHTML = '';
+    toastTimer = undefined;
+  }, 6000);
 }
 
 function saveBlob(blob: Blob, fileName: string) {
@@ -362,6 +673,265 @@ async function importSelectedFile() {
   }
 }
 
+function synchronizeEndpointDefault(form: HTMLFormElement, fieldName: string, nextDefault: string,
+  applyDefault: boolean) {
+  const endpoint = form.elements.namedItem(fieldName) as HTMLInputElement | null;
+  if (!endpoint) return;
+  const previousDefault = endpoint.dataset.defaultEndpoint ?? '';
+  if (applyDefault && (!endpoint.value.trim() || endpoint.value === previousDefault))
+    endpoint.value = nextDefault;
+  endpoint.dataset.defaultEndpoint = nextDefault;
+}
+
+function setDiscoveryResults(form: HTMLFormElement, kind: 'media' | 'output', html: string) {
+  const results = form.querySelector<HTMLElement>(`[data-discovery-results="${kind}"]`);
+  if (!results) return;
+  results.innerHTML = html;
+  results.hidden = !html;
+}
+
+function mediaApiKeyUrl(kind: string, endpoint: string): string | null {
+  const root = endpoint.trim().replace(/\/+$/, '');
+  if (kind === 'emby' && root) return `${root}/web/index.html#!/apikeys.html`;
+  if (kind === 'jellyfin' && root) return `${root}/web/index.html#/dashboard/keys`;
+  if (kind === 'plex') return 'https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/';
+  return null;
+}
+
+function synchronizeMediaForm(form: HTMLFormElement, applyDefault: boolean) {
+  const kind = (form.elements.namedItem('kind') as HTMLSelectElement | null)?.value ?? 'internal';
+  synchronizeEndpointDefault(form, 'endpoint', mediaEndpointDefaults[kind] ?? '', applyDefault);
+  const endpoint = form.elements.namedItem('endpoint') as HTMLInputElement | null;
+  const endpointLabel = form.querySelector<HTMLElement>('[data-media-field="endpoint"]');
+  if (endpoint) endpoint.required = kind !== 'internal';
+  if (endpointLabel) endpointLabel.hidden = kind === 'internal';
+  const deviceField = form.querySelector<HTMLElement>('[data-media-field="device"]');
+  if (deviceField) deviceField.hidden = !['emby', 'jellyfin', 'plex'].includes(kind);
+  const secretField = form.querySelector<HTMLElement>('[data-media-field="secret"]');
+  if (secretField) secretField.hidden = !(kind in mediaSecretDefaults);
+  const secret = form.elements.namedItem('secretRef') as HTMLInputElement | null;
+  if (secret) secret.placeholder = mediaSecretDefaults[kind]
+    ? `Defaults to ${mediaSecretDefaults[kind]}` : 'Uses the standard variable when empty';
+  const discover = form.querySelector<HTMLButtonElement>('[data-action="discover-media"]');
+  if (discover) discover.hidden = !['emby', 'jellyfin'].includes(kind);
+  const keyHelp = form.querySelector<HTMLAnchorElement>('[data-media-key-help]');
+  const keyUrl = mediaApiKeyUrl(kind, endpoint?.value ?? '');
+  if (keyHelp) {
+    keyHelp.hidden = keyUrl === null;
+    if (keyUrl) keyHelp.href = keyUrl;
+    else keyHelp.removeAttribute('href');
+  }
+}
+
+function synchronizeOutputForm(form: HTMLFormElement, applyDefault: boolean) {
+  const protocol = (form.elements.namedItem('protocol') as HTMLSelectElement | null)?.value ?? 'tcp';
+  const previousProtocol = form.dataset.currentProtocol;
+  const endpoint = form.elements.namedItem('endpoint') as HTMLInputElement | null;
+  if (applyDefault && previousProtocol && previousProtocol !== protocol && endpoint)
+    endpoint.value = outputEndpointDefaults[protocol] ?? '';
+  synchronizeEndpointDefault(form, 'endpoint', outputEndpointDefaults[protocol] ?? '', applyDefault);
+  form.dataset.currentProtocol = protocol;
+  form.querySelectorAll<HTMLElement>('[data-output-field="buttplug"]')
+    .forEach((field) => { field.hidden = protocol !== 'buttplug'; });
+  const discover = form.querySelector<HTMLButtonElement>('[data-action="discover-output"]');
+  if (discover) discover.hidden = !['serial', 'buttplug'].includes(protocol);
+  const handyHelp = form.querySelector<HTMLAnchorElement>('[data-handy-key-help]');
+  if (handyHelp) handyHelp.hidden = protocol !== 'the-handy';
+}
+
+let generatedResourceSequence = 0;
+
+function ensureResourceIdentity(form: HTMLFormElement, selectorName: 'kind' | 'protocol', suffix: string) {
+  const id = form.elements.namedItem('id') as HTMLInputElement;
+  const name = form.elements.namedItem('name') as HTMLInputElement;
+  const selector = form.elements.namedItem(selectorName) as HTMLSelectElement;
+  const typeLabel = selector.selectedOptions[0]?.textContent?.trim() || selector.value;
+  if (!name.value.trim()) name.value = `${typeLabel} ${suffix}`;
+  if (!id.value.trim()) {
+    generatedResourceSequence++;
+    const slug = name.value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+      || selector.value.replace(/[^a-z0-9_-]+/g, '-') || suffix;
+    id.value = `${slug.slice(0, 44)}-${Date.now().toString(36)}-${generatedResourceSequence.toString(36)}`;
+  }
+}
+
+function readMediaSourceForm(form: HTMLFormElement): MediaSourceInput {
+  ensureResourceIdentity(form, 'kind', 'source');
+  const values = new FormData(form);
+  const value = (name: string): string => String(values.get(name) ?? '').trim();
+  return {
+    id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'),
+    enabled: values.get('enabled') === 'on', autoConnect: values.get('autoConnect') === 'on',
+    deviceId: value('deviceId') || null, secretRef: value('secretRef') || null,
+  };
+}
+
+function readOutputTargetForm(form: HTMLFormElement): OutputTargetInput {
+  ensureResourceIdentity(form, 'protocol', 'target');
+  const values = new FormData(form);
+  const value = (name: string): string => String(values.get(name) ?? '').trim();
+  const rawDeviceIndex = value('deviceIndex');
+  return {
+    id: value('id'), name: value('name'), protocol: value('protocol'), endpoint: value('endpoint'),
+    sourceAxis: value('sourceAxis') || 'L0', rate: Number(value('rate')) || 20,
+    enabled: values.get('enabled') === 'on', autoConnect: values.get('autoConnect') === 'on',
+    deviceName: value('deviceName') || null, deviceIndex: rawDeviceIndex ? Number(rawDeviceIndex) : null,
+    actuatorType: value('actuatorType') || 'Vibrate', actuatorIndex: Number(value('actuatorIndex')) || 0,
+    durationMilliseconds: Number(value('durationMilliseconds')) || 50,
+  };
+}
+
+function outputApiRequest(input: OutputTargetInput) {
+  return {
+    id: input.id, name: input.name, protocol: input.protocol, endpoint: input.endpoint,
+    sourceAxis: input.sourceAxis, updateRateHz: input.rate, enabled: input.enabled,
+    autoConnect: input.autoConnect, deviceName: input.deviceName, deviceIndex: input.deviceIndex,
+    actuatorType: input.actuatorType, actuatorIndex: input.actuatorIndex,
+    durationMilliseconds: input.durationMilliseconds,
+  };
+}
+
+function serverActionAvailable(): boolean {
+  if (store.getState().mode === 'server') return true;
+  showToast('Scanning and connection tests require the Server API.', 'error');
+  return false;
+}
+
+async function discoverMedia(form: HTMLFormElement, button: HTMLButtonElement) {
+  if (!serverActionAvailable()) return;
+  const kind = (form.elements.namedItem('kind') as HTMLSelectElement).value;
+  button.disabled = true;
+  button.textContent = 'Scanning...';
+  setDiscoveryResults(form, 'media', '<p class="discovery-message">Listening for servers on the local network...</p>');
+  try {
+    const candidates = await apiClient.discoverMediaServers(kind);
+    const html = candidates.length === 0
+      ? '<p class="discovery-message">No server replied. Confirm both hosts are on the same subnet and UDP 7359 is available.</p>'
+      : candidates.map((candidate) => renderMediaDiscoveryCandidate(candidate)).join('');
+    setDiscoveryResults(form, 'media', html);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Media server scan failed.';
+    setDiscoveryResults(form, 'media', `<p class="discovery-message resource-error">${escapeHtml(message)}</p>`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Scan local network';
+  }
+}
+
+function renderMediaDiscoveryCandidate(candidate: ApiMediaServerDiscovery): string {
+  return `<article class="discovery-candidate"><div><strong>${escapeHtml(candidate.name)}</strong><span>${escapeHtml(candidate.endpoint)} · ${escapeHtml(candidate.sourceAddress)}</span></div><div class="discovery-candidate-actions"><button class="button button-secondary" type="button" data-media-candidate data-candidate-endpoint="${escapeHtml(candidate.endpoint)}" data-candidate-name="${escapeHtml(candidate.name)}" data-candidate-key-url="${escapeHtml(candidate.apiKeyUrl)}">Use</button>${candidate.apiKeyRequired ? `<a class="form-help-link" href="${escapeHtml(candidate.apiKeyUrl)}" target="_blank" rel="noopener noreferrer">Get API key</a>` : ''}</div></article>`;
+}
+
+async function discoverOutput(form: HTMLFormElement, button: HTMLButtonElement) {
+  if (!serverActionAvailable()) return;
+  const protocol = (form.elements.namedItem('protocol') as HTMLSelectElement).value;
+  const endpoint = (form.elements.namedItem('endpoint') as HTMLInputElement).value.trim();
+  button.disabled = true;
+  button.textContent = 'Scanning...';
+  setDiscoveryResults(form, 'output', '<p class="discovery-message">Scanning available devices...</p>');
+  try {
+    if (protocol === 'serial') {
+      const devices = await apiClient.listSerialDevices();
+      const html = devices.length === 0 ? '<p class="discovery-message">No stable serial devices were found.</p>'
+        : devices.map((device) => `<article class="discovery-candidate"><div><strong>${escapeHtml(device.stableId)}</strong><span>${escapeHtml(device.devicePath)}${device.linkTarget ? ` · ${escapeHtml(device.linkTarget)}` : ''}</span></div><button class="button button-secondary" type="button" data-output-candidate data-candidate-endpoint="${escapeHtml(device.devicePath)}" data-candidate-name="${escapeHtml(device.stableId)}">Use</button></article>`).join('');
+      setDiscoveryResults(form, 'output', html);
+    } else if (protocol === 'buttplug') {
+      const devices = await apiClient.discoverButtplugDevices(endpoint);
+      const html = devices.length === 0 ? '<p class="discovery-message">The Buttplug server responded, but no devices were found.</p>'
+        : devices.map((device) => `<article class="discovery-candidate"><div><strong>${escapeHtml(device.deviceName)}</strong><span>Device ${device.deviceIndex} · ${escapeHtml(device.actuatorTypes.join(', ') || 'No actuator metadata')}</span></div><button class="button button-secondary" type="button" data-output-candidate data-candidate-name="${escapeHtml(device.deviceName)}" data-candidate-index="${device.deviceIndex}" data-candidate-actuators="${escapeHtml(device.actuatorTypes.join(','))}">Use</button></article>`).join('');
+      setDiscoveryResults(form, 'output', html);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Device scan failed.';
+    setDiscoveryResults(form, 'output', `<p class="discovery-message resource-error">${escapeHtml(message)}</p>`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Scan devices';
+  }
+}
+
+async function testMediaDraft(form: HTMLFormElement, button: HTMLButtonElement) {
+  if (!serverActionAvailable() || !form.reportValidity()) return;
+  button.disabled = true;
+  button.textContent = 'Testing...';
+  try {
+    await apiClient.testMediaSource(readMediaSourceForm(form));
+    showToast('Media source connection test passed');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Media source connection test failed.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Test connection';
+  }
+}
+
+async function testOutputDraft(form: HTMLFormElement, button: HTMLButtonElement) {
+  if (!serverActionAvailable() || !form.reportValidity()) return;
+  button.disabled = true;
+  button.textContent = 'Testing...';
+  try {
+    const input = readOutputTargetForm(form);
+    await apiClient.testOutputTarget(outputApiRequest(input));
+    const message = input.protocol === 'udp'
+      ? 'UDP socket opened; the protocol cannot confirm a remote receiver.'
+      : 'Output target connection test passed';
+    showToast(message);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Output target connection test failed.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Test connection';
+  }
+}
+
+function handleRoutingPointerDown(event: PointerEvent) {
+  const port = (event.target as Element).closest<HTMLElement>('[data-route-source-port]');
+  const sourceId = port?.dataset.routeSourcePort;
+  if (!port || !sourceId || event.button !== 0) return;
+  routingDrag = { sourceId, pointerId: event.pointerId };
+  port.setPointerCapture(event.pointerId);
+  document.body.classList.add('is-routing');
+  drawRuntimeWires({ x: event.clientX, y: event.clientY });
+  event.preventDefault();
+}
+
+function handleRoutingPointerMove(event: PointerEvent) {
+  if (!routingDrag || routingDrag.pointerId !== event.pointerId) return;
+  drawRuntimeWires({ x: event.clientX, y: event.clientY });
+  const hovered = document.elementFromPoint(event.clientX, event.clientY)
+    ?.closest<HTMLElement>('[data-route-output-port]');
+  document.querySelectorAll<HTMLElement>('[data-route-output-port]')
+    .forEach((port) => port.classList.toggle('is-drop-target', port === hovered));
+}
+
+function handleRoutingPointerUp(event: PointerEvent) {
+  if (!routingDrag || routingDrag.pointerId !== event.pointerId) return;
+  const sourceId = routingDrag.sourceId;
+  const cancelled = event.type === 'pointercancel';
+  routingDrag = null;
+  document.body.classList.remove('is-routing');
+  document.querySelectorAll<HTMLElement>('[data-route-output-port]')
+    .forEach((port) => port.classList.remove('is-drop-target'));
+  if (cancelled) {
+    drawRuntimeWires();
+    return;
+  }
+  const outputId = document.elementFromPoint(event.clientX, event.clientY)
+    ?.closest<HTMLElement>('[data-route-output-port]')?.dataset.routeOutputPort;
+  if (!outputId) {
+    drawRuntimeWires();
+    return;
+  }
+  const assigned = outputAssignment(store.getState(), outputId);
+  if (assigned === sourceId) {
+    drawRuntimeWires();
+    return;
+  }
+  void setRuntimeOutputAssignment(outputId, sourceId)
+    .then(() => showToast(assigned ? 'Runtime route replaced' : 'Runtime route saved'))
+    .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Runtime route failed.', 'error'));
+}
+
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement;
   const route = target.closest<HTMLElement>('[data-route]')?.dataset.route as Route | undefined;
@@ -371,15 +941,108 @@ function handleClick(event: MouseEvent) {
     document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
     return;
   }
+  const scriptMatch = target.closest<HTMLElement>('[data-runtime-script-match]');
+  const scriptMatchSourceId = scriptMatch?.dataset.runtimeScriptMatch;
+  const scriptMatchMode = scriptMatch?.dataset.scriptMatchMode as ScriptMatchMode | undefined;
+  if (scriptMatchSourceId && scriptMatchMode) {
+    void store.setRuntimeScriptMatchMode(scriptMatchSourceId, scriptMatchMode)
+      .then((routes) => {
+        const matched = routes.find((item) => item.sourceId === scriptMatchSourceId)?.scriptId;
+        showToast(matched ? `${scriptMatchMode === 'fuzzy' ? 'Fuzzy' : scriptMatchMode === 'exact' ? 'Exact' : 'Manual'} script matched`
+          : scriptMatchMode === 'manual' ? 'Manual script search ready' : `No ${scriptMatchMode} script match`);
+        if (scriptMatchMode === 'manual')
+          document.querySelector<HTMLInputElement>(`[data-runtime-script-search="${scriptMatchSourceId}"]`)?.focus();
+      })
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Script matching failed.', 'error'));
+    return;
+  }
+  const unrouteOutputId = target.closest<HTMLElement>('[data-runtime-unroute]')?.dataset.runtimeUnroute;
+  if (unrouteOutputId) {
+    void setRuntimeOutputAssignment(unrouteOutputId, null)
+      .then(() => showToast('Runtime route removed'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Runtime route removal failed.', 'error'));
+    return;
+  }
+  const runtimeSourceId = target.closest<HTMLElement>('[data-runtime-source-toggle]')?.dataset.runtimeSourceToggle;
+  if (runtimeSourceId) {
+    const source = store.getState().media.find((item) => item.id === runtimeSourceId);
+    if (source?.mediaState) {
+      const request = source.mediaState.playing
+        ? store.pauseMediaSource(runtimeSourceId) : store.playMediaSource(runtimeSourceId);
+      void request.catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Source playback command failed.', 'error'));
+    }
+    return;
+  }
+  const mediaCandidate = target.closest<HTMLButtonElement>('[data-media-candidate]');
+  if (mediaCandidate) {
+    const form = mediaCandidate.closest<HTMLFormElement>('[data-resource-form="media"]');
+    if (form) {
+      (form.elements.namedItem('endpoint') as HTMLInputElement).value = mediaCandidate.dataset.candidateEndpoint ?? '';
+      const name = form.elements.namedItem('name') as HTMLInputElement;
+      if (!name.value.trim()) name.value = mediaCandidate.dataset.candidateName ?? '';
+      const keyHelp = form.querySelector<HTMLAnchorElement>('[data-media-key-help]');
+      if (keyHelp && mediaCandidate.dataset.candidateKeyUrl) {
+        keyHelp.href = mediaCandidate.dataset.candidateKeyUrl;
+        keyHelp.hidden = false;
+      }
+      showToast('Discovered media server selected');
+    }
+    return;
+  }
+  const outputCandidate = target.closest<HTMLButtonElement>('[data-output-candidate]');
+  if (outputCandidate) {
+    const form = outputCandidate.closest<HTMLFormElement>('[data-resource-form="output"]');
+    if (form) {
+      const endpoint = outputCandidate.dataset.candidateEndpoint;
+      if (endpoint) (form.elements.namedItem('endpoint') as HTMLInputElement).value = endpoint;
+      const candidateName = outputCandidate.dataset.candidateName ?? '';
+      const name = form.elements.namedItem('name') as HTMLInputElement;
+      if (!name.value.trim()) name.value = candidateName;
+      if (outputCandidate.dataset.candidateIndex) {
+        (form.elements.namedItem('deviceName') as HTMLInputElement).value = candidateName;
+        (form.elements.namedItem('deviceIndex') as HTMLInputElement).value = outputCandidate.dataset.candidateIndex;
+        const actuators = outputCandidate.dataset.candidateActuators?.split(',') ?? [];
+        const actuator = form.elements.namedItem('actuatorType') as HTMLSelectElement;
+        if (actuators.includes('LinearCmd')) actuator.value = 'Linear';
+        else if (actuators.includes('RotateCmd')) actuator.value = 'Rotate';
+      }
+      showToast('Discovered output device selected');
+    }
+    return;
+  }
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action;
+  if (action === 'discover-media') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="media"]');
+    const button = target.closest<HTMLButtonElement>('button');
+    if (form && button) void discoverMedia(form, button);
+    return;
+  }
+  if (action === 'discover-output') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="output"]');
+    const button = target.closest<HTMLButtonElement>('button');
+    if (form && button) void discoverOutput(form, button);
+    return;
+  }
+  if (action === 'test-media-draft') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="media"]');
+    const button = target.closest<HTMLButtonElement>('button');
+    if (form && button) void testMediaDraft(form, button);
+    return;
+  }
+  if (action === 'test-output-draft') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="output"]');
+    const button = target.closest<HTMLButtonElement>('button');
+    if (form && button) void testOutputDraft(form, button);
+    return;
+  }
   if (action === 'playback') store.togglePlayback();
   if (action === 'engine') store.toggleEngine();
   if (action === 'refresh') showToast('Demo snapshot refreshed');
   if (action === 'focus-media-form') {
-    document.querySelector<HTMLInputElement>('[data-resource-form="media"] input[name="id"]')?.focus();
+    document.querySelector<HTMLInputElement>('[data-resource-form="media"] input[name="name"]')?.focus();
   }
   if (action === 'focus-output-form') {
-    document.querySelector<HTMLInputElement>('[data-resource-form="output"] input[name="id"]')?.focus();
+    document.querySelector<HTMLInputElement>('[data-resource-form="output"] input[name="name"]')?.focus();
   }
   if (action === 'focus-axis-form') {
     document.querySelector<HTMLInputElement>('[data-resource-form="axis"] [data-axis-field="minimum"]')?.focus();
@@ -391,7 +1054,6 @@ function handleClick(event: MouseEvent) {
     if (source && form) {
       form.dataset.editingId = source.id;
       (form.elements.namedItem('id') as HTMLInputElement).value = source.id;
-      (form.elements.namedItem('id') as HTMLInputElement).readOnly = true;
       (form.elements.namedItem('name') as HTMLInputElement).value = source.name;
       (form.elements.namedItem('kind') as HTMLSelectElement).value = source.kind.toLowerCase();
       (form.elements.namedItem('endpoint') as HTMLInputElement).value = source.endpoint === '(internal)' ? '' : source.endpoint;
@@ -399,6 +1061,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('secretRef') as HTMLInputElement).value = '';
       (form.elements.namedItem('enabled') as HTMLInputElement).checked = source.enabled ?? true;
       (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
+      synchronizeMediaForm(form, false);
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.textContent = 'Save source';
       form.scrollIntoView({ behavior: 'auto', block: 'center' });
@@ -412,7 +1075,6 @@ function handleClick(event: MouseEvent) {
     if (output && form) {
       form.dataset.editingId = output.id;
       (form.elements.namedItem('id') as HTMLInputElement).value = output.id;
-      (form.elements.namedItem('id') as HTMLInputElement).readOnly = true;
       (form.elements.namedItem('name') as HTMLInputElement).value = output.name;
       (form.elements.namedItem('protocol') as HTMLSelectElement).value = output.protocol.toLowerCase();
       (form.elements.namedItem('endpoint') as HTMLInputElement).value = output.endpoint;
@@ -425,6 +1087,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('actuatorType') as HTMLSelectElement).value = output.actuatorType ?? 'Vibrate';
       (form.elements.namedItem('actuatorIndex') as HTMLInputElement).value = String(output.actuatorIndex ?? 0);
       (form.elements.namedItem('durationMilliseconds') as HTMLInputElement).value = String(output.durationMilliseconds ?? 50);
+      synchronizeOutputForm(form, false);
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.textContent = 'Save target';
       form.scrollIntoView({ behavior: 'auto', block: 'center' });
@@ -459,10 +1122,11 @@ function handleClick(event: MouseEvent) {
     if (form) {
       delete form.dataset.editingId;
       form.reset();
-      const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
-      if (idInput) idInput.readOnly = false;
       const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.textContent = cancelKind === 'media' ? 'Create source' : 'Create target';
+      setDiscoveryResults(form, cancelKind === 'media' ? 'media' : 'output', '');
+      if (cancelKind === 'media') synchronizeMediaForm(form, true);
+      if (cancelKind === 'output') synchronizeOutputForm(form, true);
     }
   }
   if (action === 'import-script') importInput.click();
@@ -491,6 +1155,12 @@ function handleClick(event: MouseEvent) {
       void request.catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media source action failed.', 'error'));
     }
   }
+  const mediaRetestId = target.closest<HTMLElement>('[data-media-retest]')?.dataset.mediaRetest;
+  if (mediaRetestId && serverActionAvailable()) {
+    void apiClient.retestMediaSource(mediaRetestId)
+      .then(() => showToast('Saved media source connection test passed'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media source connection test failed.', 'error'));
+  }
   const mediaPlayId = target.closest<HTMLElement>('[data-media-play]')?.dataset.mediaPlay;
   if (mediaPlayId) {
     void store.playMediaSource(mediaPlayId).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media playback command failed.', 'error'));
@@ -517,6 +1187,15 @@ function handleClick(event: MouseEvent) {
       const request = output.status === 'online' ? store.disconnectOutputTarget(outputId) : store.connectOutputTarget(outputId);
       void request.catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target action failed.', 'error'));
     }
+  }
+  const outputRetestId = target.closest<HTMLElement>('[data-output-retest]')?.dataset.outputRetest;
+  if (outputRetestId && serverActionAvailable()) {
+    const output = store.getState().outputs.find((item) => item.id === outputRetestId);
+    void apiClient.retestOutputTarget(outputRetestId)
+      .then(() => showToast(output?.protocol.toLowerCase() === 'udp'
+        ? 'UDP socket opened; the protocol cannot confirm a remote receiver.'
+        : 'Saved output target connection test passed'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target connection test failed.', 'error'));
   }
   const mediaDeleteId = target.closest<HTMLElement>('[data-media-delete]')?.dataset.mediaDelete;
   if (mediaDeleteId) {
@@ -565,12 +1244,9 @@ async function handleSubmit(event: SubmitEvent) {
   const kind = form.dataset.resourceForm;
   if (kind !== 'media' && kind !== 'output' && kind !== 'axis') return;
   event.preventDefault();
-  const values = new FormData(form);
-  const value = (name: string): string => String(values.get(name) ?? '').trim();
-  const checked = (name: string): boolean => values.get(name) === 'on';
   try {
     if (kind === 'media') {
-      const input: MediaSourceInput = { id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'), enabled: checked('enabled'), autoConnect: checked('autoConnect'), deviceId: value('deviceId') || null, secretRef: value('secretRef') || null };
+      const input = readMediaSourceForm(form);
       const editingId = form.dataset.editingId;
       if (editingId) {
         await store.updateMediaSource(editingId, input);
@@ -580,8 +1256,7 @@ async function handleSubmit(event: SubmitEvent) {
         showToast('Media source created');
       }
     } else if (kind === 'output') {
-      const rawDeviceIndex = value('deviceIndex');
-      const input: OutputTargetInput = { id: value('id'), name: value('name'), protocol: value('protocol'), endpoint: value('endpoint'), sourceAxis: value('sourceAxis') || 'L0', rate: Number(value('rate')) || 20, enabled: checked('enabled'), autoConnect: checked('autoConnect'), deviceName: value('deviceName') || null, deviceIndex: rawDeviceIndex ? Number(rawDeviceIndex) : null, actuatorType: value('actuatorType') || 'Vibrate', actuatorIndex: Number(value('actuatorIndex')) || 0, durationMilliseconds: Number(value('durationMilliseconds')) || 50 };
+      const input = readOutputTargetForm(form);
       const editingId = form.dataset.editingId;
       if (editingId) {
         await store.updateOutputTarget(editingId, input);
@@ -610,10 +1285,11 @@ async function handleSubmit(event: SubmitEvent) {
     }
     delete form.dataset.editingId;
     form.reset();
-    const idInput = form.elements.namedItem('id') as HTMLInputElement | null;
-    if (idInput) idInput.readOnly = false;
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
     if (submit) submit.textContent = kind === 'media' ? 'Create source' : 'Create target';
+    setDiscoveryResults(form, kind, '');
+    if (kind === 'media') synchronizeMediaForm(form, true);
+    if (kind === 'output') synchronizeOutputForm(form, true);
   } catch (error) {
     showToast(error instanceof Error ? error.message : 'Resource creation failed.', 'error');
   }
@@ -672,11 +1348,77 @@ function updateAxisVisualization(form: HTMLFormElement) {
 
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  const runtimeScriptSearchSourceId = target.dataset.runtimeScriptSearch;
+  if (runtimeScriptSearchSourceId && event.type === 'input') {
+    const query = target.value.trim().toLowerCase();
+    const select = target.closest<HTMLElement>('[data-runtime-playback]')
+      ?.querySelector<HTMLSelectElement>(`[data-runtime-source-script="${runtimeScriptSearchSourceId}"]`);
+    select?.querySelectorAll<HTMLOptionElement>('option').forEach((option, index) => {
+      option.hidden = index > 0 && query.length > 0 && !option.textContent?.toLowerCase().includes(query);
+    });
+    return;
+  }
+  const assignmentOutputId = target.dataset.runtimeOutputAssignment;
+  if (assignmentOutputId && event.type === 'change') {
+    void setRuntimeOutputAssignment(assignmentOutputId, target.value || null)
+      .then(() => showToast('Runtime route saved'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Runtime route failed.', 'error'));
+    return;
+  }
+  const runtimeSeekSourceId = target.dataset.runtimeSourceSeek;
+  if (runtimeSeekSourceId) {
+    const control = target.closest<HTMLElement>('[data-runtime-playback]');
+    const value = Number(target.value);
+    const label = control?.querySelector<HTMLElement>('[data-runtime-source-position]');
+    if (label && Number.isFinite(value)) label.textContent = formatTime(value);
+    if (event.type === 'change' && Number.isFinite(value))
+      void store.seekMediaSource(runtimeSeekSourceId, value)
+        .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Source seek failed.', 'error'));
+    return;
+  }
+  const runtimeScriptSourceId = target.dataset.runtimeSourceScript;
+  if (runtimeScriptSourceId && event.type === 'change') {
+    void store.setRuntimeScript(runtimeScriptSourceId, target.value || null)
+      .then(() => showToast('Runtime script saved'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Script assignment failed.', 'error'));
+    return;
+  }
+  const runtimeSpeedSourceId = target.dataset.runtimeSourceSpeed;
+  if (runtimeSpeedSourceId && event.type === 'change') {
+    void store.setMediaSourcePlaybackSpeed(runtimeSpeedSourceId, Number(target.value))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Playback speed change failed.', 'error'));
+    return;
+  }
+  const runtimeLoopSourceId = target.dataset.runtimeSourceLoop;
+  if (runtimeLoopSourceId && event.type === 'change' && target instanceof HTMLInputElement) {
+    void store.setRuntimeLoop(runtimeLoopSourceId, target.checked)
+      .then(() => showToast(target.checked ? 'Loop enabled' : 'Loop disabled'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Loop setting failed.', 'error'));
+    return;
+  }
   const axisRow = target.closest<HTMLElement>('[data-axis-row]');
   if (axisRow && target.dataset.axisField) {
     synchronizeAxisRow(axisRow, target.dataset.axisField);
     const form = axisRow.closest<HTMLFormElement>('[data-resource-form="axis"]');
     if (form) updateAxisVisualization(form);
+  }
+  if (target.id === 'media-kind' && event.type === 'change') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="media"]');
+    if (form) {
+      synchronizeMediaForm(form, true);
+      setDiscoveryResults(form, 'media', '');
+    }
+  }
+  if (target.id === 'media-endpoint') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="media"]');
+    if (form) synchronizeMediaForm(form, false);
+  }
+  if (target.id === 'output-protocol' && event.type === 'change') {
+    const form = target.closest<HTMLFormElement>('[data-resource-form="output"]');
+    if (form) {
+      synchronizeOutputForm(form, true);
+      setDiscoveryResults(form, 'output', '');
+    }
   }
   if (target.id === 'script-filter') {
     const query = target.value.trim().toLowerCase();
@@ -702,15 +1444,28 @@ function handleInput(event: Event) {
 }
 
 appRoot.addEventListener('click', handleClick);
+appRoot.addEventListener('pointerdown', handleRoutingPointerDown);
+appRoot.addEventListener('pointermove', handleRoutingPointerMove);
+appRoot.addEventListener('pointerup', handleRoutingPointerUp);
+appRoot.addEventListener('pointercancel', handleRoutingPointerUp);
 appRoot.addEventListener('submit', (event) => { void handleSubmit(event); });
 appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
 importInput.addEventListener('change', () => { void importSelectedFile(); });
 unsubscribeStore = store.subscribe(render);
 window.setInterval(() => {
-  // Keep editing forms stable; only views that render the live clock need a tick.
-  if (store.getState().route === 'runtime' || store.getState().route === 'scripts') store.tick();
-}, 1000);
+  // Consume the 20 Hz server stream continuously, but paint bound status fields
+  // at 10 Hz. Forms and navigation stay mounted while these values change.
+  if (store.getState().route === 'runtime' || store.getState().route === 'scripts')
+    store.tick();
+}, 100);
+window.setInterval(() => {
+  if (store.getState().route === 'runtime')
+    void store.refreshRuntimeStatus().catch(() => undefined);
+}, 500);
+window.addEventListener('resize', () => {
+  if (store.getState().route === 'runtime') drawRuntimeWires();
+});
 const initialRoute = window.location.hash.slice(1) as Route;
 
 // A static preview remains useful without a backend. When served by ASP.NET

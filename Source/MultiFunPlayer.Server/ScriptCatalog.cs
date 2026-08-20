@@ -51,15 +51,12 @@ public sealed class ScriptCatalog
             .ToArray();
     }
 
+    public bool Contains(string id) => TryResolve(id, out _);
+
     public bool TryRead(string id, out ScriptContentResponse? response)
     {
         response = null;
-        if (string.IsNullOrWhiteSpace(id) || id != Path.GetFileName(id))
-            return false;
-
-        var fullPath = Path.GetFullPath(Path.Combine(_root, id));
-        if (!IsUnderRoot(fullPath) || !Extensions.Contains(Path.GetExtension(fullPath))
-            || !File.Exists(fullPath) || IsReparsePoint(fullPath))
+        if (!TryResolve(id, out var fullPath))
             return false;
 
         var file = new FileInfo(fullPath);
@@ -67,6 +64,17 @@ public sealed class ScriptCatalog
             new ScriptDescriptor(file.Name, file.Name, file.Length, file.LastWriteTimeUtc),
             File.ReadAllText(fullPath));
         return true;
+    }
+
+    private bool TryResolve(string id, out string fullPath)
+    {
+        fullPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(id) || id != Path.GetFileName(id))
+            return false;
+
+        fullPath = Path.GetFullPath(Path.Combine(_root, id));
+        return IsUnderRoot(fullPath) && Extensions.Contains(Path.GetExtension(fullPath))
+            && File.Exists(fullPath) && !IsReparsePoint(fullPath);
     }
 
     public bool TryWrite(string? id, string? content, bool overwrite,

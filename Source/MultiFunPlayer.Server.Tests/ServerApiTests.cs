@@ -56,6 +56,10 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.InRange(capabilities.GetProperty("tickHz").GetInt32(), 1, 20);
         Assert.Contains("media.play", capabilities.GetProperty("commands").EnumerateArray()
             .Select(command => command.GetString()));
+        Assert.Contains("media.speed", capabilities.GetProperty("commands").EnumerateArray()
+            .Select(command => command.GetString()));
+        Assert.Contains("runtime.routes", capabilities.GetProperty("commands").EnumerateArray()
+            .Select(command => command.GetString()));
     }
 
     [Fact]
@@ -127,6 +131,19 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(settings.GetProperty("scriptsRoot").GetString()!.Length > 0);
         Assert.False(settings.TryGetProperty("authToken", out _));
         Assert.Equal(JsonValueKind.Array, serial.ValueKind);
+    }
+
+    [Fact]
+    public async Task Discovery_rejects_unsupported_media_kinds()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/v1/discovery/media-servers", new
+        {
+            kind = "plex",
+            timeoutMilliseconds = 250
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -981,6 +998,17 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
 
+            var draftTest = await client.PostAsJsonAsync("/api/v1/output-targets/test", new
+            {
+                protocol = "file",
+                endpoint = "draft-test.tcode",
+                enabled = true,
+                autoConnect = false
+            });
+            Assert.Equal(HttpStatusCode.OK, draftTest.StatusCode);
+            Assert.Equal(HttpStatusCode.OK,
+                (await client.PostAsync("/api/v1/output-targets/http-file/test", null)).StatusCode);
+
             var connect = await client.PostAsync("/api/v1/output-targets/http-file/connect", null);
             Assert.Equal(HttpStatusCode.OK, connect.StatusCode);
             var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/output-targets");
@@ -1131,6 +1159,30 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         {
             using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
             using var client = factory.CreateClient();
+            var draftTest = await client.PostAsJsonAsync("/api/v1/media-sources/test", new
+            {
+                kind = "internal",
+                endpoint = string.Empty,
+                enabled = true,
+                autoConnect = false
+            });
+            Assert.Equal(HttpStatusCode.OK, draftTest.StatusCode);
+            Assert.Empty((await client.GetFromJsonAsync<JsonElement>("/api/v1/media-sources"))
+                .EnumerateArray());
+
+            var internalCreate = await client.PostAsJsonAsync("/api/v1/media-sources", new
+            {
+                id = "internal-test",
+                name = "Internal test",
+                kind = "internal",
+                endpoint = string.Empty,
+                enabled = false,
+                autoConnect = false
+            });
+            Assert.Equal(HttpStatusCode.Created, internalCreate.StatusCode);
+            Assert.Equal(HttpStatusCode.OK,
+                (await client.PostAsync("/api/v1/media-sources/internal-test/test", null)).StatusCode);
+
             var create = await client.PostAsJsonAsync("/api/v1/media-sources", new
             {
                 id = "remote-jellyfin",
@@ -1146,6 +1198,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Equal("ready", created.GetProperty("implementationStatus").GetString());
             Assert.False(created.GetProperty("connected").GetBoolean());
             Assert.Equal("browser-session-1", created.GetProperty("deviceId").GetString());
+            Assert.True(created.GetProperty("controls").GetProperty("canPlayPause").GetBoolean());
+            Assert.True(created.GetProperty("controls").GetProperty("canSeek").GetBoolean());
+            Assert.False(created.GetProperty("controls").GetProperty("canSetPlaybackSpeed").GetBoolean());
             Assert.DoesNotContain("secretRef", created.GetRawText(), StringComparison.OrdinalIgnoreCase);
             Assert.Contains("API key", created.GetProperty("lastError").GetString(),
                 StringComparison.OrdinalIgnoreCase);
@@ -1157,6 +1212,9 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             Assert.Equal(HttpStatusCode.BadRequest,
                 (await client.PostAsJsonAsync("/api/v1/media-sources/remote-jellyfin/seek",
                     new { positionSeconds = -1 })).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest,
+                (await client.PostAsJsonAsync("/api/v1/media-sources/remote-jellyfin/speed",
+                    new { playbackSpeed = 8 })).StatusCode);
 
             var invalid = await client.PostAsJsonAsync("/api/v1/media-sources", new
             {
@@ -1172,11 +1230,206 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
                 item.GetProperty("id").GetString() == "remote-jellyfin");
             Assert.Equal(HttpStatusCode.NoContent,
                 (await client.DeleteAsync("/api/v1/media-sources/remote-jellyfin")).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await client.DeleteAsync("/api/v1/media-sources/internal-test")).StatusCode);
         }
         finally
         {
             Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
         }
+    }
+
+    [Fact]
+    public async Task Runtime_routes_persist_one_to_many_and_reject_many_to_one()
+    {
+        var previousConfig = Environment.GetEnvironmentVariable("MFP_CONFIG_ROOT");
+        var previousLogs = Environment.GetEnvironmentVariable("MFP_LOGS_ROOT");
+        var previousScripts = Environment.GetEnvironmentVariable("MFP_SCRIPTS_ROOT");
+        using var temp = new TemporaryDirectory();
+        var configRoot = Path.Combine(temp.Path, "config");
+        Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", configRoot);
+        Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", Path.Combine(temp.Path, "logs"));
+        Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", Path.Combine(temp.Path, "scripts"));
+        try
+        {
+            using var factory = new WebApplicationFactory<MultiFunPlayer.Server.Program>();
+            using var client = factory.CreateClient();
+            var upload = await client.PostAsJsonAsync("/api/v1/scripts", new
+            {
+                id = "route-script.funscript",
+                content = "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}"
+            });
+            Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+            foreach (var sourceId in new[] { "route-source-a", "route-source-b" })
+            {
+                var create = await client.PostAsJsonAsync("/api/v1/media-sources", new
+                {
+                    id = sourceId,
+                    name = sourceId,
+                    kind = "internal",
+                    endpoint = string.Empty,
+                    enabled = false,
+                    autoConnect = false
+                });
+                Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            }
+            foreach (var outputId in new[] { "route-output-a", "route-output-b" })
+            {
+                var create = await client.PostAsJsonAsync("/api/v1/output-targets", new
+                {
+                    id = outputId,
+                    name = outputId,
+                    protocol = "file",
+                    endpoint = $"{outputId}.tcode",
+                    enabled = false,
+                    autoConnect = false
+                });
+                Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            }
+
+            var save = await client.PutAsJsonAsync("/api/v1/runtime/routes", new
+            {
+                routes = new[]
+                {
+                    new
+                    {
+                        sourceId = "route-source-a",
+                        outputIds = new[] { "route-output-a", "route-output-b" },
+                        loopEnabled = true,
+                        scriptId = "route-script.funscript",
+                        scriptMatchMode = "manual"
+                    }
+                }
+            });
+            Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+            var saved = await save.Content.ReadFromJsonAsync<JsonElement>();
+            var route = Assert.Single(saved.EnumerateArray());
+            Assert.True(route.GetProperty("loopEnabled").GetBoolean());
+            Assert.Equal("route-script.funscript", route.GetProperty("scriptId").GetString());
+            Assert.Equal("manual", route.GetProperty("scriptMatchMode").GetString());
+            Assert.Equal(2, route.GetProperty("outputIds").GetArrayLength());
+            Assert.True(File.Exists(Path.Combine(configRoot, "runtime-routes.json")));
+
+            var missingScript = await client.PutAsJsonAsync("/api/v1/runtime/routes", new
+            {
+                routes = new[]
+                {
+                    new { sourceId = "route-source-a", outputIds = new[] { "route-output-a" }, scriptId = "missing.funscript", scriptMatchMode = "manual" }
+                }
+            });
+            Assert.Equal(HttpStatusCode.Conflict, missingScript.StatusCode);
+
+            var conflict = await client.PutAsJsonAsync("/api/v1/runtime/routes", new
+            {
+                routes = new object[]
+                {
+                    new { sourceId = "route-source-a", outputIds = new[] { "route-output-a" } },
+                    new { sourceId = "route-source-b", outputIds = new[] { "route-output-a" } }
+                }
+            });
+            Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await client.DeleteAsync("/api/v1/output-targets/route-output-b")).StatusCode);
+            var afterOutputDelete = await client.GetFromJsonAsync<JsonElement>("/api/v1/runtime/routes");
+            Assert.Equal(new[] { "route-output-a" }, afterOutputDelete[0].GetProperty("outputIds")
+                .EnumerateArray().Select(item => item.GetString()).ToArray());
+
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await client.DeleteAsync("/api/v1/media-sources/route-source-a")).StatusCode);
+            Assert.Empty((await client.GetFromJsonAsync<JsonElement>("/api/v1/runtime/routes"))
+                .EnumerateArray());
+
+            await client.DeleteAsync("/api/v1/media-sources/route-source-b");
+            await client.DeleteAsync("/api/v1/output-targets/route-output-a");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MFP_CONFIG_ROOT", previousConfig);
+            Environment.SetEnvironmentVariable("MFP_LOGS_ROOT", previousLogs);
+            Environment.SetEnvironmentVariable("MFP_SCRIPTS_ROOT", previousScripts);
+        }
+    }
+
+    [Fact]
+    public void Runtime_script_evaluator_uses_the_source_clock_position()
+    {
+        using var temp = new TemporaryDirectory();
+        var catalog = new ScriptCatalog(Path.Combine(temp.Path, "scripts"));
+        Assert.True(catalog.TryWrite("source-script.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}",
+            overwrite: false, out _, out _, out _));
+        var evaluator = new RuntimeScriptEvaluator(catalog,
+            NullLogger<RuntimeScriptEvaluator>.Instance);
+
+        Assert.True(evaluator.TryEvaluate("source-script.funscript", TimeSpan.FromSeconds(0.25),
+            new Dictionary<string, MultiFunPlayer.Application.AxisConfiguration>(), out var first));
+        Assert.True(evaluator.TryEvaluate("source-script.funscript", TimeSpan.FromSeconds(0.75),
+            new Dictionary<string, MultiFunPlayer.Application.AxisConfiguration>(), out var second));
+
+        Assert.InRange(first.Values["L0"], 0.249, 0.251);
+        Assert.InRange(second.Values["L0"], 0.749, 0.751);
+    }
+
+    [Fact]
+    public void Runtime_script_matcher_supports_exact_and_fuzzy_file_names()
+    {
+        using var temp = new TemporaryDirectory();
+        var catalog = new ScriptCatalog(Path.Combine(temp.Path, "scripts"));
+        Assert.True(catalog.TryWrite("Studio Session 04.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":50}]}", overwrite: false,
+            out _, out _, out _));
+        Assert.True(catalog.TryWrite("Calibration Sweep.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":50}]}", overwrite: false,
+            out _, out _, out _));
+        var matcher = new RuntimeScriptMatcher(catalog);
+
+        Assert.Equal("Studio Session 04.funscript",
+            matcher.Match("/media/Studio Session 04.mp4", fuzzy: false));
+        Assert.Null(matcher.Match("/media/Calibrtion Sweep.mkv", fuzzy: false));
+        Assert.Equal("Calibration Sweep.funscript",
+            matcher.Match("/media/Calibrtion Sweep.mkv", fuzzy: true));
+    }
+
+    [Fact]
+    public async Task Runtime_route_exact_mode_uses_the_connected_source_file_name()
+    {
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        var catalog = new ScriptCatalog(Path.Combine(temp.Path, "scripts"));
+        Assert.True(catalog.TryWrite("remote.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":0},{\"at\":1000,\"pos\":100}]}",
+            overwrite: false, out _, out _, out _));
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var sources = new MediaSourceRegistry(storage,
+            NullLogger<MediaSourceRegistry>.Instance, networkFactory: new StubNetworkFactory());
+        await using var outputs = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await sources.StartAsync(CancellationToken.None);
+        await outputs.StartAsync(CancellationToken.None);
+        Assert.Equal(MediaSourceOperationStatus.Success, (await sources.CreateAsync(
+            new MediaSourceDefinition("matched-source", "Matched source", "vlc",
+                "http://media.example.local", DeviceId: "remote-player"))).Status);
+        Assert.Equal(OutputTargetOperationStatus.Success, (await outputs.CreateAsync(
+            new OutputTargetDefinition("matched-output", "Matched output", "file",
+                "matched.tcode", Enabled: false, AutoConnect: false))).Status);
+        var matcher = new RuntimeScriptMatcher(catalog);
+        await using var routes = new RuntimeRoutingRegistry(storage, sources, outputs, catalog,
+            matcher, NullLogger<RuntimeRoutingRegistry>.Instance);
+        await routes.StartAsync(CancellationToken.None);
+
+        var saved = await routes.SetAsync([
+            new RuntimeSourceRouteDefinition("matched-source", ["matched-output"],
+                ScriptMatchMode: "exact")]);
+
+        Assert.Equal(RuntimeRoutingOperationStatus.Success, saved.Status);
+        var route = Assert.Single(saved.Routes!);
+        Assert.Equal("remote.funscript", route.ScriptId);
+        Assert.Equal("exact", route.ScriptMatchMode);
     }
 
     [Fact]
@@ -1234,10 +1487,14 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.Equal("3.0.3", document.GetProperty("openapi").GetString());
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/status", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/adapters", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/discovery/media-servers", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/discovery/buttplug-devices", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/settings", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/configuration/migration", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/scripts", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/test", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}/test", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/output-targets/{id}", out _));
         var outputList = document.GetProperty("paths").GetProperty("/api/v1/output-targets").GetProperty("get");
         Assert.Equal("#/components/schemas/OutputTargetList", outputList
@@ -1254,10 +1511,14 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
         Assert.True(outputSchema.GetProperty("properties").TryGetProperty("coalescedFrames", out _));
         Assert.True(outputSchema.GetProperty("properties").TryGetProperty("droppedFrames", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/test", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/test", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/play", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/pause", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/seek", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/media-sources/{id}/speed", out _));
+        Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/runtime/routes", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs", out _));
         Assert.True(document.GetProperty("paths").TryGetProperty("/api/v1/logs/file", out _));
         Assert.True(document.GetProperty("components").GetProperty("securitySchemes").TryGetProperty("bearerAuth", out _));

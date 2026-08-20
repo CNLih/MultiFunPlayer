@@ -29,6 +29,11 @@ public sealed record MediaSourceDefinition(
     string? DeviceId = null,
     string? SecretRef = null);
 
+public sealed record MediaClockSample(
+    bool Connected,
+    MediaClockResponse State,
+    DateTimeOffset UpdatedAtUtc);
+
 /// <summary>
 /// Persists media source configuration without persisting credentials. The
 /// internal source and network-native Emby/Jellyfin/Plex/VLC/MPC/OFS sources are ready
@@ -95,6 +100,35 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         {
             return _sources.Values.Select(ToResponse).OrderBy(source => source.Id,
                 StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public bool Contains(string id)
+    {
+        _gate.Wait();
+        try { return _sources.ContainsKey(id); }
+        finally { _gate.Release(); }
+    }
+
+    public string? GetKind(string id)
+    {
+        _gate.Wait();
+        try { return _sources.TryGetValue(id, out var source) ? source.Definition.Kind : null; }
+        finally { _gate.Release(); }
+    }
+
+    public MediaClockSample? GetClock(string id)
+    {
+        _gate.Wait();
+        try
+        {
+            if (!_sources.TryGetValue(id, out var source) || ToClockResponse(source) is not { } state)
+                return null;
+            return new(source.Connected, state, source.MediaStateUpdatedAtUtc);
         }
         finally
         {
@@ -269,11 +303,48 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     public Task<MediaSourceOperation> DisconnectAsync(string id, CancellationToken cancellationToken = default)
         => RunLifecycleAsync(id, false, cancellationToken);
 
+    public async Task<MediaSourceOperation> TestAsync(MediaSourceDefinition definition,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = Validate(definition);
+        if (validation is not null)
+            return new(MediaSourceOperationStatus.Invalid, Error: validation);
+        var source = new RuntimeSource(definition with { Enabled = true, AutoConnect = false });
+        try
+        {
+            await ConnectLockedAsync(source, cancellationToken).ConfigureAwait(false);
+            return new(source.Connected ? MediaSourceOperationStatus.Success : MediaSourceOperationStatus.Failed,
+                ToResponse(source), source.LastError);
+        }
+        finally
+        {
+            await DisconnectLockedAsync(source, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<MediaSourceOperation> TestAsync(string id,
+        CancellationToken cancellationToken = default)
+    {
+        MediaSourceDefinition definition;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_sources.TryGetValue(id, out var source))
+                return new(MediaSourceOperationStatus.NotFound, Error: "Media source not found.");
+            definition = source.Definition;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        return await TestAsync(definition, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<MediaSourceOperation> PlayAsync(string id, CancellationToken cancellationToken = default)
-        => SendCommandAsync(id, MediaSourceCommand.Play, null, cancellationToken);
+        => SendCommandAsync(id, MediaSourceCommand.Play, null, null, cancellationToken);
 
     public Task<MediaSourceOperation> PauseAsync(string id, CancellationToken cancellationToken = default)
-        => SendCommandAsync(id, MediaSourceCommand.Pause, null, cancellationToken);
+        => SendCommandAsync(id, MediaSourceCommand.Pause, null, null, cancellationToken);
 
     public Task<MediaSourceOperation> SeekAsync(string id, TimeSpan position,
         CancellationToken cancellationToken = default)
@@ -281,7 +352,17 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         if (position < TimeSpan.Zero || !double.IsFinite(position.TotalSeconds))
             return Task.FromResult(new MediaSourceOperation(MediaSourceOperationStatus.Invalid,
                 Error: "position must be a finite non-negative duration."));
-        return SendCommandAsync(id, MediaSourceCommand.Seek, position, cancellationToken);
+        return SendCommandAsync(id, MediaSourceCommand.Seek, position, null, cancellationToken);
+    }
+
+    public Task<MediaSourceOperation> SetPlaybackSpeedAsync(string id, double playbackSpeed,
+        CancellationToken cancellationToken = default)
+    {
+        if (!double.IsFinite(playbackSpeed) || playbackSpeed is < 0.25 or > 4)
+            return Task.FromResult(new MediaSourceOperation(MediaSourceOperationStatus.Invalid,
+                Error: "playbackSpeed must be between 0.25 and 4."));
+        return SendCommandAsync(id, MediaSourceCommand.SetPlaybackSpeed, null, playbackSpeed,
+            cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -320,7 +401,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     }
 
     private async Task<MediaSourceOperation> SendCommandAsync(string id, MediaSourceCommand command,
-        TimeSpan? position, CancellationToken cancellationToken)
+        TimeSpan? position, double? playbackSpeed, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -345,6 +426,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                         else
                             return new(MediaSourceOperationStatus.Failed, ToResponse(source),
                                 "This connected media source does not expose playback controls.");
+                        UpdatePlaying(source, playing);
                         break;
                     case MediaSourceCommand.Seek:
                         if (position is null)
@@ -357,6 +439,18 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                         else
                             return new(MediaSourceOperationStatus.Failed, ToResponse(source),
                                 "This connected media source does not expose playback controls.");
+                        UpdatePosition(source, position.Value);
+                        break;
+                    case MediaSourceCommand.SetPlaybackSpeed:
+                        if (playbackSpeed is null)
+                            return new(MediaSourceOperationStatus.Invalid, ToResponse(source),
+                                "A playback speed is required.");
+                        if (source.Adapter is null)
+                            return new(MediaSourceOperationStatus.Failed, ToResponse(source),
+                                "This connected media source does not expose playback speed controls.");
+                        await source.Adapter.SendPlaybackSpeedAsync(playbackSpeed.Value, cancellationToken)
+                            .ConfigureAwait(false);
+                        UpdatePlaybackSpeed(source, playbackSpeed.Value);
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(command));
@@ -512,12 +606,39 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
 
         source.LastError = null;
         source.LastMediaState = message.State;
+        source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     private static void HandleNetworkState(RuntimeSource source, NetworkMediaState state)
     {
         source.LastNetworkMediaState = state;
         source.LastError = null;
+        source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private static void UpdatePlaying(RuntimeSource source, bool playing)
+    {
+        if (source.LastNetworkMediaState is { } network)
+            source.LastNetworkMediaState = network with { Playing = playing };
+        if (source.LastMediaState is { } ofs)
+            source.LastMediaState = ofs with { Playing = playing };
+        source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private static void UpdatePosition(RuntimeSource source, TimeSpan position)
+    {
+        if (source.LastNetworkMediaState is { } network)
+            source.LastNetworkMediaState = network with { Position = position };
+        if (source.LastMediaState is { } ofs)
+            source.LastMediaState = ofs with { Position = position };
+        source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private static void UpdatePlaybackSpeed(RuntimeSource source, double playbackSpeed)
+    {
+        if (source.LastMediaState is { } ofs)
+            source.LastMediaState = ofs with { PlaybackSpeed = playbackSpeed };
+        source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     private static async Task DisconnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
@@ -629,13 +750,23 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         return new(source.Definition.Id, source.Definition.Name, source.Definition.Kind,
             source.Definition.Endpoint, source.Definition.Enabled, source.Definition.AutoConnect,
             capability.Integration, capability.Implementation, source.Connected, source.LastError,
-            source.LastNetworkMediaState is { } network ? new MediaClockResponse(
-                network.SessionId, network.DeviceId, network.MediaId, network.Path,
-                network.Playing, network.Duration.TotalSeconds, network.Position.TotalSeconds,
-                network.PlaybackSpeed, network.ContentType) : source.LastMediaState is { } ofs ? new MediaClockResponse(
-                null, null, null, ofs.Path, ofs.Playing, ofs.Duration.TotalSeconds,
-                ofs.Position.TotalSeconds, ofs.PlaybackSpeed, null) : null,
-            source.Definition.DeviceId);
+            ToClockResponse(source), source.Definition.DeviceId, ControlsFor(source));
+    }
+
+    private static MediaClockResponse? ToClockResponse(RuntimeSource source)
+        => source.LastNetworkMediaState is { } network ? new MediaClockResponse(
+            network.SessionId, network.DeviceId, network.MediaId, network.Path,
+            network.Playing, network.Duration.TotalSeconds, network.Position.TotalSeconds,
+            network.PlaybackSpeed, network.ContentType) : source.LastMediaState is { } ofs ? new MediaClockResponse(
+            null, null, null, ofs.Path, ofs.Playing, ofs.Duration.TotalSeconds,
+            ofs.Position.TotalSeconds, ofs.PlaybackSpeed, null) : null;
+
+    private static MediaControlCapabilitiesResponse ControlsFor(RuntimeSource source)
+    {
+        var ready = Kinds[source.Definition.Kind].Implementation == "ready"
+            && !source.Definition.Kind.Equals("internal", StringComparison.OrdinalIgnoreCase);
+        return new(ready, ready, ready && source.Definition.Kind.Equals("ofs",
+            StringComparison.OrdinalIgnoreCase), ready);
     }
 
     private sealed class RuntimeSource(MediaSourceDefinition definition)
@@ -647,12 +778,14 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         public OfsMediaState? LastMediaState { get; set; }
         public NetworkMediaSourceAdapter? NetworkAdapter { get; set; }
         public NetworkMediaState? LastNetworkMediaState { get; set; }
+        public DateTimeOffset MediaStateUpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     }
 
     private enum MediaSourceCommand
     {
         Play,
         Pause,
-        Seek
+        Seek,
+        SetPlaybackSpeed
     }
 }

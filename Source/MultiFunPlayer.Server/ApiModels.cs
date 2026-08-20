@@ -34,6 +34,24 @@ public sealed record SerialDeviceResponse(
     string DevicePath,
     string? LinkTarget);
 
+public sealed record MediaServerDiscoveryRequest(string? Kind, int TimeoutMilliseconds = 1_500);
+
+public sealed record MediaServerDiscoveryResponse(
+    string Kind,
+    string? ServerId,
+    string Name,
+    string Endpoint,
+    string SourceAddress,
+    bool ApiKeyRequired,
+    string ApiKeyUrl);
+
+public sealed record ButtplugDeviceDiscoveryRequest(string? Endpoint, int ScanMilliseconds = 1_500);
+
+public sealed record ButtplugDeviceDiscoveryResponse(
+    uint DeviceIndex,
+    string DeviceName,
+    IReadOnlyList<string> ActuatorTypes);
+
 public sealed record PairRequest(string? PairingToken, string? AuthToken);
 
 public sealed record ScriptDescriptor(string Id, string Name, long Size, DateTimeOffset LastModifiedUtc);
@@ -106,7 +124,14 @@ public sealed record MediaSourceResponse(
     bool Connected,
     string? LastError,
     MediaClockResponse? MediaState = null,
-    string? DeviceId = null);
+    string? DeviceId = null,
+    MediaControlCapabilitiesResponse? Controls = null);
+
+public sealed record MediaControlCapabilitiesResponse(
+    bool CanPlayPause,
+    bool CanSeek,
+    bool CanSetPlaybackSpeed,
+    bool CanLoop);
 
 public sealed record MediaClockResponse(
     string? SessionId,
@@ -130,6 +155,24 @@ public sealed record MediaSourceRequest(
     string? SecretRef = null);
 
 public sealed record SeekRequest(double PositionSeconds);
+
+public sealed record PlaybackSpeedRequest(double PlaybackSpeed);
+
+public sealed record RuntimeSourceRouteRequest(
+    string? SourceId,
+    string[]? OutputIds,
+    bool LoopEnabled = false,
+    string? ScriptId = null,
+    string? ScriptMatchMode = "exact");
+
+public sealed record RuntimeRoutesRequest(RuntimeSourceRouteRequest[]? Routes);
+
+public sealed record RuntimeSourceRouteResponse(
+    string SourceId,
+    string[] OutputIds,
+    bool LoopEnabled,
+    string? ScriptId = null,
+    string ScriptMatchMode = "global");
 
 public static class ApiModelMapper
 {

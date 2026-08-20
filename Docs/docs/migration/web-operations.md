@@ -58,8 +58,11 @@ the untouched volumes.
    anonymous for diagnosis.
 2. A target is `offline`, or reports `lastError`/a rising `failedFrames` count:
    check endpoint reachability from the container network, then use the target
-   connect route. A later successful write clears the transient error. Serial
-   targets also require an explicit device mapping and write permission.
+   test route before the connect route. Draft tests do not persist the target,
+   register an engine sink, or change a saved connection. A UDP test only proves
+   that the local socket can be configured because UDP has no acknowledgement.
+   A later successful write clears the transient error. Serial targets also
+   require an explicit device mapping and write permission.
 3. The Handy reports a missing key: set
    `MFP_THE_HANDY_CONNECTION_KEY` in the host environment. It is intentionally
    never persisted by the server.
@@ -72,9 +75,19 @@ the untouched volumes.
 6. Collect `/api/v1/logs` and download `/api/v1/logs/file`. Entries are bounded
    and redact token, password, cookie, API-key, authorization, and credential
    fields before retention.
+7. Emby/Jellyfin discovery returns no candidates: discovery is a server-side UDP
+   7359 broadcast. Put the service on the same subnet and use host networking or
+   an explicit broadcast relay when a container bridge isolates broadcasts.
+8. A Runtime route does not move an output: verify that the Source and Output are
+   both connected, the Session card shows a matched script, and the Source reports
+   a media clock. Use Exact first, then Fuzzy or Manual search when file names differ.
+   An Output can belong to only one Source. External Source routes use that Source's
+   clock; unassigned Outputs continue to use the global engine.
 
 ## Health checks
 
 Use `/health/live` for process liveness and `/health/ready` for the engine
 state. `/api/v1/settings`, `/api/v1/configuration/migration`, and
 `/api/v1/adapters` provide non-secret configuration and capability evidence.
+`/api/v1/runtime/routes` shows the persisted Source-to-Output assignment used by
+the server ticker.

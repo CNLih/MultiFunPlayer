@@ -3,8 +3,8 @@ import type { StatusResponse } from './store';
 export class ApiError extends Error {
   readonly status: number;
 
-  constructor(status: number) {
-    super(`API request failed (${status})`);
+  constructor(status: number, detail?: string) {
+    super(detail ? `${detail} (${status})` : `API request failed (${status})`);
     this.name = 'ApiError';
     this.status = status;
   }
@@ -80,6 +80,22 @@ export interface ApiSerialDevice {
   linkTarget: string | null;
 }
 
+export interface ApiMediaServerDiscovery {
+  kind: string;
+  serverId: string | null;
+  name: string;
+  endpoint: string;
+  sourceAddress: string;
+  apiKeyRequired: boolean;
+  apiKeyUrl: string;
+}
+
+export interface ApiButtplugDeviceDiscovery {
+  deviceIndex: number;
+  deviceName: string;
+  actuatorTypes: string[];
+}
+
 export interface ApiDeviceAxis {
   axis: string;
   minimum: number;
@@ -143,6 +159,20 @@ export interface ApiMediaSource {
     playbackSpeed: number;
     contentType: string | null;
   } | null;
+  controls?: {
+    canPlayPause: boolean;
+    canSeek: boolean;
+    canSetPlaybackSpeed: boolean;
+    canLoop: boolean;
+  } | null;
+}
+
+export interface ApiRuntimeSourceRoute {
+  sourceId: string;
+  outputIds: string[];
+  loopEnabled: boolean;
+  scriptId: string | null;
+  scriptMatchMode: 'exact' | 'fuzzy' | 'manual' | 'global';
 }
 
 export interface ApiMediaSourceRequest {
@@ -264,6 +294,20 @@ export class MfpApiClient {
     return this.request<ApiSerialDevice[]>('/devices/serial');
   }
 
+  async discoverMediaServers(kind: string, timeoutMilliseconds = 1500): Promise<ApiMediaServerDiscovery[]> {
+    return this.request<ApiMediaServerDiscovery[]>('/discovery/media-servers', {
+      method: 'POST',
+      body: JSON.stringify({ kind, timeoutMilliseconds }),
+    });
+  }
+
+  async discoverButtplugDevices(endpoint: string, scanMilliseconds = 1500): Promise<ApiButtplugDeviceDiscovery[]> {
+    return this.request<ApiButtplugDeviceDiscovery[]>('/discovery/buttplug-devices', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint, scanMilliseconds }),
+    });
+  }
+
   async listDeviceAxes(): Promise<ApiDeviceAxis[]> {
     return this.request<ApiDeviceAxis[]>('/device-axes');
   }
@@ -295,7 +339,16 @@ export class MfpApiClient {
     const token = this.token();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const response = await fetch(`${this.apiRoot}/logs/file`, { headers });
-    if (!response.ok) throw new ApiError(response.status);
+    if (!response.ok) {
+      let detail: string | undefined;
+      try {
+        const problem = await response.clone().json() as { detail?: unknown };
+        if (typeof problem.detail === 'string' && problem.detail.trim()) detail = problem.detail.trim();
+      } catch {
+        // Non-JSON failures retain the status-only error message.
+      }
+      throw new ApiError(response.status, detail);
+    }
     return response.blob();
   }
 
@@ -312,6 +365,17 @@ export class MfpApiClient {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  }
+
+  async testMediaSource(request: ApiMediaSourceRequest): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>('/media-sources/test', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async retestMediaSource(id: string): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/test`, { method: 'POST' });
   }
 
   async updateMediaSource(id: string, request: ApiMediaSourceRequest): Promise<ApiMediaSource> {
@@ -348,6 +412,24 @@ export class MfpApiClient {
     });
   }
 
+  async setMediaSourcePlaybackSpeed(id: string, playbackSpeed: number): Promise<ApiMediaSource> {
+    return this.request<ApiMediaSource>(`/media-sources/${encodeURIComponent(id)}/speed`, {
+      method: 'POST',
+      body: JSON.stringify({ playbackSpeed }),
+    });
+  }
+
+  async listRuntimeRoutes(): Promise<ApiRuntimeSourceRoute[]> {
+    return this.request<ApiRuntimeSourceRoute[]>('/runtime/routes');
+  }
+
+  async updateRuntimeRoutes(routes: ApiRuntimeSourceRoute[]): Promise<ApiRuntimeSourceRoute[]> {
+    return this.request<ApiRuntimeSourceRoute[]>('/runtime/routes', {
+      method: 'PUT',
+      body: JSON.stringify({ routes }),
+    });
+  }
+
   async listOutputTargets(): Promise<ApiOutputTarget[]> {
     return this.request<ApiOutputTarget[]>('/output-targets');
   }
@@ -357,6 +439,17 @@ export class MfpApiClient {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  }
+
+  async testOutputTarget(request: ApiOutputTargetRequest): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>('/output-targets/test', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async retestOutputTarget(id: string): Promise<ApiOutputTarget> {
+    return this.request<ApiOutputTarget>(`/output-targets/${encodeURIComponent(id)}/test`, { method: 'POST' });
   }
 
   async updateOutputTarget(id: string, request: ApiOutputTargetRequest): Promise<ApiOutputTarget> {

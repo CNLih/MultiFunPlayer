@@ -156,14 +156,16 @@ Web 左侧包含 `Runtime`、`Media sources`、`Scripts`、`Output targets`、
 
 建议按以下顺序验证：
 
-1. **Runtime**：确认页面显示 `Server API connected`，健康和 WebSocket 状态正常。
+1. **Runtime**：确认页面显示 `Server API connected`，健康和 WebSocket 状态正常；从左侧 Source
+   端口拖到右侧 Output 端口建立运行时路由。
 2. **Media sources**：首次测试可使用 `Internal`；网络播放器按 `/api/v1/adapters` 返回的状态选择。
 3. **Scripts**：导入 `.funscript`，选择资源并确认 `L0` 等轴值出现。
 4. **Output targets**：首次测试建议创建 `File` 输出，Endpoint 填写 `smoke.tcode`，文件会写入 `logs` 根目录。
 5. **Output rate**：默认最大值为 20 Hz。低速设备可以配置 5 或 10 Hz；不要为了“更快”把外部设备强制设为不支持的频率。
-6. **Connect**：连接 File 输出后，在 Runtime 启动 Engine，并执行播放、Seek、暂停和停止。
-7. **Diagnostics**：确认 `sentFrames` 增长，`failedFrames` 为 0，并检查 `lastError` 和 `reconnects`。
-8. **Device settings**：在固定轴表中调整范围、反转、插值和限制，然后点击一次
+6. **Route**：一个 Source 可连接多个 Output；一个 Output 同时只能属于一个 Source。
+7. **Connect**：连接 File 输出后，在 Runtime 启动 Engine，并执行播放、Seek、暂停和停止。
+8. **Diagnostics**：确认 `sentFrames` 增长，`failedFrames` 为 0，并检查 `lastError` 和 `reconnects`。
+9. **Device settings**：在固定轴表中调整范围、反转、插值和限制，然后点击一次
    `Save axis configuration` 保存整组配置。
 
 当前直接实现的输出包括 File、TCP、UDP、WebSocket、Serial、The Handy 和 Buttplug。
@@ -171,7 +173,104 @@ Web 左侧包含 `Runtime`、`Media sources`、`Scripts`、`Output targets`、
 实际部署时始终以 Web 的 Diagnostics 页面或 `GET /api/v1/adapters` 返回的
 `ready`、`planned`、`external-proxy`、`blocked` 状态为准。
 
-### 4.1 Device settings 的轴配置模型
+### 4.1 自动发现、默认地址和连接测试
+
+资源表单会根据 Kind 或 Protocol 只显示相关字段。内部资源 `Id` 由 Web 自动生成且不在
+界面中展示，`Name` 可选；留空时 Web 会根据类型生成可读名称。Source axis、Update rate、远端设备 ID
+和 Buttplug 执行器参数也有默认值或自动选择逻辑，只有当前类型实际需要的 Endpoint
+必须有效。
+
+媒体源默认地址如下：Emby/Jellyfin 为 `http://127.0.0.1:8096`，Plex 为
+`http://127.0.0.1:32400`，VLC 为 `http://127.0.0.1:8080`，MPC-HC/BE 为
+`http://127.0.0.1:13579`，OFS 为 `ws://127.0.0.1:8080/ofs`。输出默认地址沿用常见
+桌面配置：TCP `127.0.0.1:8080`、UDP `tcode.local:8000`、WebSocket
+`ws://127.0.0.1/ws`、File `output.tcode`、Buttplug `ws://127.0.0.1:12345`。
+
+当前扫描边界如下：
+
+1. Emby 和 Jellyfin 使用服务端 UDP `7359` 局域网广播。扫描结果可一键回填 Endpoint，
+   并提供该服务器管理页面的 `Get API key` 链接。
+2. Serial 枚举 Linux 的稳定 `/dev/serial/by-id` 路径。容器部署时必须先把设备映射给容器。
+3. Buttplug 先连接用户填写的 Buttplug WebSocket，再执行协议的设备列表和扫描命令；
+   结果可回填设备名、索引和可判断的执行器类型。
+4. TCP、UDP、普通 WebSocket、File、The Handy、Plex、VLC、MPC 和 OFS 没有统一且可靠的
+   局域网发现协议，因此使用默认地址加 `Test connection`，不伪造“自动发现”。
+
+扫描由 Server 发起，不是浏览器发起。Docker/FNOS 使用 bridge 网络时，UDP 广播可能
+无法到达物理局域网；需要使用 host 网络或明确放行/转发 UDP `7359`。扫描只返回候选，
+选择候选不会自动保存。点击 `Create`/`Save` 后才写入服务端配置；已保存项可继续
+`Edit`、`Delete` 或点击 `Test` 使用持久配置回测。
+
+`Test connection` 创建临时适配器并在结束后释放，不写配置、不注册 20 Hz 输出 sink，
+也不改变已保存项当前的连接状态。TCP、WebSocket、Serial、媒体 HTTP/WebSocket 和
+The Handy/Buttplug 会验证相应握手或端点；UDP 没有应答语义，只能证明本地 socket 和
+目标地址可创建，不能证明远端设备收到数据；File 测试会验证 logs 根目录下目标文件可打开。
+
+对应 API 为：
+
+```text
+POST /api/v1/discovery/media-servers
+POST /api/v1/discovery/buttplug-devices
+GET  /api/v1/devices/serial
+POST /api/v1/media-sources/test
+POST /api/v1/media-sources/{id}/test
+POST /api/v1/output-targets/test
+POST /api/v1/output-targets/{id}/test
+```
+
+### 4.2 Runtime 路由与多 Source 播放控制
+
+Runtime 的路由板左列为 Media Source，右列为 Output Target。从 Source 右侧端口拖到
+Output 左侧端口即可连接；点击 Output 的删除按钮可断开。窄屏设备还提供每个 Output 的
+Source 下拉选择，便于不使用精确拖拽时修改分配。
+
+路由约束如下：
+
+1. 一个 Source 可同时驱动多个 Output，即一对多。
+2. 一个 Output 同时只能由一个 Source 驱动，不允许多对一。把其他 Source 拖到已占用的
+   Output，或修改 Output 的 Source 下拉选择，都会原子替换原路由，无需先断开。
+3. 路由由 Server 持久化到配置根目录的 `runtime-routes.json`，浏览器关闭或 Server 重启后保留。
+4. 删除 Source 或 Output 时，Server 会同步清理失效路由。
+
+每个路由可保存一个独立 `scriptId`。被路由的外部 Source 使用自己的媒体时钟计算所绑定脚本
+的位置，再由 Server 以运行时 Tick 频率把轴帧发送给该 Source 名下的 Output。多个外部 Source
+因而可以绑定不同脚本、位于不同播放位置，并各自控制不同的 Output。`Internal` Source 使用
+全局 Engine 时钟计算自己的绑定脚本；未分配的 Output 继续直接接收全局 Engine 输出。
+
+`Playing / Routed sessions` 会为每个已有路由的 Source 创建一套独立控制栏。只有适配器明确
+声明支持时，界面才启用对应控件：
+
+- Script Exact：默认模式。建立路由时按 Source 当前媒体文件名与脚本文件名执行不区分大小写的
+  精确匹配，并自动持久化命中的 `scriptId`。
+- Script Fuzzy：Exact 无结果时，按规范化文件名的包含关系和编辑距离选择最佳候选；相似度
+  低于阈值时保持未匹配，不随意加载无关脚本。
+- Script Manual：使用当前 Session 卡片内的搜索框过滤服务端脚本目录，再从列表明确选择；
+  手动选择会切换到 Manual 并随路由持久化。
+
+旧版路由没有匹配模式时保留 `Global` 回退语义；重新选择 Exact、Fuzzy 或 Manual 后会按新模式
+保存。Exact 和 Fuzzy 会去除媒体/脚本扩展名、空格及标点后比较，支持
+`video.mp4` 对应 `video.funscript` 或 `video.mp4.funscript`。
+- Play/Pause 和进度 Seek：由 Source 适配器的远程控制能力决定。
+- Speed：当前直接实现仅 OFS 支持；其他 Source 显示但禁用，避免伪造控制成功。
+- Loop：Server 在媒体接近结尾时对支持 Seek 的 Source 回跳到 0；这是 Server 编排能力，
+  不是要求远端播放器原生提供循环模式。
+
+Routed Session 的进度条来自对应 Source 的媒体时钟，脚本使用同一时间位置求值，因此视频
+Seek、暂停、倍速变化会同步反映到该 Source 的脚本输出。当前需要用户在 Session 卡片中选择
+对应脚本，尚未根据媒体文件名自动匹配脚本。
+
+对应 API 为：
+
+```text
+GET  /api/v1/runtime/routes
+PUT  /api/v1/runtime/routes
+POST /api/v1/media-sources/{id}/play
+POST /api/v1/media-sources/{id}/pause
+POST /api/v1/media-sources/{id}/seek
+POST /api/v1/media-sources/{id}/speed
+```
+
+### 4.3 Device settings 的轴配置模型
 
 当前便携服务固定使用 11 个标准 TCode 0.3 轴，不允许从 Web 自由增加或删除轴：
 

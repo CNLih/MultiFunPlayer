@@ -1,4 +1,4 @@
-import type { ApiAdapterCapabilities, ApiCapabilities, ApiConfigurationMigrationStatus, ApiDeviceAxis, ApiDeviceAxisRequest, ApiLogsResponse, ApiMediaSource, ApiOutputTarget, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
+import type { ApiAdapterCapabilities, ApiCapabilities, ApiConfigurationMigrationStatus, ApiDeviceAxis, ApiDeviceAxisRequest, ApiLogsResponse, ApiMediaSource, ApiOutputTarget, ApiRuntimeSourceRoute, ApiScriptDescriptor, ApiSerialDevice, ApiSettings, MfpApiClient } from './api';
 
 export type Route = 'runtime' | 'media' | 'scripts' | 'outputs' | 'settings' | 'logs';
 export type Status = 'online' | 'connecting' | 'offline' | 'warning';
@@ -20,8 +20,28 @@ export interface MediaSource {
     playing: boolean;
     positionSeconds: number;
     durationSeconds: number;
+    playbackSpeed: number;
+    path?: string | null;
   };
+  controls: MediaControlCapabilities;
 }
+
+export interface MediaControlCapabilities {
+  canPlayPause: boolean;
+  canSeek: boolean;
+  canSetPlaybackSpeed: boolean;
+  canLoop: boolean;
+}
+
+export interface RuntimeSourceRoute {
+  sourceId: string;
+  outputIds: string[];
+  loopEnabled: boolean;
+  scriptId: string | null;
+  scriptMatchMode: ScriptMatchMode;
+}
+
+export type ScriptMatchMode = 'exact' | 'fuzzy' | 'manual' | 'global';
 
 export interface ScriptResource {
   id: string;
@@ -138,6 +158,7 @@ export interface AppState {
   media: MediaSource[];
   scripts: ScriptResource[];
   outputs: OutputTarget[];
+  runtimeRoutes: RuntimeSourceRoute[];
   deviceAxes: DeviceAxisSetting[];
   logs: ActivityLog[];
   health: HealthCheck[];
@@ -157,7 +178,8 @@ export interface StatusResponse {
   revision: number;
 }
 
-export type Listener = (state: AppState) => void;
+export type StoreChange = 'full' | 'route' | 'status';
+export type Listener = (state: AppState, change: StoreChange) => void;
 
 const initialState: AppState = {
   mode: 'demo',
@@ -178,9 +200,9 @@ const initialState: AppState = {
   scriptOffset: 0,
   syncMode: 'engine',
   media: [
-    { id: 'media-1', name: 'Local media library', kind: 'Folder watcher', endpoint: '/scripts', status: 'online', latency: 12, capabilities: ['TCode', 'Bookmarks', 'Chapters'] },
-    { id: 'media-2', name: 'OFS relay', kind: 'WebSocket', endpoint: 'ws://localhost:8020', status: 'connecting', latency: 48, capabilities: ['Live sync', 'Position events'] },
-    { id: 'media-3', name: 'Demo stream', kind: 'HTTP preview', endpoint: 'http://demo.local/stream', status: 'offline', latency: 0, capabilities: ['Metadata only'] },
+    { id: 'media-1', name: 'Local media library', kind: 'Jellyfin', endpoint: 'http://media.local:8096', status: 'online', latency: 12, capabilities: ['ready', 'direct'], mediaState: { playing: true, positionSeconds: 262, durationSeconds: 512, playbackSpeed: 1, path: '/media/Amber Protocol Session 04.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
+    { id: 'media-2', name: 'OFS relay', kind: 'OFS', endpoint: 'ws://localhost:8020', status: 'online', latency: 48, capabilities: ['ready', 'direct'], mediaState: { playing: false, positionSeconds: 84, durationSeconds: 198, playbackSpeed: 1, path: '/projects/Orbit Calibrtion sweep.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: true, canLoop: true } },
+    { id: 'media-3', name: 'Demo stream', kind: 'Plex', endpoint: 'http://demo.local:32400', status: 'offline', latency: 0, capabilities: ['ready', 'direct'], controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
   ],
   scripts: [
     { id: 'script-amber', name: 'Amber Protocol / Session 04', format: 'TCode 0.4', duration: '08:32', updated: 'Today, 09:42', size: '1.8 MB', axes: 6 },
@@ -192,6 +214,10 @@ const initialState: AppState = {
     { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', sentFrames: 12840, droppedFrames: 312, coalescedFrames: 312, failedFrames: 0, reconnects: 1, lastSentAt: '09:47:22', signal: 94 },
     { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, coalescedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
     { id: 'output-3', name: 'Bench simulator', protocol: 'UDP', endpoint: '127.0.0.1:8060', sourceAxis: 'L0', status: 'offline', rate: 10, lastPacket: 'Never', sentFrames: 0, droppedFrames: 0, coalescedFrames: 0, failedFrames: 0, reconnects: 0, lastSentAt: 'Never', signal: 0 },
+  ],
+  runtimeRoutes: [
+    { sourceId: 'media-1', outputIds: ['output-1', 'output-2'], loopEnabled: false, scriptId: 'script-amber', scriptMatchMode: 'exact' },
+    { sourceId: 'media-2', outputIds: ['output-3'], loopEnabled: true, scriptId: 'script-orbit', scriptMatchMode: 'fuzzy' },
   ],
   deviceAxes: defaultDeviceAxes(),
   logs: [
@@ -217,10 +243,49 @@ function cloneState(): AppState {
   return structuredClone(initialState);
 }
 
+function normalizedMatchName(pathOrName: string): string {
+  let value = pathOrName.replaceAll('\\', '/').split(/[?#]/, 1)[0].split('/').pop() ?? '';
+  try { value = decodeURIComponent(value); } catch { /* Keep the original file name. */ }
+  const extensions = new Set(['funscript', 'json', 'mp4', 'mkv', 'webm', 'avi', 'mov', 'wmv', 'm4v']);
+  while (value.includes('.') && extensions.has(value.split('.').pop()?.toLowerCase() ?? ''))
+    value = value.slice(0, value.lastIndexOf('.'));
+  return Array.from(value.toLowerCase()).filter((character) => /[\p{L}\p{N}]/u.test(character)).join('');
+}
+
+function matchSimilarity(left: string, right: string): number {
+  if (left === right) return 1;
+  if (left.includes(right) || right.includes(left)) return Math.min(left.length, right.length) / Math.max(left.length, right.length);
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitution = previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+      current[rightIndex] = Math.min(current[rightIndex - 1] + 1, previous[rightIndex] + 1, substitution);
+    }
+    previous = current;
+  }
+  return 1 - previous.at(-1)! / Math.max(left.length, right.length);
+}
+
+function matchScript(state: AppState, sourceId: string, fuzzy: boolean): string | null {
+  const mediaPath = state.media.find((source) => source.id === sourceId)?.mediaState?.path;
+  if (!mediaPath) return null;
+  const mediaName = normalizedMatchName(mediaPath);
+  if (!mediaName) return null;
+  const candidates = state.scripts.map((script) => ({ id: script.id, name: normalizedMatchName(script.name) }))
+    .filter((candidate) => candidate.name.length > 0);
+  const exact = candidates.find((candidate) => candidate.name === mediaName);
+  if (exact || !fuzzy) return exact?.id ?? null;
+  const best = candidates.map((candidate) => ({ ...candidate, score: matchSimilarity(mediaName, candidate.name) }))
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))[0];
+  return best && best.score >= 0.45 ? best.id : null;
+}
+
 export function createMockStore() {
   let state = cloneState();
+  let lastTickAt = Date.now();
   const listeners = new Set<Listener>();
-  const notify = () => listeners.forEach((listener) => listener(state));
+  const notify = (change: StoreChange = 'full') => listeners.forEach((listener) => listener(state, change));
   const appendLog = (level: ActivityLog['level'], message: string, source = 'runtime') => {
     const now = new Date();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -232,46 +297,46 @@ export function createMockStore() {
     getState: () => state,
     subscribe(listener: Listener) {
       listeners.add(listener);
-      listener(state);
+      listener(state, 'full');
       return () => listeners.delete(listener);
     },
     setRoute(route: Route) {
       state.route = route;
       window.history.replaceState({}, '', `#${route}`);
-      notify();
+      notify('route');
     },
     togglePlayback() {
       state.playing = !state.playing;
       appendLog('info', state.playing ? 'Playback resumed at 60 Hz' : 'Playback paused', 'runtime');
-      notify();
+      notify('status');
     },
     toggleEngine() {
       state.engineRunning = !state.engineRunning;
       appendLog(state.engineRunning ? 'info' : 'warn', state.engineRunning ? 'Engine started' : 'Engine stopped', 'runtime');
-      notify();
+      notify('status');
     },
     loadScript(script: ScriptResource) {
       state.nowPlaying = script;
       state.elapsed = 0;
       state.playing = false;
       appendLog('info', `Loaded ${script.name}`, 'runtime');
-      notify();
+      notify('status');
     },
     async seek(positionSeconds: number): Promise<void> {
       if (!Number.isFinite(positionSeconds) || positionSeconds < 0)
         throw new Error('Position must be a non-negative number.');
       state.elapsed = positionSeconds;
       appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
-      notify();
+      notify('status');
     },
     setScriptOffset(offsetSeconds: number) {
       if (!Number.isFinite(offsetSeconds)) return;
       state.scriptOffset = offsetSeconds;
-      notify();
+      notify('status');
     },
     setSyncMode(mode: SyncMode) {
       state.syncMode = mode;
-      notify();
+      notify('status');
     },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
       const existingIndex = state.scripts.findIndex((script) => script.id === id);
@@ -314,6 +379,9 @@ export function createMockStore() {
         enabled: input.enabled,
         autoConnect: input.autoConnect,
         deviceId: input.deviceId ?? null,
+        controls: input.kind.toLowerCase() === 'internal'
+          ? { canPlayPause: false, canSeek: false, canSetPlaybackSpeed: false, canLoop: false }
+          : { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: input.kind.toLowerCase() === 'ofs', canLoop: true },
       };
       state.media = [source, ...state.media];
       appendLog('info', `Added ${source.name}`, 'media');
@@ -362,7 +430,7 @@ export function createMockStore() {
     async playMediaSource(id: string): Promise<MediaSource> {
       const source = state.media.find((item) => item.id === id);
       if (!source) throw new Error('Media source not found.');
-      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0 }), playing: true };
+      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0, playbackSpeed: 1 }), playing: true };
       appendLog('info', `${source.name} playback resumed`, id);
       notify();
       return source;
@@ -370,7 +438,7 @@ export function createMockStore() {
     async pauseMediaSource(id: string): Promise<MediaSource> {
       const source = state.media.find((item) => item.id === id);
       if (!source) throw new Error('Media source not found.');
-      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0 }), playing: false };
+      source.mediaState = { ...(source.mediaState ?? { positionSeconds: 0, durationSeconds: 0, playbackSpeed: 1 }), playing: false };
       appendLog('info', `${source.name} playback paused`, id);
       notify();
       return source;
@@ -379,10 +447,56 @@ export function createMockStore() {
       const source = state.media.find((item) => item.id === id);
       if (!source) throw new Error('Media source not found.');
       if (!Number.isFinite(positionSeconds) || positionSeconds < 0) throw new Error('Position must be non-negative.');
-      source.mediaState = { ...(source.mediaState ?? { playing: false, durationSeconds: 0 }), positionSeconds };
+      source.mediaState = { ...(source.mediaState ?? { playing: false, durationSeconds: 0, playbackSpeed: 1 }), positionSeconds };
       appendLog('info', `${source.name} seeked to ${formatTime(positionSeconds)}`, id);
       notify();
       return source;
+    },
+    async setMediaSourcePlaybackSpeed(id: string, playbackSpeed: number): Promise<MediaSource> {
+      const source = state.media.find((item) => item.id === id);
+      if (!source?.mediaState || !source.controls.canSetPlaybackSpeed) throw new Error('Playback speed is not supported.');
+      source.mediaState.playbackSpeed = playbackSpeed;
+      notify('status');
+      return source;
+    },
+    async setRuntimeRoutes(routes: RuntimeSourceRoute[]): Promise<RuntimeSourceRoute[]> {
+      const outputs = new Set<string>();
+      const resolvedRoutes = routes.map((route): RuntimeSourceRoute => {
+        if (route.scriptMatchMode === 'global') return { ...route, scriptId: null };
+        if (route.scriptMatchMode === 'exact' || route.scriptMatchMode === 'fuzzy') {
+          const source = state.media.find((item) => item.id === route.sourceId);
+          if (!source?.mediaState?.path) return route;
+          return { ...route, scriptId: matchScript(state, route.sourceId, route.scriptMatchMode === 'fuzzy') };
+        }
+        return route;
+      });
+      for (const route of resolvedRoutes) {
+        if (!state.media.some((source) => source.id === route.sourceId)) throw new Error('Media source not found.');
+        if (route.scriptId && !state.scripts.some((script) => script.id === route.scriptId)) throw new Error('Script not found.');
+        for (const outputId of route.outputIds) {
+          if (!state.outputs.some((output) => output.id === outputId)) throw new Error('Output target not found.');
+          if (!outputs.add(outputId)) throw new Error('An output can only be assigned to one source.');
+        }
+      }
+      state.runtimeRoutes = resolvedRoutes.map((route) => ({ ...route, outputIds: [...route.outputIds] }));
+      notify();
+      return state.runtimeRoutes;
+    },
+    async setRuntimeLoop(sourceId: string, loopEnabled: boolean): Promise<RuntimeSourceRoute[]> {
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId ? { ...route, loopEnabled } : route);
+      return this.setRuntimeRoutes(routes);
+    },
+    async setRuntimeScript(sourceId: string, scriptId: string | null): Promise<RuntimeSourceRoute[]> {
+      if (!state.runtimeRoutes.some((route) => route.sourceId === sourceId)) throw new Error('Runtime route not found.');
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId
+        ? { ...route, scriptId, scriptMatchMode: 'manual' as const } : route);
+      return this.setRuntimeRoutes(routes);
+    },
+    async setRuntimeScriptMatchMode(sourceId: string, scriptMatchMode: ScriptMatchMode): Promise<RuntimeSourceRoute[]> {
+      if (!state.runtimeRoutes.some((route) => route.sourceId === sourceId)) throw new Error('Runtime route not found.');
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId
+        ? { ...route, scriptMatchMode } : route);
+      return this.setRuntimeRoutes(routes);
     },
     async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
       if (state.outputs.some((output) => output.id === input.id)) throw new Error('An output target with that id already exists.');
@@ -491,12 +605,16 @@ export function createMockStore() {
       notify();
     },
     tick() {
+      const now = Date.now();
+      const elapsedSeconds = Math.min((now - lastTickAt) / 1000, 1);
+      lastTickAt = now;
       if (!state.playing || !state.engineRunning) return;
-      state.elapsed = (state.elapsed + 1) % 512;
+      state.elapsed = (state.elapsed + elapsedSeconds) % 512;
       for (const [index, axis] of Object.keys(state.axisValues).entries())
         state.axisValues[axis] = (Math.sin((state.elapsed / 18) + index) + 1) / 2;
-      notify();
+      notify('status');
     },
+    async refreshRuntimeStatus(): Promise<void> { notify('status'); },
   };
 }
 
@@ -504,15 +622,25 @@ export function createRemoteStore(client: MfpApiClient) {
   const base = createMockStore();
   const state = base.getState();
   state.mode = 'server';
+  state.nowPlaying = {
+    id: '', name: 'No script loaded', format: '--', duration: '00:00',
+    updated: '--', size: '--', axes: 0,
+  };
+  state.elapsed = 0;
+  state.playing = false;
+  state.axisValues = {};
   state.media = [];
+  state.scripts = [];
   state.outputs = [];
+  state.runtimeRoutes = [];
   state.deviceAxes = [];
   state.logs = [];
   state.serialDevices = [];
   const listeners = new Set<Listener>();
   let socket: WebSocket | undefined;
   let stateStreamDisconnected = false;
-  const notify = () => listeners.forEach((listener) => listener(state));
+  let runtimeRefreshInFlight = false;
+  const notify = (change: StoreChange = 'full') => listeners.forEach((listener) => listener(state, change));
   const appendLog = (level: ActivityLog['level'], message: string, source = 'server') => {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     state.logs = [{ id: Date.now(), time, level, message, source }, ...state.logs].slice(0, 30);
@@ -544,7 +672,15 @@ export function createRemoteStore(client: MfpApiClient) {
       playing: source.mediaState.playing,
       positionSeconds: source.mediaState.positionSeconds,
       durationSeconds: source.mediaState.durationSeconds,
+      playbackSpeed: source.mediaState.playbackSpeed,
+      path: source.mediaState.path,
     } : undefined,
+    controls: source.controls ?? {
+      canPlayPause: source.kind.toLowerCase() !== 'internal',
+      canSeek: source.kind.toLowerCase() !== 'internal',
+      canSetPlaybackSpeed: source.kind.toLowerCase() === 'ofs',
+      canLoop: source.kind.toLowerCase() !== 'internal',
+    },
   });
   const outputFromResponse = (target: ApiOutputTarget): OutputTarget => ({
     id: target.id,
@@ -594,7 +730,7 @@ export function createRemoteStore(client: MfpApiClient) {
     state.scripts = scripts.map(scriptFromDescriptor);
     notify();
   };
-  const applyStatus = (status: StatusResponse) => {
+  const applyStatus = (status: StatusResponse, publish = true) => {
     stateStreamDisconnected = false;
     const playing = status.state.toLowerCase() === 'playing';
     const script = state.scripts.find((item) => item.name === status.script) ?? state.nowPlaying;
@@ -609,12 +745,29 @@ export function createRemoteStore(client: MfpApiClient) {
       { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
     ];
     state.lastSync = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    notify();
+    if (publish) notify('status');
   };
   const refreshResources = async () => {
-    const [media, outputs] = await Promise.all([client.listMediaSources(), client.listOutputTargets()]);
+    const [media, outputs, runtimeRoutes] = await Promise.all([
+      client.listMediaSources(), client.listOutputTargets(), client.listRuntimeRoutes(),
+    ]);
     state.media = media.map(mediaFromResponse);
     state.outputs = outputs.map(outputFromResponse);
+    state.runtimeRoutes = runtimeRoutes.map(routeFromResponse);
+  };
+  const routeFromResponse = (route: ApiRuntimeSourceRoute): RuntimeSourceRoute => ({
+    sourceId: route.sourceId,
+    outputIds: [...route.outputIds],
+    loopEnabled: route.loopEnabled,
+    scriptId: route.scriptId ?? null,
+    scriptMatchMode: route.scriptMatchMode ?? 'global',
+  });
+  const replaceMediaSource = (response: ApiMediaSource) => {
+    const source = mediaFromResponse(response);
+    const index = state.media.findIndex((item) => item.id === source.id);
+    if (index >= 0) state.media[index] = source;
+    else state.media = [...state.media, source];
+    return source;
   };
   const refresh = async () => {
     const [status, scripts, settings, migration, adapters, serialDevices, logs, deviceAxes] = await Promise.all([
@@ -662,7 +815,14 @@ export function createRemoteStore(client: MfpApiClient) {
     maximumTravel: input.maximumTravel,
   });
   const command = (action: () => Promise<StatusResponse>, message: string) => {
-    void action().then(applyStatus).then(() => appendLog('info', message)).catch(() => appendLog('error', 'Server command failed'));
+    void action().then((status) => {
+      applyStatus(status, false);
+      appendLog('info', message);
+      notify('status');
+    }).catch(() => {
+      appendLog('error', 'Server command failed');
+      notify('status');
+    });
   };
   const handleStateDisconnect = () => {
     if (stateStreamDisconnected) return;
@@ -673,32 +833,32 @@ export function createRemoteStore(client: MfpApiClient) {
       { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
     ];
     appendLog('warn', 'State stream disconnected; reconnect required', 'server');
-    notify();
+    notify('status');
   };
 
   return {
     getState: () => state,
-    subscribe(listener: Listener) { listeners.add(listener); listener(state); return () => listeners.delete(listener); },
-    setRoute(route: Route) { state.route = route; window.history.replaceState({}, '', `#${route}`); notify(); },
+    subscribe(listener: Listener) { listeners.add(listener); listener(state, 'full'); return () => listeners.delete(listener); },
+    setRoute(route: Route) { state.route = route; window.history.replaceState({}, '', `#${route}`); notify('route'); },
     togglePlayback() { command(() => client.command(state.playing ? 'pause' : 'play'), state.playing ? 'Playback paused' : 'Playback resumed'); },
-    toggleEngine() { appendLog('warn', 'Engine lifecycle is owned by the server process'); notify(); },
+    toggleEngine() { appendLog('warn', 'Engine lifecycle is owned by the server process'); notify('status'); },
     loadScript(script: ScriptResource) { command(() => client.loadScript(script.id), `Loaded ${script.name}`); },
     async seek(positionSeconds: number): Promise<void> {
       if (!Number.isFinite(positionSeconds) || positionSeconds < 0)
         throw new Error('Position must be a non-negative number.');
       const status = await client.seek(positionSeconds);
-      applyStatus(status);
+      applyStatus(status, false);
       appendLog('info', `Seeked to ${formatTime(positionSeconds)}`, 'runtime');
-      notify();
+      notify('status');
     },
     setScriptOffset(offsetSeconds: number) {
       if (!Number.isFinite(offsetSeconds)) return;
       state.scriptOffset = offsetSeconds;
-      notify();
+      notify('status');
     },
     setSyncMode(mode: SyncMode) {
       state.syncMode = mode;
-      notify();
+      notify('status');
     },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
       const descriptor = await client.uploadScript(id, content, overwrite);
@@ -787,13 +947,41 @@ export function createRemoteStore(client: MfpApiClient) {
     },
     async seekMediaSource(id: string, positionSeconds: number): Promise<MediaSource> {
       if (!Number.isFinite(positionSeconds) || positionSeconds < 0) throw new Error('Position must be non-negative.');
-      await client.seekMediaSource(id, positionSeconds);
-      await refreshResourcesAfter();
-      const source = state.media.find((item) => item.id === id);
-      if (!source) throw new Error('The server did not return the media source.');
+      const source = replaceMediaSource(await client.seekMediaSource(id, positionSeconds));
       appendLog('info', `${source.name} seeked to ${formatTime(positionSeconds)}`, id);
-      notify();
+      notify(state.route === 'runtime' ? 'status' : 'full');
       return source;
+    },
+    async setMediaSourcePlaybackSpeed(id: string, playbackSpeed: number): Promise<MediaSource> {
+      if (!Number.isFinite(playbackSpeed) || playbackSpeed < 0.25 || playbackSpeed > 4)
+        throw new Error('Playback speed must be between 0.25 and 4.');
+      const source = replaceMediaSource(await client.setMediaSourcePlaybackSpeed(id, playbackSpeed));
+      appendLog('info', `${source.name} speed set to ${playbackSpeed}x`, id);
+      notify(state.route === 'runtime' ? 'status' : 'full');
+      return source;
+    },
+    async setRuntimeRoutes(routes: RuntimeSourceRoute[]): Promise<RuntimeSourceRoute[]> {
+      const updated = await client.updateRuntimeRoutes(routes);
+      state.runtimeRoutes = updated.map(routeFromResponse);
+      appendLog('info', `Saved ${state.runtimeRoutes.reduce((count, route) => count + route.outputIds.length, 0)} runtime routes`, 'routing');
+      notify();
+      return state.runtimeRoutes;
+    },
+    async setRuntimeLoop(sourceId: string, loopEnabled: boolean): Promise<RuntimeSourceRoute[]> {
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId ? { ...route, loopEnabled } : route);
+      return this.setRuntimeRoutes(routes);
+    },
+    async setRuntimeScript(sourceId: string, scriptId: string | null): Promise<RuntimeSourceRoute[]> {
+      if (!state.runtimeRoutes.some((route) => route.sourceId === sourceId)) throw new Error('Runtime route not found.');
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId
+        ? { ...route, scriptId, scriptMatchMode: 'manual' as const } : route);
+      return this.setRuntimeRoutes(routes);
+    },
+    async setRuntimeScriptMatchMode(sourceId: string, scriptMatchMode: ScriptMatchMode): Promise<RuntimeSourceRoute[]> {
+      if (!state.runtimeRoutes.some((route) => route.sourceId === sourceId)) throw new Error('Runtime route not found.');
+      const routes = state.runtimeRoutes.map((route) => route.sourceId === sourceId
+        ? { ...route, scriptMatchMode } : route);
+      return this.setRuntimeRoutes(routes);
     },
     async createOutputTarget(input: OutputTargetInput): Promise<OutputTarget> {
       await client.createOutputTarget(outputRequest(input));
@@ -854,10 +1042,21 @@ export function createRemoteStore(client: MfpApiClient) {
       if (!target) return;
       void (target.status === 'online' ? this.disconnectOutputTarget(id) : this.connectOutputTarget(id));
     },
-    tick() { /* state arrives from the bounded WebSocket stream */ },
+    tick() { notify('status'); },
+    async refreshRuntimeStatus(): Promise<void> {
+      if (runtimeRefreshInFlight || state.route !== 'runtime') return;
+      runtimeRefreshInFlight = true;
+      try {
+        state.media = (await client.listMediaSources()).map(mediaFromResponse);
+        notify('status');
+      } finally {
+        runtimeRefreshInFlight = false;
+      }
+    },
     async connect() {
       const capabilities: ApiCapabilities = await client.getCapabilities();
-      socket = client.connectState(capabilities.webSocketPath, applyStatus, handleStateDisconnect);
+      socket = client.connectState(capabilities.webSocketPath,
+        (status) => applyStatus(status, false), handleStateDisconnect);
       await refresh();
     },
     close() { socket?.close(); },

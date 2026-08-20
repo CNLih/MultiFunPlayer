@@ -10,10 +10,6 @@ public sealed record StorageOptions
 
     public static StorageOptions FromEnvironment(IReadOnlyDictionary<string, string?>? environment = null)
     {
-        environment ??= Environment.GetEnvironmentVariables()
-            .Cast<System.Collections.DictionaryEntry>()
-            .ToDictionary(x => (string)x.Key, x => x.Value?.ToString(), StringComparer.OrdinalIgnoreCase);
-
         return new StorageOptions
         {
             ConfigRoot = ValueOrDefault(environment, "MFP_CONFIG_ROOT", "MFP_CONFIG_PATH", "/config"),
@@ -23,9 +19,14 @@ public sealed record StorageOptions
         };
     }
 
-    private static string ValueOrDefault(IReadOnlyDictionary<string, string?> environment, string key, string alias, string fallback)
+    private static string ValueOrDefault(IReadOnlyDictionary<string, string?>? environment, string key, string alias, string fallback)
         => ValueOrNull(environment, key) ?? ValueOrNull(environment, alias) ?? fallback;
 
-    private static string? ValueOrNull(IReadOnlyDictionary<string, string?> environment, string key)
-        => environment.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+    private static string? ValueOrNull(IReadOnlyDictionary<string, string?>? environment, string key)
+    {
+        var found = environment is null
+            ? Environment.GetEnvironmentVariable(key)
+            : environment.TryGetValue(key, out var value) ? value : null;
+        return string.IsNullOrWhiteSpace(found) ? null : found.Trim();
+    }
 }

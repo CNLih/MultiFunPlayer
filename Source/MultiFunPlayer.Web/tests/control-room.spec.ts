@@ -15,7 +15,7 @@ test.describe('control room demo journey', () => {
 
     await page.getByRole('button', { name: 'Output targets' }).click();
     await expect(page.getByRole('heading', { name: 'Output targets' })).toBeVisible();
-    await page.getByLabel('Id', { exact: true }).fill('playwright-target');
+    await expect(page.getByLabel('Id', { exact: true })).toHaveCount(0);
     await page.getByLabel('Name', { exact: true }).fill('Playwright target');
     await page.getByLabel('Endpoint', { exact: true }).fill('127.0.0.1:8123');
     await page.getByRole('button', { name: 'Create target' }).click();
@@ -57,7 +57,7 @@ test.describe('control room demo journey', () => {
   test('completes media, output, axis configuration, and diagnostics journeys', async ({ page }) => {
     await page.goto('/?demo=1#media');
 
-    await page.getByLabel('Id', { exact: true }).fill('playwright-media');
+    await expect(page.getByLabel('Id', { exact: true })).toHaveCount(0);
     await page.getByLabel('Name', { exact: true }).fill('Playwright media');
     await page.getByLabel('Kind', { exact: true }).selectOption('jellyfin');
     await page.getByLabel('Endpoint', { exact: true }).fill('https://media.example.local');
@@ -79,7 +79,6 @@ test.describe('control room demo journey', () => {
     await expect(editedMedia).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Output targets' }).click();
-    await page.getByLabel('Id', { exact: true }).fill('playwright-output');
     await page.getByLabel('Name', { exact: true }).fill('Playwright output');
     await page.getByLabel('Endpoint', { exact: true }).fill('127.0.0.1:8124');
     await page.getByRole('button', { name: 'Create target' }).click();
@@ -112,6 +111,78 @@ test.describe('control room demo journey', () => {
     await expect(page.locator('.log-row')).not.toHaveCount(0);
     await page.getByRole('button', { name: 'Refresh' }).click();
     await expect(page.getByRole('status')).toHaveText('Diagnostics refreshed');
+  });
+
+  test('routes one source to many outputs and renders per-source playback controls', async ({ page }) => {
+    await page.goto('/?demo=1#runtime');
+
+    const wires = page.locator('[data-router-wires] .router-wire:not(.router-wire-preview)');
+    await expect(wires).toHaveCount(3);
+    await expect(page.locator('[data-runtime-playback]')).toHaveCount(2);
+
+    const ofsControls = page.locator('[data-runtime-playback="media-2"]');
+    await expect(ofsControls.getByRole('combobox', { name: 'Script for OFS relay', exact: true })).toHaveValue('script-orbit');
+    await expect(ofsControls.getByLabel('Speed')).toBeEnabled();
+    await ofsControls.getByLabel('Speed').selectOption('1.5');
+    await expect(ofsControls.getByLabel('Speed')).toHaveValue('1.5');
+    await expect(ofsControls.getByLabel('Loop')).toBeChecked();
+    await ofsControls.getByLabel('Loop').uncheck();
+    await expect(ofsControls.getByLabel('Loop')).not.toBeChecked();
+    await ofsControls.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(ofsControls.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+
+    const localControls = page.locator('[data-runtime-playback="media-1"]');
+    await expect(localControls.getByRole('combobox', { name: 'Script for Local media library', exact: true })).toHaveValue('script-amber');
+    await localControls.getByRole('searchbox', { name: 'Search scripts for Local media library', exact: true }).fill('Lumen');
+    await localControls.getByRole('combobox', { name: 'Script for Local media library', exact: true }).selectOption('script-lumen');
+    await expect(page.getByRole('status')).toContainText('Runtime script saved');
+    await expect(localControls.getByRole('combobox', { name: 'Script for Local media library', exact: true })).toHaveValue('script-lumen');
+    await expect(localControls.getByRole('button', { name: 'Manual', exact: true })).toHaveClass(/is-active/);
+    await localControls.getByRole('slider', { name: 'Local media library playback position' }).fill('120');
+    await expect(localControls.locator('[data-runtime-source-position]')).toHaveText('02:00');
+
+    await page.locator('.router-disconnect[data-runtime-unroute="output-3"]').click();
+    await expect(wires).toHaveCount(2);
+    await expect(page.locator('[data-runtime-playback]')).toHaveCount(1);
+
+    await page.locator('[data-runtime-router]').scrollIntoViewIfNeeded();
+    const sourcePort = page.locator('[data-route-source-port="media-1"]');
+    const outputPort = page.locator('[data-route-output-port="output-3"]');
+    const sourceBox = await sourcePort.boundingBox();
+    const outputBox = await outputPort.boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(outputBox).not.toBeNull();
+    await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(outputBox!.x + outputBox!.width / 2, outputBox!.y + outputBox!.height / 2,
+      { steps: 8 });
+    await page.mouse.up();
+
+    await expect(wires).toHaveCount(3);
+    await expect(page.locator('[data-router-output="output-3"]')).toContainText('Local media library');
+    await expect(localControls.locator('.routed-output-badges span')).toHaveCount(3);
+
+    await page.locator('[data-runtime-router]').scrollIntoViewIfNeeded();
+    const secondSourceBox = await page.locator('[data-route-source-port="media-2"]').boundingBox();
+    const assignedOutputBox = await page.locator('[data-route-output-port="output-1"]').boundingBox();
+    expect(secondSourceBox).not.toBeNull();
+    expect(assignedOutputBox).not.toBeNull();
+    await page.mouse.move(secondSourceBox!.x + secondSourceBox!.width / 2,
+      secondSourceBox!.y + secondSourceBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(assignedOutputBox!.x + assignedOutputBox!.width / 2,
+      assignedOutputBox!.y + assignedOutputBox!.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.getByRole('status')).toContainText('Runtime route replaced');
+    await expect(page.locator('[data-router-output="output-1"]')).toContainText('OFS relay');
+    await expect(wires).toHaveCount(3);
+    await expect(localControls.locator('.routed-output-badges span')).toHaveCount(2);
+    const restoredOfsControls = page.locator('[data-runtime-playback="media-2"]');
+    await expect(restoredOfsControls).toBeVisible();
+    await expect(restoredOfsControls.getByRole('combobox', { name: 'Script for OFS relay', exact: true })).toHaveValue('');
+    await restoredOfsControls.getByRole('button', { name: 'Fuzzy', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Fuzzy script matched');
+    await expect(restoredOfsControls.getByRole('combobox', { name: 'Script for OFS relay', exact: true })).toHaveValue('script-orbit');
   });
 
   test('shows the server authentication entry instead of falling back to demo', async ({ page }) => {
@@ -163,6 +234,12 @@ test.describe('control room demo journey', () => {
         playbackSpeed: 1,
         contentType: 'video',
       },
+      controls: {
+        canPlayPause: true,
+        canSeek: true,
+        canSetPlaybackSpeed: false,
+        canLoop: true,
+      },
     };
     const legacyOutputTarget = {
       id: 'legacy-output',
@@ -186,6 +263,9 @@ test.describe('control room demo journey', () => {
       actuatorIndex: 0,
       durationMilliseconds: 50,
     };
+    let runtimeRoutes: Array<{ sourceId: string; outputIds: string[]; loopEnabled: boolean; scriptId: string | null; scriptMatchMode: 'exact' | 'fuzzy' | 'manual' | 'global' }> = [
+      { sourceId: 'remote-media', outputIds: ['legacy-output'], loopEnabled: false, scriptId: 'remote-script.funscript', scriptMatchMode: 'manual' },
+    ];
 
     await page.addInitScript(() => {
       class MockWebSocket extends EventTarget {
@@ -193,6 +273,8 @@ test.describe('control room demo journey', () => {
         static latest: MockWebSocket | undefined;
         readyState = MockWebSocket.OPEN;
         private closeListener: EventListener | null = null;
+        private revision = 7;
+        private readonly stateTimer: number;
 
         addEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
           if (type === 'close' && typeof listener === 'function') this.closeListener = listener;
@@ -202,12 +284,15 @@ test.describe('control room demo journey', () => {
         constructor() {
           super();
           MockWebSocket.latest = this;
-          window.setTimeout(() => this.dispatchEvent(new MessageEvent('message', {
-            data: JSON.stringify({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 }),
-          })), 0);
+          const publish = () => this.dispatchEvent(new MessageEvent('message', {
+            data: JSON.stringify({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: this.revision++ }),
+          }));
+          window.setTimeout(publish, 0);
+          this.stateTimer = window.setInterval(publish, 50);
         }
 
         close() {
+          window.clearInterval(this.stateTimer);
           this.readyState = 3;
           this.closeListener?.(new Event('close'));
         }
@@ -229,13 +314,17 @@ test.describe('control room demo journey', () => {
       const auth = request.headers().authorization;
       if (auth) bearerSeen.push(auth);
       const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-      if (url.pathname === '/api/v1/capabilities') return json({ apiVersion: 'v1', tickHz: 20, commands: ['play', 'pause', 'stop'], protocols: ['tcp'], authenticationRequired: true, webSocketPath: '/hubs/state' });
+      if (url.pathname === '/api/v1/capabilities') return json({ apiVersion: 'v1', tickHz: 20, commands: ['play', 'pause', 'stop', 'media.speed', 'runtime.routes'], protocols: ['tcp'], authenticationRequired: true, webSocketPath: '/hubs/state' });
       if (url.pathname === '/api/v1/status') return json({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 });
       if (url.pathname === '/api/v1/scripts') return json([{ id: 'remote-script.funscript', name: 'Remote script', size: 128, lastModifiedUtc: '2026-08-07T00:00:00Z' }]);
       if (url.pathname === '/api/v1/settings') return json({ schemaVersion: 1, tickHz: 20, maxWebSocketClients: 16, configRoot: '/config', scriptsRoot: '/scripts', logsRoot: '/logs', keysRoot: '/keys', authenticationRequired: true });
       if (url.pathname === '/api/v1/configuration/migration') return json({ state: 'disabled', sourceFile: null, targetFile: 'migrated-configuration.json', warningCount: 0, error: null });
       if (url.pathname === '/api/v1/adapters') return json({ apiVersion: 'v1', schemaVersion: '1.0', transports: [{ id: 'tcp', integration: 'direct', implementationStatus: 'ready', platforms: ['linux'], notes: 'loopback' }], adapters: [{ id: 'output.tcp', kind: 'output', integration: 'direct', implementationStatus: 'ready', transport: 'tcp', requiredServices: [], notes: 'loopback' }] });
-      if (url.pathname === '/api/v1/devices/serial') return json([]);
+      if (url.pathname === '/api/v1/devices/serial') return json([{
+        stableId: 'usb-tcode-controller',
+        devicePath: '/dev/serial/by-id/usb-tcode-controller',
+        linkTarget: '/dev/ttyACM0',
+      }]);
       if (url.pathname === '/api/v1/logs') return json({ items: [{ timestampUtc: '2026-08-07T00:00:00Z', level: 'Information', category: 'remote-test', eventId: 1, message: 'Remote state loaded', traceId: null, properties: {} }], truncated: false, capacity: 500 });
       if (url.pathname === '/api/v1/device-axes') {
         if (request.method() === 'PUT') return json((request.postDataJSON() as { axes: unknown[] }).axes);
@@ -253,8 +342,35 @@ test.describe('control room demo journey', () => {
         mediaSource.mediaState.positionSeconds = Number((request.postDataJSON() as { positionSeconds: number }).positionSeconds);
         return json(mediaSource);
       }
+      if (url.pathname === '/api/v1/media-sources/remote-media/speed') {
+        mediaSource.mediaState.playbackSpeed = Number((request.postDataJSON() as { playbackSpeed: number }).playbackSpeed);
+        return json(mediaSource);
+      }
+      if (url.pathname === '/api/v1/discovery/media-servers') return json([{
+        kind: 'jellyfin',
+        serverId: 'discovered-jellyfin',
+        name: 'Discovered Jellyfin',
+        endpoint: 'http://192.168.1.25:8096',
+        sourceAddress: '192.168.1.25',
+        apiKeyRequired: true,
+        apiKeyUrl: 'http://192.168.1.25:8096/web/index.html#/dashboard/keys',
+      }]);
+      if (url.pathname === '/api/v1/media-sources/test') return json({ ...mediaSource, id: 'connection-test' });
+      if (url.pathname === '/api/v1/media-sources/remote-media/test') return json(mediaSource);
       if (url.pathname === '/api/v1/media-sources') return json([mediaSource]);
+      if (url.pathname === '/api/v1/discovery/buttplug-devices') return json([{
+        deviceIndex: 4,
+        deviceName: 'Discovered Linear Device',
+        actuatorTypes: ['LinearCmd'],
+      }]);
+      if (url.pathname === '/api/v1/output-targets/test') return json({ ...legacyOutputTarget, id: 'connection-test' });
+      if (url.pathname === '/api/v1/output-targets/legacy-output/test') return json(legacyOutputTarget);
       if (url.pathname === '/api/v1/output-targets') return json([legacyOutputTarget]);
+      if (url.pathname === '/api/v1/runtime/routes') {
+        if (request.method() === 'PUT')
+          runtimeRoutes = (request.postDataJSON() as { routes: typeof runtimeRoutes }).routes;
+        return json(runtimeRoutes);
+      }
       return json({ title: 'Not found' }, 404);
     });
 
@@ -262,7 +378,33 @@ test.describe('control room demo journey', () => {
     await expect(page.getByRole('heading', { name: 'Media sources' })).toBeVisible();
     await expect(page.getByText('Server API connected')).toBeVisible();
     await expect(page.getByText('Remote Jellyfin')).toBeVisible();
+    await page.getByLabel('Kind', { exact: true }).selectOption('jellyfin');
+    await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('http://127.0.0.1:8096');
+    await page.getByRole('button', { name: 'Scan local network' }).click();
+    const discoveredMedia = page.locator('.discovery-candidate').filter({ hasText: 'Discovered Jellyfin' });
+    await discoveredMedia.getByRole('button', { name: 'Use' }).click();
+    await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('http://192.168.1.25:8096');
+    await expect(page.getByRole('link', { name: 'Get API key' }).first()).toHaveAttribute('href',
+      'http://192.168.1.25:8096/web/index.html#/dashboard/keys');
+    await page.getByRole('button', { name: 'Test connection' }).click();
+    await expect(page.getByText('Media source connection test passed')).toBeVisible();
+    await page.getByLabel('Name', { exact: true }).fill('Unsaved media draft');
+    await page.evaluate(() => {
+      const trackedWindow = window as Window & { stableNavigation?: Element | null; stableInput?: Element | null };
+      trackedWindow.stableNavigation = document.querySelector('[data-route="media"]');
+      trackedWindow.stableInput = document.querySelector('#media-name');
+    });
+    await page.waitForTimeout(350);
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Unsaved media draft');
+    expect(await page.evaluate(() => {
+      const trackedWindow = window as Window & { stableNavigation?: Element | null; stableInput?: Element | null };
+      return trackedWindow.stableNavigation === document.querySelector('[data-route="media"]')
+        && trackedWindow.stableInput === document.querySelector('#media-name')
+        && document.activeElement === trackedWindow.stableInput;
+    })).toBeTruthy();
     const remoteCard = page.locator('.source-card').filter({ hasText: 'Remote Jellyfin' });
+    await remoteCard.getByRole('button', { name: 'Test' }).click();
+    await expect(page.getByText('Saved media source connection test passed')).toBeVisible();
     await remoteCard.getByRole('button', { name: 'Pause' }).click();
     await expect(remoteCard.getByText('Paused', { exact: true })).toBeVisible();
     await remoteCard.getByRole('button', { name: 'Play' }).click();
@@ -278,6 +420,20 @@ test.describe('control room demo journey', () => {
     expect(bearerSeen.length).toBeGreaterThan(0);
     expect(bearerSeen.every((value) => value === 'Bearer remote-browser-token')).toBeTruthy();
 
+    await page.getByRole('button', { name: 'Runtime' }).click();
+    await expect(page.locator('[data-router-wires] .router-wire:not(.router-wire-preview)')).toHaveCount(1);
+    const remotePlayback = page.locator('[data-runtime-playback="remote-media"]');
+    await expect(remotePlayback).toBeVisible();
+    await expect(remotePlayback.getByRole('combobox', { name: 'Script for Remote Jellyfin', exact: true })).toHaveValue('remote-script.funscript');
+    const engineHealth = page.getByLabel('Health', { exact: true }).getByText(/Server tick \/ revision/);
+    const firstRevision = await engineHealth.textContent();
+    await page.evaluate(() => {
+      (window as Window & { stablePlayback?: Element | null }).stablePlayback = document.querySelector('[data-action="playback"]');
+    });
+    await expect.poll(() => engineHealth.textContent()).not.toBe(firstRevision);
+    expect(await page.evaluate(() => (window as Window & { stablePlayback?: Element | null }).stablePlayback
+      === document.querySelector('[data-action="playback"]'))).toBeTruthy();
+
     await page.getByRole('button', { name: 'Device settings' }).click();
     await expect(page.getByRole('heading', { name: 'Server-managed storage' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Effective runtime' })).toBeVisible();
@@ -291,6 +447,24 @@ test.describe('control room demo journey', () => {
     await page.getByRole('button', { name: 'Output targets' }).click();
     await expect(page.getByRole('heading', { name: 'Output targets' })).toBeVisible();
     await expect(page.getByText('120 sent / 12 coalesced', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('127.0.0.1:8080');
+    await page.getByLabel('Protocol', { exact: true }).selectOption('serial');
+    await page.getByRole('button', { name: 'Scan devices' }).click();
+    const serialCandidate = page.locator('.discovery-candidate').filter({ hasText: 'usb-tcode-controller' });
+    await serialCandidate.getByRole('button', { name: 'Use' }).click();
+    await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('/dev/serial/by-id/usb-tcode-controller');
+    await page.getByLabel('Protocol', { exact: true }).selectOption('buttplug');
+    await expect(page.getByLabel('Endpoint', { exact: true })).toHaveValue('ws://127.0.0.1:12345');
+    await page.getByRole('button', { name: 'Scan devices' }).click();
+    const buttplugCandidate = page.locator('.discovery-candidate').filter({ hasText: 'Discovered Linear Device' });
+    await buttplugCandidate.getByRole('button', { name: 'Use' }).click();
+    await expect(page.getByLabel('Buttplug device index', { exact: true })).toHaveValue('4');
+    await expect(page.getByLabel('Buttplug actuator', { exact: true })).toHaveValue('Linear');
+    await page.getByRole('button', { name: 'Test connection' }).click();
+    await expect(page.getByText('Output target connection test passed')).toBeVisible();
+    const legacyOutput = page.locator('tr').filter({ hasText: 'Legacy output' });
+    await legacyOutput.getByRole('button', { name: 'Test' }).click();
+    await expect(page.getByText('Saved output target connection test passed')).toBeVisible();
 
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();

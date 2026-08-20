@@ -497,6 +497,29 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public void StorageOptionsToleratesEnvironmentKeysThatDifferOnlyByCase()
+    {
+        const string upperKey = "MFP_STORAGE_CASE_COLLISION_TEST";
+        const string lowerKey = "mfp_storage_case_collision_test";
+        var previousUpper = Environment.GetEnvironmentVariable(upperKey);
+        var previousLower = Environment.GetEnvironmentVariable(lowerKey);
+        try
+        {
+            Environment.SetEnvironmentVariable(upperKey, "upper");
+            Environment.SetEnvironmentVariable(lowerKey, "lower");
+
+            var options = StorageOptions.FromEnvironment();
+
+            Assert.NotNull(options);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(upperKey, previousUpper);
+            Environment.SetEnvironmentVariable(lowerKey, previousLower);
+        }
+    }
+
+    [Fact]
     public async Task SerialTransportKeepsStableDevicePathAndValidatesLineSettings()
     {
         var settings = new SerialPortSettings
@@ -544,7 +567,7 @@ public sealed class InfrastructureTests
         var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
 
-        var commands = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commands = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, port));
         var app = builder.Build();
@@ -576,9 +599,14 @@ public sealed class InfrastructureTests
             await SendAsync(socket,
                 "{\"type\":\"event\",\"name\":\"unknown_future_event\",\"data\":{}}");
 
-            var buffer = new byte[4096];
-            var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
-            commands.TrySetResult(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            var receivedCommands = new string[2];
+            for (var index = 0; index < receivedCommands.Length; index++)
+            {
+                var buffer = new byte[4096];
+                var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
+                receivedCommands[index] = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            }
+            commands.TrySetResult(receivedCommands);
             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "test", CancellationToken.None);
         });
 
@@ -602,6 +630,7 @@ public sealed class InfrastructureTests
 
             await adapter.ConnectAsync();
             await adapter.SendPlayAsync(false);
+            await adapter.SendPlaybackSpeedAsync(1.5);
             await allEvents.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
             var state = adapter.Current;
@@ -615,11 +644,15 @@ public sealed class InfrastructureTests
                 && message.FunscriptJson == "{\"actions\":[]}");
             Assert.Contains(events, message => message.Kind == OfsMediaEventKind.ProtocolError);
 
-            var command = await commands.Task.WaitAsync(TimeSpan.FromSeconds(2));
-            using var commandDocument = JsonDocument.Parse(command);
-            Assert.Equal("command", commandDocument.RootElement.GetProperty("type").GetString());
-            Assert.Equal("change_play", commandDocument.RootElement.GetProperty("name").GetString());
-            Assert.False(commandDocument.RootElement.GetProperty("data").GetProperty("playing").GetBoolean());
+            var commandPayloads = await commands.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            using var playCommand = JsonDocument.Parse(commandPayloads[0]);
+            Assert.Equal("command", playCommand.RootElement.GetProperty("type").GetString());
+            Assert.Equal("change_play", playCommand.RootElement.GetProperty("name").GetString());
+            Assert.False(playCommand.RootElement.GetProperty("data").GetProperty("playing").GetBoolean());
+            using var speedCommand = JsonDocument.Parse(commandPayloads[1]);
+            Assert.Equal("command", speedCommand.RootElement.GetProperty("type").GetString());
+            Assert.Equal("change_playbackspeed", speedCommand.RootElement.GetProperty("name").GetString());
+            Assert.Equal(1.5, speedCommand.RootElement.GetProperty("data").GetProperty("speed").GetDouble());
         }
         finally
         {

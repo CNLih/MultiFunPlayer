@@ -264,6 +264,15 @@ public sealed class HeadlessPlayerEngine : IDisposable
         return new SinkRegistration(this, sink);
     }
 
+    public OutputFrame Evaluate(TimeSpan position)
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            return _scripts.Evaluate(ClampPosition(position), _axisConfigurations);
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate)
