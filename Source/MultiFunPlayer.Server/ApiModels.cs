@@ -25,6 +25,7 @@ public sealed record SettingsResponse(
     int MaxWebSocketClients,
     string ConfigRoot,
     string ScriptsRoot,
+    string[] ScriptsRoots,
     string LogsRoot,
     string KeysRoot,
     bool AuthenticationRequired);
@@ -65,6 +66,7 @@ public sealed record LoadScriptRequest(
     string? Axis);
 
 public sealed record ScriptUploadRequest(string? Id, string? Content, bool Overwrite = false);
+public sealed record ScriptFolderRequest(string? FolderPath);
 
 public sealed record OutputTargetResponse(
     string Id,

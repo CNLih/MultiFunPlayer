@@ -1392,6 +1392,36 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public void Script_catalog_lists_subfolders_searches_and_manages_folders()
+    {
+        using var temp = new TemporaryDirectory();
+        var catalog = new ScriptCatalog(Path.Combine(temp.Path, "scripts"));
+        Assert.True(catalog.TryCreateFolder("projects/2025", out var created, out _));
+        Assert.Equal("projects/2025", created);
+        Assert.True(catalog.TryWrite("projects/2025/session-a.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":50}]}", overwrite: false,
+            out _, out _, out _));
+        Assert.True(catalog.TryWrite("top.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":50}]}", overwrite: false,
+            out _, out _, out _));
+
+        var all = catalog.List();
+        Assert.Contains(all, d => d.Id == "top.funscript");
+        Assert.Contains(all, d => d.Id == "projects/2025/session-a.funscript");
+
+        var search = catalog.Search("session");
+        Assert.Single(search);
+        Assert.Equal("projects/2025/session-a.funscript", search[0].Id);
+
+        Assert.Contains("projects/2025", catalog.ListFolders());
+        Assert.True(catalog.TryRead("projects/2025/session-a.funscript", out var read));
+        Assert.Equal("projects/2025/session-a.funscript", read!.Script.Id);
+
+        Assert.True(catalog.TryDeleteFolder("projects", out _));
+        Assert.DoesNotContain(catalog.List(), d => d.Id.StartsWith("projects/"));
+    }
+
+    [Fact]
     public async Task Runtime_route_exact_mode_uses_the_connected_source_file_name()
     {
         using var temp = new TemporaryDirectory();

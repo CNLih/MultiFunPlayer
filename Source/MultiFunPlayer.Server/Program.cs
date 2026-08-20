@@ -186,12 +186,12 @@ public static class ServerProgram
                     exception.Message, "discovery_failed");
             }
         });
-        app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage) =>
+        app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage, ScriptCatalog catalog) =>
         {
             var tickHz = ServerOptions.ResolveTickHz(config);
             var maxClients = ServerOptions.ResolveMaxWebSocketClients(config);
             return Results.Ok(new SettingsResponse(1, tickHz, maxClients, storage.ConfigRoot,
-                storage.ScriptsRoot, storage.LogsRoot, storage.KeysRoot,
+                storage.ScriptsRoot, catalog.Roots.ToArray(), storage.LogsRoot, storage.KeysRoot,
                 !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"))));
         });
         app.MapGet("/api/v1/configuration/migration",
@@ -341,7 +341,22 @@ public static class ServerProgram
             return Results.File(snapshot, "application/x-ndjson", "runtime.log");
         });
 
-        app.MapGet("/api/v1/scripts", (ScriptCatalog catalog) => Results.Ok(catalog.List()));
+        app.MapGet("/api/v1/scripts", (string? q, ScriptCatalog catalog) => Results.Ok(catalog.Search(q)));
+        app.MapGet("/api/v1/script-folders", (ScriptCatalog catalog) => Results.Ok(catalog.ListFolders()));
+        app.MapPost("/api/v1/script-folders", (ScriptFolderRequest request, ScriptCatalog catalog) =>
+        {
+            if (!catalog.TryCreateFolder(request.FolderPath, out var folder, out var error))
+                return Problem(StatusCodes.Status400BadRequest, "Folder create failed",
+                    error ?? "The folder could not be created.", "folder_create_failed");
+            return Results.Created($"/api/v1/script-folders/{Uri.EscapeDataString(folder!)}", new { folder });
+        });
+        app.MapDelete("/api/v1/script-folders/{path:required}", (string path, ScriptCatalog catalog) =>
+        {
+            if (!catalog.TryDeleteFolder(path, out var error))
+                return Problem(StatusCodes.Status400BadRequest, "Folder delete failed",
+                    error ?? "The folder could not be deleted.", "folder_delete_failed");
+            return Results.NoContent();
+        });
         app.MapGet("/api/v1/scripts/{id}", (string id, ScriptCatalog catalog) =>
             catalog.TryRead(id, out var response)
                 ? Results.Ok(response)
