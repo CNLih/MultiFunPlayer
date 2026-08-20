@@ -70,7 +70,7 @@ for required in \
     'read_only: true' \
     '/tmp:rw,noexec,nosuid,size=32m' \
     'no-new-privileges:true' \
-    'stop_grace_period: 30s' \
+    'stop_grace_period: 120s' \
     'cpus: "2.0"' \
     'memory: 512M'; do
     printf '%s\n' "$app_compose" | grep -Fq -- "$required" || {

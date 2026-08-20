@@ -71,3 +71,26 @@ For a new installation using one-time pairing, also export
 capabilities, script playback, and log redaction. It is not evidence of fnOS
 firmware schema acceptance, USB permission, ARM execution, or physical output;
 attach those target-device results separately to the release evidence manifest.
+
+## 多脚本目录与 NAS 文件夹
+
+后端脚本库支持**多个根目录**：`MFP_SCRIPTS_PATHS`（分号分隔的容器内路径列表），
+默认值为 `/scripts`（即 fnOS 分配的 scripts 数据卷）。每个根目录及其子文件夹都会被
+递归索引、搜索并参与智能匹配。Web 控制台的「Scripts」栏目可增删根目录下的子文件夹。
+
+要让容器访问 **NAS 上其他共享文件夹**作为脚本目录，需要把该文件夹挂载进容器。
+受 fnpack 1.2.3 资源 schema 限制，FPK 只能声明 `data-share`（应用专用目录），
+**不能通过标准字段声明“任意共享文件夹授权”**。可用的做法：
+
+1. 在 fnOS 的 Docker/容器管理中，为 `multifunplayer` 容器额外添加一个
+   `主机共享文件夹 -> 容器路径` 的挂载（例如把 NAS 的 `/vol1/1000/scripts` 挂到容器
+   `/scripts/extra`）。
+2. 在 `app/docker/docker-compose.yaml`（或已安装的 compose）里给
+   `MFP_SCRIPTS_PATHS` 加上该容器路径，例如：
+   ```yaml
+   MFP_SCRIPTS_PATHS: /scripts;/scripts/extra
+   ```
+3. 重建容器后，该文件夹及其子目录即出现在脚本库中。
+
+不同 fnOS 版本的共享文件夹授权字段可能不同，若你的 fnOS 支持共享文件夹授权，
+可参照对应版本文档在 `config/resource` 中补充声明后重新打包验证。

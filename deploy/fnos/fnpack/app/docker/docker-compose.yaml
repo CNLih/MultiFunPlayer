@@ -10,6 +10,7 @@ services:
       MFP_AUTH_TOKEN: ${MFP_AUTH_TOKEN:-}
       MFP_PAIRING_TOKEN: ${MFP_PAIRING_TOKEN:-}
       MFP_SCRIPTS_PATH: /scripts
+      MFP_SCRIPTS_PATHS: ${MFP_SCRIPTS_PATHS:-/scripts}
       MFP_CONFIG_PATH: /config
       MFP_KEYS_PATH: /keys
       MFP_LOGS_PATH: /logs
@@ -24,7 +25,7 @@ services:
       - "/tmp:rw,noexec,nosuid,size=32m"
     security_opt:
       - no-new-privileges:true
-    stop_grace_period: 30s
+    stop_grace_period: 120s
     deploy:
       resources:
         limits:

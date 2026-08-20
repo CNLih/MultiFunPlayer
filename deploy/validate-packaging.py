@@ -163,7 +163,7 @@ class Validator:
                        "fnOS main service has a bounded non-executable temporary filesystem")
             self.check("fnpack:compose:no-new-privileges", "no-new-privileges:true" in fnpack_compose,
                        "fnOS main service disables privilege escalation")
-            self.check("fnpack:compose:graceful-stop", "stop_grace_period: 30s" in fnpack_compose,
+            self.check("fnpack:compose:graceful-stop", "stop_grace_period: 120s" in fnpack_compose,
                        "fnOS main service has a graceful stop budget")
             self.check("fnpack:compose:resource-limits", 'cpus: "2.0"' in fnpack_compose and "memory: 512M" in fnpack_compose,
                        "fnOS main service declares CPU and memory limits")
