@@ -33,15 +33,20 @@ const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'logs', label: 'Logs and health', hint: 'Events and diagnostics' },
 ];
 
+// The default endpoints follow the address the browser uses to reach this
+// server (the fnOS host when deployed), so 127.0.0.1/loopback is replaced by
+// the real host IP. Inside the container loopback would never reach host services.
+const mfpHost = (typeof window !== 'undefined' && window.location.hostname) || '127.0.0.1';
+
 const mediaEndpointDefaults: Record<string, string> = {
   internal: '',
-  emby: 'http://127.0.0.1:8096',
-  jellyfin: 'http://127.0.0.1:8096',
-  plex: 'http://127.0.0.1:32400',
-  vlc: 'http://127.0.0.1:8080',
-  mpc: 'http://127.0.0.1:13579',
-  ofs: 'ws://127.0.0.1:8080/ofs',
-  mpv: 'http://127.0.0.1:5000',
+  emby: `http://${mfpHost}:8096`,
+  jellyfin: `http://${mfpHost}:8096`,
+  plex: `http://${mfpHost}:32400`,
+  vlc: `http://${mfpHost}:8080`,
+  mpc: `http://${mfpHost}:13579`,
+  ofs: `ws://${mfpHost}:8080/ofs`,
+  mpv: `http://${mfpHost}:5000`,
 };
 const mediaSecretDefaults: Record<string, string> = {
   emby: 'MFP_EMBY_API_KEY',
@@ -50,13 +55,13 @@ const mediaSecretDefaults: Record<string, string> = {
   vlc: 'MFP_VLC_PASSWORD',
 };
 const outputEndpointDefaults: Record<string, string> = {
-  tcp: '127.0.0.1:8080',
+  tcp: `${mfpHost}:8080`,
   udp: 'tcode.local:8000',
-  websocket: 'ws://127.0.0.1/ws',
+  websocket: `ws://${mfpHost}/ws`,
   file: 'output.tcode',
   serial: '',
   'the-handy': 'https://www.handyfeeling.com/api/handy/v2/',
-  buttplug: 'ws://127.0.0.1:12345',
+  buttplug: `ws://${mfpHost}:12345`,
 };
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character] ?? character));
@@ -437,10 +442,20 @@ function renderAxisRows(state: AppState): string {
   }).join('');
 }
 
+function scriptFolderOf(id: string): string {
+  const index = id.lastIndexOf('/');
+  return index > 0 ? id.slice(0, index) : '';
+}
+
 function renderScripts(state: AppState): string {
   const axisRows = renderAxisRows(state);
-  return `${pageHeading('Library', 'Scripts', 'Browse, load, and inspect axis coverage before sending a script to the engine.', '<button class="button button-primary" data-action="import-script">Import script</button>')}
-    <div class="script-layout"><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or format" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${state.scripts.map((script) => `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`).join('')}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2 data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-duration">${state.nowPlaying.duration}</span><span data-bind="script-channels">${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
+  const folderList = (state.scriptFolders ?? []).map((folder) => `<div class="folder-item"><span class="folder-name">${escapeHtml(folder)}</span><button class="icon-button" type="button" data-delete-script-folder="${escapeHtml(folder)}" title="Remove folder" aria-label="Remove ${escapeHtml(folder)}">&#10005;</button></div>`).join('');
+  const scriptList = state.scripts.map((script) => {
+    const folder = scriptFolderOf(script.id);
+    return `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${folder ? `<span class="script-folder">${escapeHtml(folder)}</span> · ` : ''}${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`;
+  }).join('');
+  return `${pageHeading('Library', 'Scripts', 'Browse script folders, search, and load before sending a script to the engine.', '<button class="button button-primary" data-action="import-script">Import script</button>')}
+    <div class="script-layout"><section class="panel script-folders"><div class="panel-heading"><div><p class="eyebrow">Folders</p><h2>Script directories</h2></div><span class="result-count">${(state.scriptFolders ?? []).length} folders</span></div><form class="folder-add" data-folder-add><label class="sr-only" for="script-folder-name">New folder</label><input id="script-folder-name" type="text" placeholder="New folder, e.g. projects/2025" autocomplete="off" /><button class="button button-secondary" type="submit">Add folder</button></form><div class="folder-list">${folderList || '<p class="muted">No subfolders yet. Add one to organise scripts.</p>'}</div></section><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or folder" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${scriptList || '<p class="muted">No scripts found.</p>'}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2 data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-duration">${state.nowPlaying.duration}</span><span data-bind="script-channels">${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
 }
 
 function updateStatusBindings(state: AppState) {
@@ -693,7 +708,7 @@ function setDiscoveryResults(form: HTMLFormElement, kind: 'media' | 'output', ht
 function mediaApiKeyUrl(kind: string, endpoint: string): string | null {
   const root = endpoint.trim().replace(/\/+$/, '');
   if (kind === 'emby' && root) return `${root}/web/index.html#!/apikeys.html`;
-  if (kind === 'jellyfin' && root) return `${root}/web/index.html#/dashboard/keys`;
+  if (kind === 'jellyfin' && root) return `${root}/web/index.html#!/apikeys.html`;
   if (kind === 'plex') return 'https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/';
   return null;
 }
@@ -1209,6 +1224,13 @@ function handleClick(event: MouseEvent) {
       .then(() => showToast('Output target deleted'))
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target deletion failed.', 'error'));
   }
+  const deleteFolder = target.closest<HTMLElement>('[data-delete-script-folder]')?.dataset.deleteScriptFolder;
+  if (deleteFolder) {
+    void store.deleteFolder(deleteFolder)
+      .then(() => showToast(`Removed folder ${deleteFolder}`))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder delete failed.', 'error'));
+    return;
+  }
   const scriptId = target.closest<HTMLElement>('[data-load-script]')?.dataset.loadScript;
   if (scriptId) {
     const script = store.getState().scripts.find((item) => item.id === scriptId);
@@ -1239,6 +1261,16 @@ async function handleSubmit(event: SubmitEvent) {
     } catch (error) {
       renderAuthScreen(error instanceof Error ? error.message : 'Authentication failed.');
     }
+    return;
+  }
+  if (form.dataset.folderAdd) {
+    event.preventDefault();
+    const input = form.querySelector<HTMLInputElement>('#script-folder-name');
+    const path = input?.value.trim() ?? '';
+    if (!path) return;
+    void store.createFolder(path)
+      .then(() => { if (input) input.value = ''; })
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder create failed.', 'error'));
     return;
   }
   const kind = form.dataset.resourceForm;

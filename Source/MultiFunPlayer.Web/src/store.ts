@@ -157,6 +157,7 @@ export interface AppState {
   syncMode: SyncMode;
   media: MediaSource[];
   scripts: ScriptResource[];
+  scriptFolders: string[];
   outputs: OutputTarget[];
   runtimeRoutes: RuntimeSourceRoute[];
   deviceAxes: DeviceAxisSetting[];
@@ -210,6 +211,7 @@ const initialState: AppState = {
     { id: 'script-lumen', name: 'Lumen / Quiet interval', format: 'CSV', duration: '12:05', updated: 'Aug 05', size: '2.4 MB', axes: 3 },
     { id: 'script-slate', name: 'Slate / Device smoke test', format: 'JSON', duration: '01:00', updated: 'Aug 02', size: '84 KB', axes: 8 },
   ],
+  scriptFolders: ['projects', 'archive/2025'],
   outputs: [
     { id: 'output-1', name: 'Studio bridge', protocol: 'TCP', endpoint: '127.0.0.1:8000', sourceAxis: 'L0', status: 'online', rate: 20, lastPacket: '320 ms ago', sentFrames: 12840, droppedFrames: 312, coalescedFrames: 312, failedFrames: 0, reconnects: 1, lastSentAt: '09:47:22', signal: 94 },
     { id: 'output-2', name: 'Living room relay', protocol: 'WebSocket', endpoint: '192.168.1.42:9000', sourceAxis: 'L0', status: 'warning', rate: 15, lastPacket: '1.8 s ago', sentFrames: 8064, droppedFrames: 1240, coalescedFrames: 1240, failedFrames: 3, reconnects: 2, lastSentAt: '09:45:40', signal: 58 },
@@ -337,6 +339,17 @@ export function createMockStore() {
     setSyncMode(mode: SyncMode) {
       state.syncMode = mode;
       notify('status');
+    },
+    async createFolder(path: string): Promise<void> {
+      const folder = path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (folder && !state.scriptFolders.includes(folder)) state.scriptFolders = [...state.scriptFolders, folder];
+      appendLog('info', `Created script folder ${path}`, 'scripts');
+      notify();
+    },
+    async deleteFolder(path: string): Promise<void> {
+      state.scriptFolders = state.scriptFolders.filter((folder) => folder !== path);
+      appendLog('info', `Removed script folder ${path}`, 'scripts');
+      notify();
     },
     async uploadScript(id: string, content: string, overwrite = false): Promise<ScriptResource> {
       const existingIndex = state.scripts.findIndex((script) => script.id === id);
@@ -726,8 +739,9 @@ export function createRemoteStore(client: MfpApiClient) {
     source: item.category,
   }));
   const refreshScripts = async () => {
-    const scripts = await client.listScripts();
+    const [scripts, scriptFolders] = await Promise.all([client.listScripts(), client.listScriptFolders()]);
     state.scripts = scripts.map(scriptFromDescriptor);
+    state.scriptFolders = scriptFolders;
     notify();
   };
   const applyStatus = (status: StatusResponse, publish = true) => {
@@ -770,8 +784,8 @@ export function createRemoteStore(client: MfpApiClient) {
     return source;
   };
   const refresh = async () => {
-    const [status, scripts, settings, migration, adapters, serialDevices, logs, deviceAxes] = await Promise.all([
-      client.getStatus(), client.listScripts(), client.getSettings(), client.getConfigurationMigration(),
+    const [status, scripts, settings, scriptFolders, migration, adapters, serialDevices, logs, deviceAxes] = await Promise.all([
+      client.getStatus(), client.listScripts(), client.getSettings(), client.listScriptFolders(), client.getConfigurationMigration(),
       client.getAdapters(), client.listSerialDevices(), client.getLogs(), client.listDeviceAxes(),
     ]);
     state.settings = settings;
@@ -781,6 +795,7 @@ export function createRemoteStore(client: MfpApiClient) {
     state.deviceAxes = deviceAxes.map(axisFromResponse);
     state.logs = logsFromResponse(logs);
     state.scripts = scripts.map(scriptFromDescriptor);
+    state.scriptFolders = scriptFolders;
     await refreshResources();
     applyStatus(status);
   };
@@ -867,6 +882,16 @@ export function createRemoteStore(client: MfpApiClient) {
       appendLog('info', `Imported ${script.name}`, 'scripts');
       notify();
       return script;
+    },
+    async createFolder(path: string): Promise<void> {
+      await client.createScriptFolder(path);
+      await refreshScripts();
+      appendLog('info', `Created script folder ${path}`, 'scripts');
+    },
+    async deleteFolder(path: string): Promise<void> {
+      await client.deleteScriptFolder(path);
+      await refreshScripts();
+      appendLog('info', `Removed script folder ${path}`, 'scripts');
     },
     async downloadLogs(): Promise<Blob> {
       return client.downloadLogs();

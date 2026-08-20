@@ -356,6 +356,23 @@ export class MfpApiClient {
     return this.request<ApiScriptDescriptor[]>('/scripts');
   }
 
+  async listScriptFolders(): Promise<string[]> {
+    return this.request<string[]>('/script-folders');
+  }
+
+  async createScriptFolder(path: string): Promise<void> {
+    await this.request<unknown>('/script-folders', {
+      method: 'POST',
+      body: JSON.stringify({ folderPath: path }),
+    });
+  }
+
+  async deleteScriptFolder(path: string): Promise<void> {
+    await this.request<unknown>(`/script-folders/${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    });
+  }
+
   async listMediaSources(): Promise<ApiMediaSource[]> {
     return this.request<ApiMediaSource[]>('/media-sources');
   }
