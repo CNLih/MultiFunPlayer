@@ -392,8 +392,20 @@ public sealed class NetworkMediaSourceAdapter : IAsyncDisposable
             using var ping = CreateRequest(HttpMethod.Get, "/System/Ping");
             using var pingResponse = await SendCheckedAsync(ping, _options.ConnectTimeout, cancellationToken).ConfigureAwait(false);
             var payload = await ReadBoundedAsync(pingResponse, cancellationToken).ConfigureAwait(false);
-            if (payload.Length > 0 && !LooksLikeJsonObject(payload))
-                throw new InvalidDataException("The media server ping response was not valid JSON.");
+            if (payload.Length > 0)
+            {
+                // Jellyfin/Emby return a JSON string (for example "Jellyfin Server"),
+                // which is valid JSON but not an object; validate by parsing rather
+                // than requiring an object/array shape.
+                try
+                {
+                    using var _ = JsonDocument.Parse(payload, JsonOptions);
+                }
+                catch (JsonException)
+                {
+                    throw new InvalidDataException("The media server ping response was not valid JSON.");
+                }
+            }
         }
 
         using var request = CreateRequest(HttpMethod.Get, "/Sessions");
