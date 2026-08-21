@@ -159,11 +159,13 @@ Web 左侧包含 `Runtime`、`Media sources`、`Scripts`、`Output targets`、
 1. **Runtime**：确认页面显示 `Server API connected`，健康和 WebSocket 状态正常；从左侧 Source
    端口拖到右侧 Output 端口建立运行时路由。
 2. **Media sources**：首次测试可使用 `Internal`；网络播放器按 `/api/v1/adapters` 返回的状态选择。
-3. **Scripts**：导入 `.funscript`，选择资源并确认 `L0` 等轴值出现。
+3. **Scripts**：导入或映射 `.funscript`，确认文件出现在目录预览；脚本从 Runtime 的 Routed
+   Session 绑定到对应 Source。
 4. **Output targets**：首次测试建议创建 `File` 输出，Endpoint 填写 `smoke.tcode`，文件会写入 `logs` 根目录。
 5. **Output rate**：默认最大值为 20 Hz。低速设备可以配置 5 或 10 Hz；不要为了“更快”把外部设备强制设为不支持的频率。
 6. **Route**：一个 Source 可连接多个 Output；一个 Output 同时只能属于一个 Source。
-7. **Connect**：连接 File 输出后，在 Runtime 启动 Engine，并执行播放、Seek、暂停和停止。
+7. **Connect**：连接 File 输出后，在 Runtime 为 Source 建立路由、绑定脚本，并执行播放、Seek、
+   暂停和循环控制。
 8. **Diagnostics**：确认 `sentFrames` 增长，`failedFrames` 为 0，并检查 `lastError` 和 `reconnects`。
 9. **Device settings**：在固定轴表中调整范围、反转、插值和限制，然后点击一次
    `Save axis configuration` 保存整组配置。
@@ -232,10 +234,10 @@ Source 下拉选择，便于不使用精确拖拽时修改分配。
 3. 路由由 Server 持久化到配置根目录的 `runtime-routes.json`，浏览器关闭或 Server 重启后保留。
 4. 删除 Source 或 Output 时，Server 会同步清理失效路由。
 
-每个路由可保存一个独立 `scriptId`。被路由的外部 Source 使用自己的媒体时钟计算所绑定脚本
-的位置，再由 Server 以运行时 Tick 频率把轴帧发送给该 Source 名下的 Output。多个外部 Source
-因而可以绑定不同脚本、位于不同播放位置，并各自控制不同的 Output。`Internal` Source 使用
-全局 Engine 时钟计算自己的绑定脚本；未分配的 Output 继续直接接收全局 Engine 输出。
+每个路由可保存一个独立 `scriptId`。被路由的 Source 使用自己的媒体时钟计算所绑定脚本的
+位置，再由 Server 以运行时 Tick 频率把轴帧发送给该 Source 名下的 Output。多个 Source 因而
+可以绑定不同脚本、位于不同播放位置，并各自控制不同的 Output。Web 不再提供全局脚本播放器；
+未分配到 Source 的 Output 不属于任何界面播放 Session。
 
 `Playing / Routed sessions` 会为每个已有路由的 Source 创建一套独立控制栏。只有适配器明确
 声明支持时，界面才启用对应控件：
@@ -256,8 +258,8 @@ Source 下拉选择，便于不使用精确拖拽时修改分配。
   不是要求远端播放器原生提供循环模式。
 
 Routed Session 的进度条来自对应 Source 的媒体时钟，脚本使用同一时间位置求值，因此视频
-Seek、暂停、倍速变化会同步反映到该 Source 的脚本输出。当前需要用户在 Session 卡片中选择
-对应脚本，尚未根据媒体文件名自动匹配脚本。
+Seek、暂停、倍速变化会同步反映到该 Source 的脚本输出。Exact 默认按媒体文件名自动匹配；
+没有命中时，用户可在 Session 卡片中改用 Fuzzy 或 Manual 选择对应脚本。
 
 对应 API 为：
 
@@ -301,15 +303,20 @@ POST /api/v1/media-sources/{id}/speed
 
 页面上方的 `Axis motion map` 会实时显示配置结果：
 
-- 外层虚线长方体表示完整归一化运动空间。
-- 内层高亮长方体同时考虑输出范围和安全限制；`L2` 映射宽度、`L0` 映射高度、
-  `L1` 映射深度。
-- 直线与旋转箭头表示实际运动方向；启用反转时箭头方向和轴卡片的起止方向会同步
-  反转。`R0`、`R1`、`R2` 分别表示 Twist、Roll 和 Pitch。
-- 右侧轴卡片显示有效起止百分比；填写 `Full travel` 后，还会显示完整物理行程和
-  当前有效物理行程。
+- 第一行的外层虚线长方体表示平移轴的完整归一化最大行程；内层实线长方体表示
+  `L2` 宽度、`L0` 高度和 `L1` 深度的 `Output range`。拖动
+  框体会按拖动方向和投影距离平移对应轴的整个范围，并保持范围宽度。
+- 长方体六个边界上的外向箭头分别控制三个平移轴的最小值和最大值；箭身和箭头均可拖动。
+- 第二行使用球形姿态包络表示旋转轴。穿过球心原点的竖直虚线直径是中立方向，外层虚线锥体
+  是 Roll/Pitch 的最大角度，青色实线锥体是当前 `Output range`；不对称范围会形成偏心包络。
+- 锥体四个边界上的外向箭头分别控制 Roll/Pitch 的最小值和最大值；拖动锥体本身会按四方向
+  投影平移对应范围。Twist 使用环绕球体的琥珀色圆环，拖动圆环平移范围，端点短刻线调整边界。
+- 方向箭头表示实际运动方向；启用反转时箭头方向和轴卡片的起止方向会同步反转。
+- 右侧轴卡片显示输出起止百分比；启用 `Safety limit` 时还会显示限制后的有效跨度。
+  填写 `Full travel` 后，会同时显示完整物理行程、输出行程及限制后的行程。
 
-`Full travel` 是标定与显示元数据，不会直接改变 TCode 的归一化输出，也不会绕过
+`Full travel` 是标定与显示元数据，会改变球形包络显示的实际角幅，但不会直接改变 TCode
+的归一化输出，也不会绕过
 `Output range` 或 `Safety limit`。例如 `L0` 完整行程标定为 `120 mm`，有效范围为
 `20%..60%` 时，页面会显示有效移动距离为 `48 mm`。
 
@@ -532,6 +539,7 @@ FNPACK=/path/to/fnpack ./build.sh package fnos all
 
 - FPK 引用的容器镜像必须已经发布，或已经加载到目标 fnOS 主机。
 - 目标环境必须提供正确的 `MFP_IMAGE`、认证变量和 fnOS 分配的 `TRIM_*` 变量。
+- 应用内 Scripts 目录选择要求 fnOS `1.2.0401`、App `1.34.0` 或更高版本。
 - USB 串口权限需要单独配置，默认不启用。
 - x86 包和 ARM 包必须分别验证，不能用交叉编译结果替代真实启动。
 
@@ -540,10 +548,20 @@ FNPACK=/path/to/fnpack ./build.sh package fnos all
 1. 从 fnOS Web 入口打开应用。
 2. 检查 `/health/live` 和 `/health/ready`。
 3. 完成配对或访问令牌登录。
-4. 上传并加载脚本。
-5. 创建 File 输出完成无硬件 smoke。
-6. 运行 `tools/run-target-acceptance.py`。
-7. 另行验证安装、重启、升级、回滚、卸载、卷保留和 USB 设备重连。
+4. 打开 Scripts；使用托管目录上传脚本，或点击 `Add mapping` 调用 fnOS 系统选择器。
+   左侧目录树用于选择文件夹，右侧预览支持后缀筛选和分页。`Remove mapping` 只会打开 fnOS
+   应用设置以撤销访问权限，不会删除真实文件或文件夹。
+5. 外部目录授权后重启应用，确认状态从 `Restart required` 变为 `Active`；脚本可在 Scripts
+   预览，并可在 Runtime 的 Routed Session 中绑定。
+6. 创建 File 输出完成无硬件 smoke。
+7. 运行 `tools/run-target-acceptance.py`。
+8. 另行验证安装、重启、升级、回滚、卸载、卷保留和 USB 设备重连。
+
+fnOS 将用户授权目录写入 `TRIM_DATA_ACCESSIBLE_PATHS`。生命周期回调只选择第一个目录，
+通过应用数据区中的稳定链接交给 Compose，并在容器内以 `/scripts/external` 只读挂载。
+容器使用 fnOS 分配的 `TRIM_UID:TRIM_GID`，使系统 ACL 与容器进程身份一致；不要改为 root，
+也不要对用户目录执行递归 `chown`。旧版系统可通过 fnOS 应用设置手动授权，或只使用托管
+`/scripts`。
 
 FPK 构建和静态校验通过，不等于 fnOS 实机验收通过。
 
@@ -568,6 +586,7 @@ Linux 上设置 `EnableWindowsTargeting=true` 只能证明可交叉编译，不�
 | `MFP_CONFIG_ROOT` | `/config` | 持久配置根目录；兼容别名 `MFP_CONFIG_PATH` |
 | `MFP_KEYS_ROOT` | `/keys` | Data Protection 密钥；兼容别名 `MFP_KEYS_PATH` |
 | `MFP_SCRIPTS_ROOT` | `/scripts` | Funscript 根目录；兼容别名 `MFP_SCRIPTS_PATH` |
+| `MFP_SCRIPTS_PATHS` | `/scripts` | 多个容器内脚本根目录；使用分号分隔，fnOS FPK 还加入 `/scripts/external` |
 | `MFP_LOGS_ROOT` | `/logs` | 日志和 File 输出根目录；兼容别名 `MFP_LOGS_PATH` |
 | `MFP_AUTH_TOKEN` | 空 | 固定访问令牌，至少 16 字符 |
 | `MFP_PAIRING_TOKEN` | 空 | 一次性配对令牌 |

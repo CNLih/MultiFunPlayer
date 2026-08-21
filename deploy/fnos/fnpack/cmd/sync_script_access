@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+root=${TRIM_PKGVAR:?}
+empty_root="$root/authorized-scripts-empty"
+link_path="$root/authorized-scripts"
+state_path="$root/config/.fnos-script-access.state"
+paths=${TRIM_DATA_ACCESSIBLE_PATHS:-}
+selected=
+remaining=$paths
+count=0
+
+while [ -n "$remaining" ]; do
+    case "$remaining" in
+        *:*) candidate=${remaining%%:*}; remaining=${remaining#*:} ;;
+        *) candidate=$remaining; remaining= ;;
+    esac
+    [ -n "$candidate" ] || continue
+    count=$((count + 1))
+    [ -n "$selected" ] || selected=$candidate
+done
+
+mkdir -p "$empty_root" "$root/config"
+target=$empty_root
+available=0
+if [ -n "$selected" ] && [ -d "$selected" ]; then
+    target=$selected
+    available=1
+fi
+
+if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
+    printf '%s\n' "Cannot configure Scripts access because $link_path is not a symbolic link." \
+        > "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
+    exit 1
+fi
+
+ln -sfn "$target" "$link_path"
+generation=$(printf '%s\n%s' "$selected" "$available" | cksum | awk '{print $1}')
+temporary_state="$state_path.$$"
+{
+    printf 'schemaVersion=1\n'
+    printf 'generation=%s\n' "$generation"
+    printf 'authorizedDirectoryCount=%s\n' "$count"
+    printf 'selectedDirectoryAvailable=%s\n' "$available"
+} > "$temporary_state"
+mv "$temporary_state" "$state_path"

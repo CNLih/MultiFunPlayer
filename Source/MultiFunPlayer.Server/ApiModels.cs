@@ -28,7 +28,18 @@ public sealed record SettingsResponse(
     string[] ScriptsRoots,
     string LogsRoot,
     string KeysRoot,
-    bool AuthenticationRequired);
+    bool AuthenticationRequired,
+    FnosScriptAccessResponse FnosScriptAccess);
+
+public sealed record FnosScriptAccessResponse(
+    bool Available,
+    string? SystemVersion,
+    bool ExternalRootConfigured,
+    bool ExternalRootActive,
+    bool RestartRequired,
+    int AuthorizedDirectoryCount,
+    int MountedDirectoryCount,
+    string ExternalRoot);
 
 public sealed record SerialDeviceResponse(
     string StableId,

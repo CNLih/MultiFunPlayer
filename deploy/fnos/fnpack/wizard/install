@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "Script library",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "MultiFunPlayer includes a managed Scripts folder. After installation, open Scripts to authorize an existing fnOS folder."
+      }
+    ]
+  }
+]

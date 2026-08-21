@@ -34,6 +34,9 @@ public static class ServerProgram
         ConfigureKeyPersistence(builder, storage);
         builder.Services.AddSingleton<AuthTokenStore>();
         builder.Services.AddSingleton<ScriptCatalog>();
+        builder.Services.AddSingleton<FnosScriptAccess>();
+        builder.Services.AddSingleton<IHostedService>(services =>
+            services.GetRequiredService<FnosScriptAccess>());
         builder.Services.AddSingleton<RuntimeScriptEvaluator>();
         builder.Services.AddSingleton<RuntimeScriptMatcher>();
         builder.Services.AddSingleton<ResourceDiscoveryService>();
@@ -186,13 +189,15 @@ public static class ServerProgram
                     exception.Message, "discovery_failed");
             }
         });
-        app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage, ScriptCatalog catalog) =>
+        app.MapGet("/api/v1/settings", (IConfiguration config, StorageOptions storage,
+            ScriptCatalog catalog, FnosScriptAccess fnosScriptAccess) =>
         {
             var tickHz = ServerOptions.ResolveTickHz(config);
             var maxClients = ServerOptions.ResolveMaxWebSocketClients(config);
             return Results.Ok(new SettingsResponse(1, tickHz, maxClients, storage.ConfigRoot,
                 storage.ScriptsRoot, catalog.Roots.ToArray(), storage.LogsRoot, storage.KeysRoot,
-                !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN"))));
+                !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MFP_AUTH_TOKEN")),
+                fnosScriptAccess.Snapshot()));
         });
         app.MapGet("/api/v1/configuration/migration",
             (ConfigurationMigrationHostedService migration) => Results.Ok(migration.Status));

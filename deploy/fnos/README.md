@@ -6,7 +6,7 @@ see [`Docs/docs/migration/current-usage-testing-deployment.md`](../../Docs/docs/
 `fnpack/` is an official-template-shaped Docker application project for the
 MultiFunPlayer Web server. It contains the manifest, Docker Compose project,
 Web entry, icons, lifecycle scripts, resource/privilege declarations, and a
-non-interactive wizard placeholder required by current `fnpack` validation.
+short install guide for the managed and fnOS-authorized Scripts folders.
 
 The older JSON `manifest` beside this file remains a repository-owned contract
 for Docker/fnOS static checks. It is not an FPK manifest and is intentionally
@@ -76,21 +76,26 @@ attach those target-device results separately to the release evidence manifest.
 
 后端脚本库支持**多个根目录**：`MFP_SCRIPTS_PATHS`（分号分隔的容器内路径列表），
 默认值为 `/scripts`（即 fnOS 分配的 scripts 数据卷）。每个根目录及其子文件夹都会被
-递归索引、搜索并参与智能匹配。Web 控制台的「Scripts」栏目可增删根目录下的子文件夹。
+递归索引并参与智能匹配。Web 控制台的「Scripts」栏目以目录树和只读文件预览展示内容，
+支持按文件后缀筛选和分页。
 
-要让容器访问 **NAS 上其他共享文件夹**作为脚本目录，需要把该文件夹挂载进容器。
-受 fnpack 1.2.3 资源 schema 限制，FPK 只能声明 `data-share`（应用专用目录），
-**不能通过标准字段声明“任意共享文件夹授权”**。可用的做法：
+fnOS `1.2.0401` / App `1.34.0` 及以上可直接在 MultiFunPlayer 的 Scripts 页面点击
+`Add mapping`。FPK 声明最小的 `trim.file.sharedAccess` scope，官方 Web SDK 打开系统目录
+选择器，管理员确认后 fnOS 为应用用户授予 ACL。授权变化会触发生命周期配置回调，回调把
+第一个授权目录连接到稳定的应用数据入口；重启应用后 Compose 将其只读挂载到
+`/scripts/external`。
 
-1. 在 fnOS 的 Docker/容器管理中，为 `multifunplayer` 容器额外添加一个
-   `主机共享文件夹 -> 容器路径` 的挂载（例如把 NAS 的 `/vol1/1000/scripts` 挂到容器
-   `/scripts/extra`）。
-2. 在 `app/docker/docker-compose.yaml`（或已安装的 compose）里给
-   `MFP_SCRIPTS_PATHS` 加上该容器路径，例如：
-   ```yaml
-   MFP_SCRIPTS_PATHS: /scripts;/scripts/extra
-   ```
-3. 重建容器后，该文件夹及其子目录即出现在脚本库中。
+从 fnOS 应用入口打开时，目录选择器显示在系统宿主中；直接访问服务端口时，授权页在独立
+标签打开，原控制台会保留并在授权完成后刷新状态。授权目录中的层级和脚本显示在 Scripts
+页面的可展开目录树和文件夹预览中，点击预览里的文件即可加载。
 
-不同 fnOS 版本的共享文件夹授权字段可能不同，若你的 fnOS 支持共享文件夹授权，
-可参照对应版本文档在 `config/resource` 中补充声明后重新打包验证。
+默认 `/scripts` 始终保留为可写的托管脚本库，因此不授权外部目录也可以上传和播放脚本。
+当前 FPK 可记录多个授权目录，但只挂载第一个；需要更换时，点击 `Remove mapping` 进入 fnOS
+应用设置撤销旧目录授权，再从 Scripts 页面添加新映射。移除映射只撤销应用访问关系，不删除、
+移动或修改 NAS 上的真实文件和文件夹。授权目录暂时离线时，容器使用空目录占位，不会扩大到
+其他 NAS 路径。
+
+旧版 fnOS 不提供应用内授权 API 时，进入 fnOS 应用设置手动授权；若目标固件
+不能把授权变化传给 Docker 项目，则继续使用托管 `/scripts`，或作为实机兼容措施手动添加
+只读 bind mount。官方接口说明：
+[应用共享授权路径](https://developer.fnnas.com/api/authorization/shared-access/)。

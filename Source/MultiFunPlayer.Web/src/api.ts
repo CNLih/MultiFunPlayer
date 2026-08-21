@@ -36,9 +36,22 @@ export interface ApiSettings {
   maxWebSocketClients: number;
   configRoot: string;
   scriptsRoot: string;
+  scriptsRoots?: string[];
   logsRoot: string;
   keysRoot: string;
   authenticationRequired: boolean;
+  fnosScriptAccess?: ApiFnosScriptAccess;
+}
+
+export interface ApiFnosScriptAccess {
+  available: boolean;
+  systemVersion: string | null;
+  externalRootConfigured: boolean;
+  externalRootActive: boolean;
+  restartRequired: boolean;
+  authorizedDirectoryCount: number;
+  mountedDirectoryCount: number;
+  externalRoot: string;
 }
 
 export interface ApiConfigurationMigrationStatus {

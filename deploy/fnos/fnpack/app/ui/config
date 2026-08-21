@@ -4,7 +4,7 @@
             "title": "MultiFunPlayer",
             "desc": "MultiFunPlayer Web control room",
             "icon": "images/icon_{0}.png",
-            "type": "url",
+            "type": "iframe",
             "port": "8080",
             "protocol": "http",
             "url": "/",

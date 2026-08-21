@@ -1,14 +1,10 @@
 #!/bin/sh
 set -eu
 
-# fnOS creates the four data shares declared in config/resource.
-# The container runs as the non-root user mfp (uid/gid 10001). Ensure the
-# persisted shares are writable by that user so shutdown-time persistence does
-# not fail with "Permission denied" (previously surfaced as container exit
-# code 137/139 when the app was stopped).
-mfp_uid=10001
-mfp_gid=10001
+mfp_uid=${TRIM_UID:-10001}
+mfp_gid=${TRIM_GID:-10001}
 for d in config keys scripts logs; do
+    mkdir -p "${TRIM_PKGVAR:?}/$d"
     if [ -n "${TRIM_PKGVAR:-}" ] && [ -d "${TRIM_PKGVAR}/$d" ]; then
         chown -R "$mfp_uid:$mfp_gid" "${TRIM_PKGVAR}/$d"
     fi

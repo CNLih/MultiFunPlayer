@@ -26,6 +26,15 @@ Set `MFP_SCRIPTS_PATH` (or `MFP_SCRIPTS_ROOT`) to a directory containing
 `MFP_AUTH_TOKEN` is non-empty, all API and WebSocket requests require either
 `Authorization: Bearer <token>` or `X-MFP-Token: <token>`; health endpoints stay
 anonymous. The token is never included in logs or response bodies.
+
+The fnOS FPK keeps the managed `/scripts` root and mounts the first
+system-authorized folder read-only at `/scripts/external`. The Scripts page uses
+the official fnOS shared-access picker to add the mapping and opens fnOS App
+Settings to remove it. Removing a mapping never deletes the source folder or its
+files. Authorization changes require an app restart before Docker recreates the
+bind mount. The settings response reports
+configured, active, unavailable, and restart-required states without exposing
+the NAS host path.
 Set `MFP_KEYS_PATH` (or `MFP_KEYS_ROOT`) to enable persistent ASP.NET Data
 Protection keys in a mounted volume; without it, local development uses the
 framework's ephemeral key repository. Persistent keys use ASP.NET Core's

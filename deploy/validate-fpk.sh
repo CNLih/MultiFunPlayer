@@ -27,7 +27,7 @@ contains() {
 for entry in ICON.PNG ICON_256.PNG app.tgz manifest cmd/main cmd/install_init \
     cmd/install_callback cmd/upgrade_init cmd/upgrade_callback \
     cmd/uninstall_init cmd/uninstall_callback cmd/config_init cmd/config_callback \
-    config/privilege config/resource wizard; do
+    cmd/sync_script_access config/privilege config/resource wizard wizard/install; do
     contains "$entry" || { printf 'FPK missing entry: %s\n' "$entry" >&2; exit 1; }
 done
 
@@ -36,7 +36,8 @@ for required in \
     '^appname[[:space:]]*=[[:space:]]*multifunplayer$' \
     '^version[[:space:]]*=[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+$' \
     '^service_port[[:space:]]*=[[:space:]]*8080$' \
-    '^desktop_uidir[[:space:]]*=[[:space:]]*ui$'; do
+    '^desktop_uidir[[:space:]]*=[[:space:]]*ui$' \
+    '^micro_app[[:space:]]*=[[:space:]]*true$'; do
     printf '%s\n' "$manifest" | grep -Eq "$required" || {
         printf 'FPK manifest check failed: %s\n' "$required" >&2
         exit 1
@@ -71,6 +72,7 @@ for required in \
     '/tmp:rw,noexec,nosuid,size=32m' \
     'no-new-privileges:true' \
     'stop_grace_period: 120s' \
+    'target: /scripts/external' \
     'cpus: "2.0"' \
     'memory: 512M'; do
     printf '%s\n' "$app_compose" | grep -Fq -- "$required" || {

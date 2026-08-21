@@ -227,14 +227,14 @@ const initialState: AppState = {
   ],
   deviceAxes: defaultDeviceAxes(),
   logs: [
-    { id: 1, time: '09:47:22', level: 'info', message: 'Playback resumed at 60 Hz', source: 'runtime' },
+    { id: 1, time: '09:47:22', level: 'info', message: 'Local media library playback active', source: 'media-1' },
     { id: 2, time: '09:47:20', level: 'info', message: 'Studio bridge acknowledged output stream', source: 'output-1' },
     { id: 3, time: '09:46:58', level: 'warn', message: 'Living room relay heartbeat delayed', source: 'output-2' },
     { id: 4, time: '09:44:11', level: 'info', message: 'OFS relay is negotiating capabilities', source: 'media-2' },
-    { id: 5, time: '09:42:06', level: 'info', message: 'Loaded Amber Protocol / Session 04', source: 'runtime' },
+    { id: 5, time: '09:42:06', level: 'info', message: 'Matched Amber Protocol / Session 04 to Local media library', source: 'media-1' },
   ],
   health: [
-    { label: 'Engine loop', detail: '60 Hz / 1.2 ms median', status: 'pass' },
+    { label: 'Runtime scheduler', detail: '60 Hz / 1.2 ms median', status: 'pass' },
     { label: 'Storage', detail: '48 GB free in /config', status: 'pass' },
     { label: 'Output queue', detail: '2 pending frames', status: 'pass' },
     { label: 'OFS relay', detail: 'Negotiating capabilities', status: 'warn' },
@@ -249,13 +249,20 @@ function cloneState(): AppState {
   return structuredClone(initialState);
 }
 
-function normalizedMatchName(pathOrName: string): string {
+function normalizedMatchNames(pathOrName: string): string[] {
   let value = pathOrName.replaceAll('\\', '/').split(/[?#]/, 1)[0].split('/').pop() ?? '';
-  try { value = decodeURIComponent(value); } catch { /* Keep the original file name. */ }
+  let fullValue = pathOrName.replaceAll('\\', '/').split(/[?#]/, 1)[0];
+  try {
+    value = decodeURIComponent(value);
+    fullValue = decodeURIComponent(fullValue);
+  } catch { /* Keep the original names. */ }
   const extensions = new Set(['funscript', 'json', 'mp4', 'mkv', 'webm', 'avi', 'mov', 'wmv', 'm4v']);
-  while (value.includes('.') && extensions.has(value.split('.').pop()?.toLowerCase() ?? ''))
-    value = value.slice(0, value.lastIndexOf('.'));
-  return Array.from(value.toLowerCase()).filter((character) => /[\p{L}\p{N}]/u.test(character)).join('');
+  const normalize = (candidate: string) => {
+    while (candidate.includes('.') && extensions.has(candidate.split('.').pop()?.toLowerCase() ?? ''))
+      candidate = candidate.slice(0, candidate.lastIndexOf('.'));
+    return Array.from(candidate.toLowerCase()).filter((character) => /[\p{L}\p{N}]/u.test(character)).join('');
+  };
+  return [...new Set([normalize(value), normalize(fullValue)].filter(Boolean))];
 }
 
 function matchSimilarity(left: string, right: string): number {
@@ -276,13 +283,13 @@ function matchSimilarity(left: string, right: string): number {
 function matchScript(state: AppState, sourceId: string, fuzzy: boolean): string | null {
   const mediaPath = state.media.find((source) => source.id === sourceId)?.mediaState?.path;
   if (!mediaPath) return null;
-  const mediaName = normalizedMatchName(mediaPath);
+  const mediaName = normalizedMatchNames(mediaPath)[0];
   if (!mediaName) return null;
-  const candidates = state.scripts.map((script) => ({ id: script.id, name: normalizedMatchName(script.name) }))
-    .filter((candidate) => candidate.name.length > 0);
-  const exact = candidates.find((candidate) => candidate.name === mediaName);
+  const candidates = state.scripts.map((script) => ({ id: script.id, names: normalizedMatchNames(script.name) }))
+    .filter((candidate) => candidate.names.length > 0);
+  const exact = candidates.find((candidate) => candidate.names.includes(mediaName));
   if (exact || !fuzzy) return exact?.id ?? null;
-  const best = candidates.map((candidate) => ({ ...candidate, score: matchSimilarity(mediaName, candidate.name) }))
+  const best = candidates.map((candidate) => ({ ...candidate, score: Math.max(...candidate.names.map((name) => matchSimilarity(mediaName, name))) }))
     .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))[0];
   return best && best.score >= 0.45 ? best.id : null;
 }
@@ -626,11 +633,23 @@ export function createMockStore() {
       const now = Date.now();
       const elapsedSeconds = Math.min((now - lastTickAt) / 1000, 1);
       lastTickAt = now;
-      if (!state.playing || !state.engineRunning) return;
-      state.elapsed = (state.elapsed + elapsedSeconds) % 512;
-      for (const [index, axis] of Object.keys(state.axisValues).entries())
-        state.axisValues[axis] = (Math.sin((state.elapsed / 18) + index) + 1) / 2;
-      notify('status');
+      let changed = false;
+      for (const source of state.media) {
+        const media = source.mediaState;
+        if (!media?.playing) continue;
+        const route = state.runtimeRoutes.find((item) => item.sourceId === source.id);
+        let position = media.positionSeconds + elapsedSeconds * media.playbackSpeed;
+        if (media.durationSeconds > 0 && position >= media.durationSeconds) {
+          if (route?.loopEnabled) position %= media.durationSeconds;
+          else {
+            position = media.durationSeconds;
+            media.playing = false;
+          }
+        }
+        media.positionSeconds = position;
+        changed = true;
+      }
+      if (changed) notify('status');
     },
     async refreshRuntimeStatus(): Promise<void> { notify('status'); },
   };
@@ -761,7 +780,7 @@ export function createRemoteStore(client: MfpApiClient) {
     state.axisValues = { ...status.axes };
     state.nowPlaying = { ...script, name: status.script ?? script.name, duration: formatTime(status.durationSeconds), axes: Object.keys(status.axes).length };
     state.health = [
-      { label: 'Engine loop', detail: `Server tick / revision ${status.revision}`, status: 'pass' },
+      { label: 'Runtime scheduler', detail: `Server tick / revision ${status.revision}`, status: 'pass' },
       { label: 'API connection', detail: 'Authenticated same-origin session', status: 'pass' },
       { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
     ];
@@ -850,7 +869,7 @@ export function createRemoteStore(client: MfpApiClient) {
     if (stateStreamDisconnected) return;
     stateStreamDisconnected = true;
     state.health = [
-      { label: 'Engine loop', detail: 'Backend output continues independently', status: 'pass' },
+      { label: 'Runtime scheduler', detail: 'Backend output continues independently', status: 'pass' },
       { label: 'API connection', detail: 'State stream disconnected; reconnect required', status: 'warn' },
       { label: 'Output targets', detail: 'Configure adapters on the server', status: 'warn' },
     ];

@@ -7,11 +7,15 @@ test.describe('control room demo journey', () => {
     await expect(page).toHaveTitle(/MultiFunPlayer/i);
     await expect(page.getByRole('heading', { name: 'Runtime dashboard' })).toBeVisible();
     await expect(page.getByText('Local demo mode')).toBeAttached();
+    await expect(page.getByText('Global engine', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start engine' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Load latest script' })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Scripts' }).click();
     await expect(page.getByRole('heading', { name: 'Scripts' })).toBeVisible();
-    await page.getByRole('button', { name: /Orbit \/ Calibration sweep/ }).click();
-    await expect(page.getByRole('heading', { name: 'Orbit / Calibration sweep' })).toBeVisible();
+    await expect(page.locator('.script-preview-file').filter({ hasText: 'Orbit / Calibration sweep' })).toBeVisible();
+    await expect(page.getByText('Selected resource', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Loaded', { exact: true })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Output targets' }).click();
     await expect(page.getByRole('heading', { name: 'Output targets' })).toBeVisible();
@@ -54,6 +58,74 @@ test.describe('control room demo journey', () => {
     }
   });
 
+  test('edits linear and rotational output ranges from the axis motion map', async ({ page }) => {
+    await page.goto('/?demo=1#settings');
+
+    await expect(page.locator('.axis-cube-outer')).toHaveCount(12);
+    await expect(page.locator('.axis-cube-outer').first()).toHaveCSS('stroke-dasharray', /5/);
+    await expect(page.locator('.axis-linear-bound-handle')).toHaveCount(6);
+    await expect(page.locator('.axis-orientation-sphere')).toBeVisible();
+    await expect(page.locator('.axis-neutral-diameter')).toHaveCount(1);
+    await expect(page.locator('.axis-neutral-diameter')).toHaveCSS('stroke-dasharray', /5/);
+    await expect(page.locator('.axis-orientation-maximum')).toHaveCount(1);
+    await expect(page.locator('.axis-orientation-bound-handle')).toHaveCount(4);
+    await expect(page.locator('.axis-rotation-bound-handle')).toHaveCount(2);
+    await expect(page.locator('.axis-range-handle')).toHaveCount(0);
+    await expect(page.locator('.axis-rotation-maximum')).toHaveCount(1);
+    await expect(page.locator('.axis-rotation-active')).toHaveCount(1);
+    const cubeBounds = await page.locator('.axis-cuboid-wrap').boundingBox();
+    const sphereBounds = await page.locator('.axis-orientation-wrap').boundingBox();
+    expect(cubeBounds).not.toBeNull();
+    expect(sphereBounds).not.toBeNull();
+    expect(sphereBounds!.y).toBeGreaterThan(cubeBounds!.y + cubeBounds!.height);
+    const maximumEnvelope = page.locator('.axis-orientation-maximum');
+    const uncalibratedEnvelope = await maximumEnvelope.getAttribute('d');
+    await page.getByLabel('R1 maximum travel', { exact: true }).fill('60');
+    await expect.poll(() => maximumEnvelope.getAttribute('d')).not.toBe(uncalibratedEnvelope);
+    await expect(page.locator('[data-axis-travel-summary="R1"]')).toContainText('60.0 ° full');
+
+    const l2Minimum = page.getByLabel('L2 minimum', { exact: true });
+    const l2Maximum = page.getByLabel('L2 maximum', { exact: true });
+    await l2Minimum.fill('0.2');
+    await l2Maximum.fill('0.6');
+    const frame = page.locator('[data-axis-drag="window"][data-axis-candidates="L2,L0,L1"]');
+    await frame.scrollIntoViewIfNeeded();
+    const frameBox = await frame.boundingBox();
+    expect(frameBox).not.toBeNull();
+    await page.mouse.move(frameBox!.x + frameBox!.width / 2, frameBox!.y + frameBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(frameBox!.x + frameBox!.width / 2 + 45, frameBox!.y + frameBox!.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => Number(await l2Minimum.inputValue())).toBeGreaterThan(0.2);
+    const shiftedMinimum = Number(await l2Minimum.inputValue());
+    const shiftedMaximum = Number(await l2Maximum.inputValue());
+    expect(shiftedMaximum - shiftedMinimum).toBeCloseTo(0.4, 2);
+
+    const r1Minimum = page.getByLabel('R1 minimum', { exact: true });
+    const r1Maximum = page.getByLabel('R1 maximum', { exact: true });
+    await r1Minimum.fill('0.2');
+    await r1Maximum.fill('0.8');
+    const rollMaximumHandle = page.locator('[data-axis-drag="maximum"][data-axis="R1"]');
+    await rollMaximumHandle.scrollIntoViewIfNeeded();
+    const rollHandleBox = await rollMaximumHandle.boundingBox();
+    expect(rollHandleBox).not.toBeNull();
+    const rollVector = await rollMaximumHandle.evaluate((element) => ({
+      x: Number((element as SVGElement).dataset.axisVectorX),
+      y: Number((element as SVGElement).dataset.axisVectorY),
+    }));
+    const rollVectorLength = Math.hypot(rollVector.x, rollVector.y);
+    await page.mouse.move(rollHandleBox!.x + rollHandleBox!.width / 2, rollHandleBox!.y + rollHandleBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      rollHandleBox!.x + rollHandleBox!.width / 2 - rollVector.x / rollVectorLength * 30,
+      rollHandleBox!.y + rollHandleBox!.height / 2 - rollVector.y / rollVectorLength * 30,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    await expect.poll(async () => Number(await r1Maximum.inputValue())).toBeLessThan(0.8);
+    expect(Number(await r1Maximum.inputValue())).toBeGreaterThan(Number(await r1Minimum.inputValue()));
+  });
+
   test('completes media, output, axis configuration, and diagnostics journeys', async ({ page }) => {
     await page.goto('/?demo=1#media');
 
@@ -62,7 +134,7 @@ test.describe('control room demo journey', () => {
     await page.getByLabel('Kind', { exact: true }).selectOption('jellyfin');
     await page.getByLabel('Endpoint', { exact: true }).fill('https://media.example.local');
     await page.getByLabel('Remote device id', { exact: true }).fill('browser-session-1');
-    await page.getByLabel('Secret environment variable', { exact: true }).fill('MFP_TEST_MEDIA_TOKEN');
+    await page.getByLabel('API key / secret', { exact: true }).fill('MFP_TEST_MEDIA_TOKEN');
     await page.getByRole('button', { name: 'Create source' }).click();
     await expect(page.getByText('Media source created')).toBeVisible();
     const mediaCard = page.locator('.source-card').filter({ hasText: 'Playwright media' });
@@ -266,6 +338,21 @@ test.describe('control room demo journey', () => {
     let runtimeRoutes: Array<{ sourceId: string; outputIds: string[]; loopEnabled: boolean; scriptId: string | null; scriptMatchMode: 'exact' | 'fuzzy' | 'manual' | 'global' }> = [
       { sourceId: 'remote-media', outputIds: ['legacy-output'], loopEnabled: false, scriptId: 'remote-script.funscript', scriptMatchMode: 'manual' },
     ];
+    let globalScriptLoadRequests = 0;
+    const remoteScripts = [
+      { id: 'remote-script.funscript', name: 'Remote script', size: 128, lastModifiedUtc: '2026-08-07T00:00:00Z' },
+      { id: 'projects/2025/nested-script.funscript', name: 'Nested script', size: 256, lastModifiedUtc: '2026-08-06T00:00:00Z' },
+      ...Array.from({ length: 9 }, (_, index) => {
+        const number = String(index + 1).padStart(2, '0');
+        const extension = index === 8 ? 'json' : 'funscript';
+        return {
+          id: `projects/2025/clip-${number}.${extension}`,
+          name: `Clip ${number}`,
+          size: 100 + index,
+          lastModifiedUtc: `2026-08-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+        };
+      }),
+    ];
 
     await page.addInitScript(() => {
       class MockWebSocket extends EventTarget {
@@ -316,8 +403,33 @@ test.describe('control room demo journey', () => {
       const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
       if (url.pathname === '/api/v1/capabilities') return json({ apiVersion: 'v1', tickHz: 20, commands: ['play', 'pause', 'stop', 'media.speed', 'runtime.routes'], protocols: ['tcp'], authenticationRequired: true, webSocketPath: '/hubs/state' });
       if (url.pathname === '/api/v1/status') return json({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: 7 });
-      if (url.pathname === '/api/v1/scripts') return json([{ id: 'remote-script.funscript', name: 'Remote script', size: 128, lastModifiedUtc: '2026-08-07T00:00:00Z' }]);
-      if (url.pathname === '/api/v1/settings') return json({ schemaVersion: 1, tickHz: 20, maxWebSocketClients: 16, configRoot: '/config', scriptsRoot: '/scripts', logsRoot: '/logs', keysRoot: '/keys', authenticationRequired: true });
+      if (url.pathname === '/api/v1/scripts') return json(remoteScripts);
+      if (url.pathname === '/api/v1/scripts/load') {
+        globalScriptLoadRequests++;
+        return json({ state: 'Paused', script: 'Nested script', positionSeconds: 0, durationSeconds: 30, axes: { L0: 0.25, R2: 0.75 }, revision: 8 });
+      }
+      if (url.pathname === '/api/v1/script-folders') return json(['projects', 'projects/2025']);
+      if (url.pathname === '/api/v1/settings') return json({
+        schemaVersion: 1,
+        tickHz: 20,
+        maxWebSocketClients: 16,
+        configRoot: '/config',
+        scriptsRoot: '/scripts',
+        scriptsRoots: ['/scripts', '/scripts/external'],
+        logsRoot: '/logs',
+        keysRoot: '/keys',
+        authenticationRequired: true,
+        fnosScriptAccess: {
+          available: true,
+          systemVersion: '1.2.0401',
+          externalRootConfigured: true,
+          externalRootActive: true,
+          restartRequired: false,
+          authorizedDirectoryCount: 1,
+          mountedDirectoryCount: 1,
+          externalRoot: '/scripts/external',
+        },
+      });
       if (url.pathname === '/api/v1/configuration/migration') return json({ state: 'disabled', sourceFile: null, targetFile: 'migrated-configuration.json', warningCount: 0, error: null });
       if (url.pathname === '/api/v1/adapters') return json({ apiVersion: 'v1', schemaVersion: '1.0', transports: [{ id: 'tcp', integration: 'direct', implementationStatus: 'ready', platforms: ['linux'], notes: 'loopback' }], adapters: [{ id: 'output.tcp', kind: 'output', integration: 'direct', implementationStatus: 'ready', transport: 'tcp', requiredServices: [], notes: 'loopback' }] });
       if (url.pathname === '/api/v1/devices/serial') return json([{
@@ -425,18 +537,21 @@ test.describe('control room demo journey', () => {
     const remotePlayback = page.locator('[data-runtime-playback="remote-media"]');
     await expect(remotePlayback).toBeVisible();
     await expect(remotePlayback.getByRole('combobox', { name: 'Script for Remote Jellyfin', exact: true })).toHaveValue('remote-script.funscript');
-    const engineHealth = page.getByLabel('Health', { exact: true }).getByText(/Server tick \/ revision/);
-    const firstRevision = await engineHealth.textContent();
+    await expect(page.getByText('Global engine', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Load latest script' })).toHaveCount(0);
+    const schedulerHealth = page.getByLabel('Health', { exact: true }).getByText(/Server tick \/ revision/);
+    const firstRevision = await schedulerHealth.textContent();
     await page.evaluate(() => {
-      (window as Window & { stablePlayback?: Element | null }).stablePlayback = document.querySelector('[data-action="playback"]');
+      (window as Window & { stablePlayback?: Element | null }).stablePlayback = document.querySelector('[data-runtime-playback="remote-media"]');
     });
-    await expect.poll(() => engineHealth.textContent()).not.toBe(firstRevision);
+    await expect.poll(() => schedulerHealth.textContent()).not.toBe(firstRevision);
     expect(await page.evaluate(() => (window as Window & { stablePlayback?: Element | null }).stablePlayback
-      === document.querySelector('[data-action="playback"]'))).toBeTruthy();
+      === document.querySelector('[data-runtime-playback="remote-media"]'))).toBeTruthy();
 
     await page.getByRole('button', { name: 'Device settings' }).click();
     await expect(page.getByRole('heading', { name: 'Server-managed storage' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Effective runtime' })).toBeVisible();
+    await expect(page.getByText('Runtime cadence', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Access policy' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Legacy configuration' })).toBeVisible();
     const disconnectResult = await page.evaluate(() => (window as Window & { disconnectStateStream?: () => { closed: boolean } }).disconnectStateStream?.());
@@ -467,8 +582,45 @@ test.describe('control room demo journey', () => {
     await expect(page.getByText('Saved output target connection test passed')).toBeVisible();
 
     await page.getByRole('button', { name: 'Scripts' }).click();
-    await expect(page.getByRole('heading', { name: 'Remote script' })).toBeVisible();
-    await expect(page.getByText('25%')).toBeVisible();
-    await expect(page.getByText('75%')).toBeVisible();
+    await expect(page.locator('.script-preview-file').filter({ hasText: 'Remote script' })).toBeVisible();
+    await expect(page.locator('[data-fnos-script-access]')).toContainText('Active');
+    const chooseFolder = page.getByRole('button', { name: 'Add mapping' });
+    await expect(chooseFolder).toHaveClass(/button-primary/);
+    await expect(page.getByRole('button', { name: 'Remove mapping' })).toHaveClass(/button-secondary/);
+    await expect(page.getByRole('button', { name: 'Remove mapping' })).toHaveAttribute('title', /fnOS App Settings/);
+    await expect(page.getByPlaceholder('New subfolder, e.g. projects/2025')).toHaveCount(0);
+    await expect(page.getByText('No subfolders yet.')).toHaveCount(0);
+    await expect(page.locator('[data-delete-script-folder]')).toHaveCount(0);
+    await expect(page.getByRole('searchbox')).toHaveCount(0);
+    const scriptTree = page.locator('[data-script-tree]');
+    const scriptPreview = page.locator('[data-script-folder-preview]');
+    await expect(scriptTree.getByRole('button', { name: /Remote script/ })).toHaveCount(0);
+    await expect(scriptPreview.locator('.script-preview-file').filter({ hasText: 'Remote script' })).toBeVisible();
+    await expect(scriptPreview.getByText('/', { exact: true })).toBeVisible();
+    const projectsFolder = scriptTree.locator('[data-script-tree-folder="projects"]');
+    await expect(projectsFolder).not.toHaveAttribute('open', '');
+    await projectsFolder.locator(':scope > summary').click();
+    await projectsFolder.locator('[data-script-tree-folder="projects/2025"] > summary').click();
+    await expect(scriptPreview.getByRole('heading', { name: '2025' })).toBeVisible();
+    await expect(scriptPreview.getByText('/projects/2025', { exact: true })).toBeVisible();
+    await page.getByLabel('Suffix').selectOption('.json');
+    await expect(scriptPreview.locator('.script-preview-file').filter({ hasText: 'Clip 09' })).toBeVisible();
+    await expect(scriptPreview.locator('.script-preview-file').filter({ hasText: 'Nested script' })).toHaveCount(0);
+    await page.getByLabel('Suffix').selectOption('all');
+    await expect(scriptPreview.getByText('Page 1 of 2')).toBeVisible();
+    await scriptPreview.getByRole('button', { name: 'Next page' }).click();
+    await expect(scriptPreview.getByText('Page 2 of 2')).toBeVisible();
+    const nestedScript = scriptPreview.locator('.script-preview-file').filter({ hasText: 'Nested script' });
+    await expect(nestedScript).toBeVisible();
+    await expect(page.getByText('Selected resource', { exact: true })).toHaveCount(0);
+    expect(globalScriptLoadRequests).toBe(0);
+    const originalUrl = page.url();
+    const popupPromise = page.waitForEvent('popup');
+    await chooseFolder.click();
+    const authorizationPopup = await popupPromise;
+    await expect(page).toHaveURL(originalUrl);
+    expect(new URL(authorizationPopup.url()).pathname).toBe('/app-auth/pick-shared-file');
+    await expect(page.getByRole('status')).toContainText('fnOS authorization opened in a new tab.');
+    await authorizationPopup.close();
   });
 });

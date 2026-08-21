@@ -2,6 +2,9 @@
     "port-config": {
         "protocol-file": "MultiFunPlayer.sc"
     },
+    "api-scope": [
+        "trim.file.sharedAccess"
+    ],
     "data-share": {
         "shares": [
             {

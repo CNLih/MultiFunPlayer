@@ -1,5 +1,6 @@
-import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type RuntimeSourceRoute, type ScriptMatchMode, type Status, type StoreChange, type SyncMode } from './store';
+import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type RuntimeSourceRoute, type ScriptMatchMode, type ScriptResource, type Status, type StoreChange } from './store';
 import { ApiError, MfpApiClient, type ApiMediaServerDiscovery } from './api';
+import { authorizeFnosScriptFolder, clearPendingFnosScriptAuthorization, consumeFnosAuthorizationCallback, fnosPendingAuthorizationKey, hasPendingFnosScriptAuthorization, openFnosAppSettings } from './fnos';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -12,6 +13,24 @@ let store = demoStore;
 let unsubscribeStore: () => void = () => {};
 let renderedRoute: Route | null = null;
 let routingDrag: { sourceId: string; pointerId: number } | null = null;
+type AxisRangeDragMode = 'window' | 'minimum' | 'maximum';
+type AxisRangeDrag = {
+  pointerId: number;
+  mode: AxisRangeDragMode;
+  axis: string | null;
+  candidates: string[];
+  startX: number;
+  startY: number;
+  scaleX: number;
+  scaleY: number;
+  ranges: Record<string, [number, number]>;
+  vectors: Record<string, { x: number; y: number }>;
+};
+let axisRangeDrag: AxisRangeDrag | null = null;
+let selectedScriptFolderPath: string | null = null;
+let scriptPreviewExtension = 'all';
+let scriptPreviewPage = 1;
+const scriptPreviewPageSize = 8;
 const importInput = document.createElement('input');
 importInput.type = 'file';
 importInput.className = 'sr-only';
@@ -27,7 +46,7 @@ document.body.append(toastRegion);
 const routes: { id: Route; label: string; hint: string }[] = [
   { id: 'runtime', label: 'Runtime', hint: 'Playback and health' },
   { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
-  { id: 'scripts', label: 'Scripts', hint: 'Library and axis values' },
+  { id: 'scripts', label: 'Scripts', hint: 'Folders and resources' },
   { id: 'outputs', label: 'Output targets', hint: 'Connections and rates' },
   { id: 'settings', label: 'Device settings', hint: 'Axis range and limits' },
   { id: 'logs', label: 'Logs and health', hint: 'Events and diagnostics' },
@@ -74,6 +93,14 @@ const axisFriendlyNames: Record<string, string> = {
 };
 const axisTravelUnit = (axis: string): string => axis.startsWith('L') ? 'mm' : axis.startsWith('R') ? '°' : '%';
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
+const axisDragVectors: Record<string, { x: number; y: number }> = {
+  L0: { x: 0, y: -200 },
+  L1: { x: 75, y: -48 },
+  L2: { x: 300, y: 0 },
+  R0: { x: 220, y: 0 },
+  R1: { x: 210, y: 0 },
+  R2: { x: 70, y: 125 },
+};
 
 function effectiveAxisBounds(axis: DeviceAxisSetting): [number, number] {
   const sourceMinimum = axis.limitEnabled ? axis.limitMinimum : 0;
@@ -92,7 +119,10 @@ function axisOrDefault(axes: DeviceAxisSetting[], name: string): DeviceAxisSetti
 }
 
 function renderDeviceAxisVisualization(axes: DeviceAxisSetting[]): string {
-  const bounds = Object.fromEntries(['L0', 'L1', 'L2'].map((name) => [name, effectiveAxisBounds(axisOrDefault(axes, name))])) as Record<string, [number, number]>;
+  const bounds = Object.fromEntries(['L0', 'L1', 'L2'].map((name) => {
+    const axis = axisOrDefault(axes, name);
+    return [name, [axis.minimum, axis.maximum]];
+  })) as Record<string, [number, number]>;
   const project = (x: number, y: number, z: number) => ({ x: 145 + x * 300 + z * 75, y: 290 - y * 200 - z * 48 });
   const cubePoints = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => [
     project(x0, y0, z0), project(x1, y0, z0), project(x1, y1, z0), project(x0, y1, z0),
@@ -102,20 +132,126 @@ function renderDeviceAxisVisualization(axes: DeviceAxisSetting[]): string {
   const lines = (points: { x: number; y: number }[], className: string) => edges.map(([from, to]) => `<line class="${className}" x1="${points[from].x}" y1="${points[from].y}" x2="${points[to].x}" y2="${points[to].y}" />`).join('');
   const outer = cubePoints(0, 1, 0, 1, 0, 1);
   const active = cubePoints(bounds.L2[0], bounds.L2[1], bounds.L0[0], bounds.L0[1], bounds.L1[0], bounds.L1[1]);
+  const silhouette = [active[0], active[1], active[5], active[6], active[7], active[3]]
+    .map((point) => `${point.x},${point.y}`).join(' ');
   const directionMarker = (axis: string) => axisOrDefault(axes, axis).inverted
-    ? 'marker-start="url(#axis-arrow)"' : 'marker-end="url(#axis-arrow)"';
-  const travelCards = axes.map((axis) => {
+    ? 'marker-start="url(#axis-linear-direction-arrow)"' : 'marker-end="url(#axis-linear-direction-arrow)"';
+  const handle = (axis: 'L0' | 'L1' | 'L2', mode: 'minimum' | 'maximum') => {
+    const value = bounds[axis][mode === 'minimum' ? 0 : 1];
+    const midpoint = (first: { x: number; y: number }, second: { x: number; y: number }) => ({
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    });
+    const origin = axis === 'L2'
+      ? midpoint(...(mode === 'minimum' ? [active[0], active[3]] : [active[1], active[2]]) as [{ x: number; y: number }, { x: number; y: number }])
+      : axis === 'L0'
+        ? midpoint(...(mode === 'minimum' ? [active[0], active[1]] : [active[3], active[2]]) as [{ x: number; y: number }, { x: number; y: number }])
+        : mode === 'minimum' ? active[0] : active[6];
+    const vector = axisDragVectors[axis];
+    const direction = mode === 'minimum' ? -1 : 1;
+    const length = Math.hypot(vector.x, vector.y);
+    const endpoint = {
+      x: origin.x + direction * vector.x / length * 28,
+      y: origin.y + direction * vector.y / length * 28,
+    };
+    return `<g class="axis-linear-bound-handle" data-axis-drag="${mode}" data-axis="${axis}" role="slider" tabindex="0" aria-label="${axis} output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-linear-bound-arrow" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" marker-end="url(#axis-linear-handle-arrow)" /><line class="axis-linear-bound-hit" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" /></g>`;
+  };
+  const renderTravelCard = (axis: DeviceAxisSetting) => {
     const [minimum, maximum] = effectiveAxisBounds(axis);
-    const span = maximum - minimum;
+    const outputSpan = axis.maximum - axis.minimum;
+    const effectiveSpan = maximum - minimum;
     const unit = axisTravelUnit(axis.axis);
     const travel = axis.maximumTravel == null || !Number.isFinite(axis.maximumTravel) || axis.maximumTravel <= 0
-      ? `${percent(span)} normalized travel · full travel not calibrated`
-      : `${axis.maximumTravel.toFixed(1)} ${unit} full · ${(axis.maximumTravel * span).toFixed(1)} ${unit} active`;
-    const start = axis.inverted ? maximum : minimum;
-    const end = axis.inverted ? minimum : maximum;
+      ? `${percent(outputSpan)} output${axis.limitEnabled ? ` · ${percent(effectiveSpan)} after safety limit` : ''} · full travel not calibrated`
+      : `${axis.maximumTravel.toFixed(1)} ${unit} full · ${(axis.maximumTravel * outputSpan).toFixed(1)} ${unit} output${axis.limitEnabled ? ` · ${(axis.maximumTravel * effectiveSpan).toFixed(1)} ${unit} after limit` : ''}`;
+    const start = axis.inverted ? axis.maximum : axis.minimum;
+    const end = axis.inverted ? axis.minimum : axis.maximum;
     return `<article class="axis-travel-card" data-axis-travel-summary="${escapeHtml(axis.axis)}"><div><strong>${escapeHtml(axis.axis)}</strong><span>${escapeHtml(axisFriendlyNames[axis.axis] ?? 'Standard axis')}</span></div><b>${percent(start)} → ${percent(end)}${axis.inverted ? ' · reversed' : ''}</b><small>${escapeHtml(travel)}</small></article>`;
-  }).join('');
-  return `<div class="axis-spatial-layout"><div class="axis-cuboid-wrap"><svg class="axis-cuboid" viewBox="0 0 590 350" role="img" aria-label="Normalized device axis movement volume"><defs><marker id="axis-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>${lines(outer, 'axis-cube-outer')}${lines(active, 'axis-cube-active')}<line class="axis-direction l2" x1="120" y1="318" x2="500" y2="318" ${directionMarker('L2')} /><text x="505" y="323">L2 · Left / Right</text><line class="axis-direction l0" x1="115" y1="300" x2="115" y2="52" ${directionMarker('L0')} /><text x="44" y="42">L0 · Up / Down</text><line class="axis-direction l1" x1="130" y1="305" x2="230" y2="240" ${directionMarker('L1')} /><text x="225" y="230">L1 · Forward / Backward</text><path class="axis-rotation" d="M 250 74 C 320 35, 410 52, 437 105" ${directionMarker('R0')} /><text x="344" y="36">R0 · Twist</text><path class="axis-rotation" d="M 470 130 C 535 170, 528 250, 470 278" ${directionMarker('R1')} /><text x="492" y="210">R1 · Roll</text><path class="axis-rotation" d="M 205 286 C 170 245, 171 170, 205 135" ${directionMarker('R2')} /><text x="126" y="206">R2 · Pitch</text></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Full normalized volume</span><span><i class="legend-active"></i> Effective movement volume</span></div></div><div class="axis-travel-grid">${travelCards}</div></div>`;
+  };
+  const spatialCards = axes.filter((axis) => !axis.axis.startsWith('R')).map(renderTravelCard).join('');
+  const rotationCards = axes.filter((axis) => axis.axis.startsWith('R')).map(renderTravelCard).join('');
+
+  const roll = axisOrDefault(axes, 'R1');
+  const pitch = axisOrDefault(axes, 'R2');
+  const twist = axisOrDefault(axes, 'R0');
+  const sphere = { x: 295, y: 205, radius: 126 };
+  const halfTravelRadians = (axis: DeviceAxisSetting) => Math.min(75, (axis.maximumTravel ?? 120) / 2) * Math.PI / 180;
+  const orientationPoint = (rollValue: number, pitchValue: number) => {
+    const rollAngle = (rollValue * 2 - 1) * halfTravelRadians(roll);
+    const pitchAngle = (pitchValue * 2 - 1) * halfTravelRadians(pitch);
+    const tangentRoll = Math.tan(rollAngle);
+    const tangentPitch = Math.tan(pitchAngle);
+    const normalization = Math.hypot(tangentRoll, tangentPitch, 1);
+    const horizontal = tangentRoll / normalization;
+    const depth = tangentPitch / normalization;
+    const vertical = 1 / normalization;
+    return {
+      x: sphere.x + sphere.radius * (horizontal + depth * .34),
+      y: sphere.y - sphere.radius * vertical + sphere.radius * depth * .27,
+    };
+  };
+  const orientationDerivative = (axis: 'R1' | 'R2', value: number, otherValue: number) => {
+    const before = Math.max(0, value - .01);
+    const after = Math.min(1, value + .01);
+    const first = axis === 'R1' ? orientationPoint(before, otherValue) : orientationPoint(otherValue, before);
+    const second = axis === 'R1' ? orientationPoint(after, otherValue) : orientationPoint(otherValue, after);
+    const divisor = Math.max(.001, after - before);
+    return { x: (second.x - first.x) / divisor, y: (second.y - first.y) / divisor };
+  };
+  const boundaryPoints = (rollMinimum: number, rollMaximum: number, pitchMinimum: number, pitchMaximum: number) => {
+    const samples = 12;
+    const points: { x: number; y: number }[] = [];
+    for (let index = 0; index <= samples; index += 1) points.push(orientationPoint(rollMinimum + (rollMaximum - rollMinimum) * index / samples, pitchMinimum));
+    for (let index = 1; index <= samples; index += 1) points.push(orientationPoint(rollMaximum, pitchMinimum + (pitchMaximum - pitchMinimum) * index / samples));
+    for (let index = 1; index <= samples; index += 1) points.push(orientationPoint(rollMaximum - (rollMaximum - rollMinimum) * index / samples, pitchMaximum));
+    for (let index = 1; index < samples; index += 1) points.push(orientationPoint(rollMinimum, pitchMaximum - (pitchMaximum - pitchMinimum) * index / samples));
+    return points;
+  };
+  const pathFromPoints = (points: { x: number; y: number }[], close = false) => points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ') + (close ? ' Z' : '');
+  const maximumBoundary = boundaryPoints(0, 1, 0, 1);
+  const outputBoundary = boundaryPoints(roll.minimum, roll.maximum, pitch.minimum, pitch.maximum);
+  const maximumCorners = [orientationPoint(0, 0), orientationPoint(1, 0), orientationPoint(1, 1), orientationPoint(0, 1)];
+  const outputCorners = [
+    orientationPoint(roll.minimum, pitch.minimum), orientationPoint(roll.maximum, pitch.minimum),
+    orientationPoint(roll.maximum, pitch.maximum), orientationPoint(roll.minimum, pitch.maximum),
+  ];
+  const coneEdges = (points: { x: number; y: number }[], className: string) => points
+    .map((point) => `<line class="${className}" x1="${sphere.x}" y1="${sphere.y}" x2="${point.x}" y2="${point.y}" />`).join('');
+  const orientationHandle = (axis: 'R1' | 'R2', mode: 'minimum' | 'maximum') => {
+    const setting = axis === 'R1' ? roll : pitch;
+    const other = axis === 'R1' ? (pitch.minimum + pitch.maximum) / 2 : (roll.minimum + roll.maximum) / 2;
+    const value = mode === 'minimum' ? setting.minimum : setting.maximum;
+    const origin = axis === 'R1' ? orientationPoint(value, other) : orientationPoint(other, value);
+    const vector = orientationDerivative(axis, value, other);
+    const vectorLength = Math.max(1, Math.hypot(vector.x, vector.y));
+    const direction = mode === 'minimum' ? -1 : 1;
+    const endpoint = { x: origin.x + direction * vector.x / vectorLength * 28, y: origin.y + direction * vector.y / vectorLength * 28 };
+    return `<g class="axis-orientation-bound-handle" data-axis-drag="${mode}" data-axis="${axis}" data-axis-vector-x="${vector.x}" data-axis-vector-y="${vector.y}" role="slider" tabindex="0" aria-label="${axis} output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-orientation-bound-arrow" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" marker-end="url(#axis-orientation-handle-arrow)" /><line class="axis-orientation-bound-hit" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" /></g>`;
+  };
+  const twistSweep = Math.min(330, Math.max(45, twist.maximumTravel ?? 300)) * Math.PI / 180;
+  const twistStart = Math.PI / 2 + (Math.PI * 2 - twistSweep) / 2;
+  const twistPoint = (value: number) => {
+    const angle = twistStart + value * twistSweep;
+    return { x: sphere.x + 154 * Math.cos(angle), y: sphere.y + 43 * Math.sin(angle) };
+  };
+  const twistDerivative = (value: number) => {
+    const angle = twistStart + value * twistSweep;
+    return { x: -154 * Math.sin(angle) * twistSweep, y: 43 * Math.cos(angle) * twistSweep };
+  };
+  const twistPath = (minimum: number, maximum: number) => pathFromPoints(Array.from({ length: 49 }, (_, index) => twistPoint(minimum + (maximum - minimum) * index / 48)));
+  const twistHandle = (mode: 'minimum' | 'maximum') => {
+    const value = mode === 'minimum' ? twist.minimum : twist.maximum;
+    const point = twistPoint(value);
+    const tangent = twistDerivative(value);
+    const tangentLength = Math.max(1, Math.hypot(tangent.x, tangent.y));
+    const normal = { x: -tangent.y / tangentLength * 6, y: tangent.x / tangentLength * 6 };
+    return `<g class="axis-rotation-bound-handle" data-axis-drag="${mode}" data-axis="R0" data-axis-vector-x="${tangent.x}" data-axis-vector-y="${tangent.y}" role="slider" tabindex="0" aria-label="R0 output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-rotation-bound-tick" x1="${point.x - normal.x}" y1="${point.y - normal.y}" x2="${point.x + normal.x}" y2="${point.y + normal.y}" /><line class="axis-rotation-bound-hit" x1="${point.x - normal.x}" y1="${point.y - normal.y}" x2="${point.x + normal.x}" y2="${point.y + normal.y}" /></g>`;
+  };
+  const twistMiddleVector = twistDerivative((twist.minimum + twist.maximum) / 2);
+  const twistMarker = twist.inverted ? 'marker-start="url(#axis-twist-range-arrow)"' : 'marker-end="url(#axis-twist-range-arrow)"';
+
+  return `<div class="axis-spatial-layout axis-linear-layout"><div class="axis-cuboid-wrap"><svg class="axis-cuboid" data-axis-map viewBox="0 0 590 350" role="img" aria-label="Normalized linear axis movement volume"><defs><marker id="axis-linear-direction-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker><marker id="axis-linear-handle-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>${lines(outer, 'axis-cube-outer')}<polygon class="axis-cube-drag-surface" points="${silhouette}" data-axis-drag="window" data-axis-candidates="L2,L0,L1" aria-label="Move linear output range"><title>Drag horizontally, vertically, or diagonally to move the corresponding linear output range</title></polygon>${lines(active, 'axis-cube-active')}${handle('L0', 'minimum')}${handle('L0', 'maximum')}${handle('L1', 'minimum')}${handle('L1', 'maximum')}${handle('L2', 'minimum')}${handle('L2', 'maximum')}<line class="axis-direction l2" x1="120" y1="318" x2="500" y2="318" ${directionMarker('L2')} /><text x="505" y="323">L2 · Left / Right</text><line class="axis-direction l0" x1="115" y1="300" x2="115" y2="52" ${directionMarker('L0')} /><text x="44" y="42">L0 · Up / Down</text><line class="axis-direction l1" x1="130" y1="305" x2="230" y2="240" ${directionMarker('L1')} /><text x="225" y="230">L1 · Forward / Backward</text></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Maximum travel</span><span><i class="legend-active"></i> Output range</span><span><i class="legend-direction"></i> Direction</span></div></div><div class="axis-travel-grid">${spatialCards}</div></div><div class="axis-rotation-layout"><div class="axis-orientation-wrap"><div class="axis-rotation-heading"><span>Rotational envelope</span><small>R0 / R1 / R2</small></div><svg class="axis-orientation-sphere" data-axis-map viewBox="0 0 590 400" role="img" aria-label="Roll pitch and twist movement envelope"><defs><marker id="axis-orientation-handle-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker><marker id="axis-twist-range-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs><circle class="axis-sphere-outline" cx="${sphere.x}" cy="${sphere.y}" r="${sphere.radius}" /><ellipse class="axis-sphere-grid" cx="${sphere.x}" cy="${sphere.y}" rx="${sphere.radius}" ry="42" /><ellipse class="axis-sphere-grid" cx="${sphere.x}" cy="${sphere.y}" rx="43" ry="${sphere.radius}" /><line class="axis-neutral-diameter" x1="${sphere.x}" y1="${sphere.y - sphere.radius}" x2="${sphere.x}" y2="${sphere.y + sphere.radius}" />${coneEdges(maximumCorners, 'axis-cone-maximum')}${coneEdges(outputCorners, 'axis-cone-edge')}<path class="axis-orientation-maximum" d="${pathFromPoints(maximumBoundary, true)}" /><path class="axis-orientation-envelope" d="${pathFromPoints(outputBoundary, true)}" /><path class="axis-orientation-envelope-hit" d="${pathFromPoints(outputBoundary, true)}" data-axis-drag="window" data-axis-candidates="R1,R2" aria-label="Move roll or pitch output range"><title>Drag in four directions to move the Roll or Pitch range</title></path>${orientationHandle('R1', 'minimum')}${orientationHandle('R1', 'maximum')}${orientationHandle('R2', 'minimum')}${orientationHandle('R2', 'maximum')}<path class="axis-rotation-maximum" d="${twistPath(0, 1)}" /><path class="axis-rotation-active" d="${twistPath(twist.minimum, twist.maximum)}" ${twistMarker} /><path class="axis-rotation-hit" d="${twistPath(twist.minimum, twist.maximum)}" data-axis-drag="window" data-axis="R0" data-axis-vector-x="${twistMiddleVector.x}" data-axis-vector-y="${twistMiddleVector.y}" aria-label="Move R0 output range"><title>Drag around the ring to move the Twist range</title></path>${twistHandle('minimum')}${twistHandle('maximum')}<text class="axis-orientation-label" x="76" y="72">R1 · Roll</text><text class="axis-orientation-label" x="430" y="72">R2 · Pitch</text><text class="axis-orientation-label" x="430" y="350">R0 · Twist</text><line class="axis-origin-cross" x1="${sphere.x - 7}" y1="${sphere.y}" x2="${sphere.x + 7}" y2="${sphere.y}" /><line class="axis-origin-cross" x1="${sphere.x}" y1="${sphere.y - 7}" x2="${sphere.x}" y2="${sphere.y + 7}" /></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Maximum angle</span><span><i class="legend-active"></i> Roll / Pitch output</span><span><i class="legend-twist"></i> Twist output</span></div></div><div class="axis-travel-grid axis-rotation-cards">${rotationCards}</div></div>`;
 }
 
 function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', minimum: number, maximum: number): string {
@@ -166,7 +302,6 @@ function renderShell() {
           ${routes.map((route) => `<button class="nav-item" data-route="${route.id}" aria-current="false"><span class="nav-label">${route.label}</span><span class="nav-hint">${route.hint}</span></button>`).join('')}
         </nav>
         <div class="sidebar-footer">
-          <div class="engine-toggle-row"><span>Engine</span><button class="switch" data-action="engine" aria-pressed="false" aria-label="Start engine"><span></span></button></div>
           <div class="version-line"><span>Web prototype</span><span>v0.1</span></div>
         </div>
       </aside>
@@ -218,12 +353,6 @@ function updateChrome(state: AppState) {
     button.classList.toggle('active', active);
     button.setAttribute('aria-current', active ? 'page' : 'false');
   });
-  const engine = appRoot.querySelector<HTMLButtonElement>('[data-action="engine"]');
-  if (engine) {
-    engine.classList.toggle('on', state.engineRunning);
-    engine.setAttribute('aria-pressed', String(state.engineRunning));
-    engine.setAttribute('aria-label', state.engineRunning ? 'Stop engine' : 'Start engine');
-  }
 }
 
 function render(state: AppState, change: StoreChange = 'full') {
@@ -259,27 +388,11 @@ function renderRoute(state: AppState): string {
 }
 
 function renderRuntime(state: AppState): string {
-  const durationSeconds = durationFromLabel(state.nowPlaying.duration);
-  const currentSeconds = durationSeconds > 0 ? Math.min(state.elapsed, durationSeconds) : Math.max(0, state.elapsed);
-  const progress = durationSeconds > 0 ? Math.round((currentSeconds / durationSeconds) * 100) : 0;
   const onlineOutputs = state.outputs.filter((output) => output.status === 'online').length;
-  const cadence = state.settings?.tickHz ?? 60;
   return `
-    ${pageHeading('Overview', 'Runtime dashboard', 'Route media clocks to device outputs and control every active session.', `<button class="button button-primary" data-action="load-next" ${state.scripts.length === 0 ? 'disabled' : ''}>Load latest script</button>`)}
+    ${pageHeading('Overview', 'Runtime dashboard', 'Route media clocks to device outputs and control every active session.')}
     ${renderRuntimeRouter(state)}
     ${renderRoutedPlayback(state)}
-    <section class="now-playing panel" aria-labelledby="now-playing-title">
-      <div class="now-playing-main">
-        <div class="section-kicker"><span class="pulse-ring" aria-hidden="true"></span> Global engine</div>
-        <h2 id="now-playing-title" data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2>
-        <div class="meta-row"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-axes">${state.nowPlaying.axes} axes</span><span data-bind="script-size">${state.nowPlaying.size}</span></div>
-        <div class="transport" aria-label="Playback controls">
-          <button class="play-button" data-action="playback" aria-label="${state.playing ? 'Pause playback' : 'Resume playback'}" title="${state.playing ? 'Pause playback' : 'Resume playback'}">${state.playing ? 'Pause' : 'Play'}</button>
-          <div class="timeline"><div class="timeline-track"><span data-bind="timeline-progress" style="width:${progress}%"></span></div><div class="timeline-labels"><span data-bind="timeline-elapsed">${formatTime(currentSeconds)}</span><span data-bind="timeline-duration">${state.nowPlaying.duration}</span></div></div>
-        </div>
-      </div>
-      <div class="now-playing-summary"><div class="summary-label">Engine cadence</div><strong>${cadence} <small>Hz</small></strong><span class="trend-up">Server configured rate</span><div class="waveform" aria-label="Output cadence visualization">${Array.from({ length: 20 }, (_, index) => `<i style="height:${18 + ((index * 17) % 42)}%"></i>`).join('')}</div></div>
-    </section>
     <section class="metric-grid" aria-label="Runtime metrics">
       ${metricCard('Media source', `${state.media.filter((source) => source.status === 'online').length} / ${state.media.length}`, 'sources connected', 'online')}
       ${metricCard('Output targets', `${onlineOutputs} / ${state.outputs.length}`, 'targets streaming', onlineOutputs === state.outputs.length ? 'online' : 'warning')}
@@ -300,12 +413,6 @@ function renderRuntime(state: AppState): string {
       <div class="panel-heading"><div><p class="eyebrow">Latest events</p><h2 id="activity-title">Activity</h2></div><button class="text-button" data-route="logs">Open logs</button></div>
       ${renderLogTable(state.logs.slice(0, 4))}
     </section>`;
-}
-
-function durationFromLabel(value: string): number {
-  const parts = value.split(':').map(Number);
-  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) return 0;
-  return Math.max(0, parts[0] * 60 + parts[1]);
 }
 
 function outputAssignment(state: AppState, outputId: string): string | null {
@@ -340,11 +447,10 @@ function renderRoutedPlayback(state: AppState): string {
     const position = Math.min(duration || Number.MAX_SAFE_INTEGER, Math.max(0, media?.positionSeconds ?? 0));
     const available = source.status === 'online' && media !== undefined;
     const outputBadges = outputs.map((output) => output ? `<span>${escapeHtml(output.name)}</span>` : '').join('');
-    const emptyScriptLabel = route.scriptMatchMode === 'exact' ? 'No exact match'
-      : route.scriptMatchMode === 'fuzzy' ? 'No fuzzy match'
-        : route.scriptMatchMode === 'global' && state.nowPlaying.id ? `Global: ${state.nowPlaying.name}` : 'No script selected';
+    const matchMode = route.scriptMatchMode === 'global' ? 'exact' : route.scriptMatchMode;
+    const emptyScriptLabel = matchMode === 'exact' ? 'No exact match'
+      : matchMode === 'fuzzy' ? 'No fuzzy match' : 'No script selected';
     const scriptOptions = state.scripts.map((script) => `<option value="${escapeHtml(script.id)}" ${route.scriptId === script.id ? 'selected' : ''}>${escapeHtml(script.name)}</option>`).join('');
-    const matchMode = route.scriptMatchMode === 'global' ? 'manual' : route.scriptMatchMode;
     const matchButtons = (['exact', 'fuzzy', 'manual'] as ScriptMatchMode[]).map((mode) => `<button type="button" class="script-match-button ${matchMode === mode ? 'is-active' : ''}" data-runtime-script-match="${escapeHtml(source.id)}" data-script-match-mode="${mode}">${mode[0].toUpperCase()}${mode.slice(1)}</button>`).join('');
     const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => `<option value="${speed}" ${Math.abs((media?.playbackSpeed ?? 1) - speed) < 0.001 ? 'selected' : ''}>${speed}x</option>`).join('');
     return `<article class="routed-playback panel" data-runtime-playback="${escapeHtml(source.id)}"><div class="routed-playback-heading"><div><div class="section-kicker"><span class="status-dot ${statusClass(source.status)}" data-runtime-source-status aria-hidden="true"></span>${escapeHtml(source.kind)}</div><h2>${escapeHtml(source.name)}</h2><p data-runtime-media-path>${escapeHtml(media?.path ?? source.endpoint)}</p></div><div class="routed-output-badges">${outputBadges}</div></div><div class="routed-script-binding"><div class="routed-script-binding-heading"><span>Script</span><div class="script-match-modes" role="group" aria-label="${escapeHtml(source.name)} script matching mode">${matchButtons}</div></div><div class="routed-script-fields"><label><span class="sr-only">Search scripts for ${escapeHtml(source.name)}</span><input type="search" data-runtime-script-search="${escapeHtml(source.id)}" placeholder="Search scripts" autocomplete="off" /></label><label><span class="sr-only">Script for ${escapeHtml(source.name)}</span><select data-runtime-source-script="${escapeHtml(source.id)}"><option value="">${escapeHtml(emptyScriptLabel)}</option>${scriptOptions}</select></label></div></div><div class="routed-progress"><input type="range" min="0" max="${Math.max(0.1, duration)}" step="0.1" value="${position}" data-runtime-source-seek="${escapeHtml(source.id)}" aria-label="${escapeHtml(source.name)} playback position" ${!available || !source.controls.canSeek ? 'disabled' : ''}/><div><span data-runtime-source-position>${formatTime(position)}</span><span data-runtime-source-duration>${duration > 0 ? formatTime(duration) : '--:--'}</span></div></div><div class="routed-controls"><button class="button button-primary" type="button" data-runtime-source-toggle="${escapeHtml(source.id)}" ${!available || !source.controls.canPlayPause ? 'disabled' : ''}>${media?.playing ? 'Pause' : 'Play'}</button><label class="compact-select"><span>Speed</span><select data-runtime-source-speed="${escapeHtml(source.id)}" ${!available || !source.controls.canSetPlaybackSpeed ? 'disabled' : ''}>${speedOptions}</select></label><label class="toggle-option"><input type="checkbox" data-runtime-source-loop="${escapeHtml(source.id)}" ${route.loopEnabled ? 'checked' : ''} ${!source.controls.canLoop ? 'disabled' : ''}/><span>Loop</span></label></div></article>`;
@@ -434,28 +540,177 @@ function renderMediaForm(): string {
   return `<form class="resource-form panel" data-resource-form="media"><input type="hidden" name="id" /><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-name">Name <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-name" name="name" placeholder="Generated from kind" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="vlc">VLC</option><option value="mpc">MPC-HC/BE</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option></select></label><label for="media-endpoint" data-media-field="endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="Select a kind to fill its default" /></label><label for="media-device-id" data-media-field="device">Remote device id <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-device-id" name="deviceId" maxlength="256" placeholder="Session or playback client id" /></label><label for="media-secret" data-media-field="secret">API key / secret <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-secret" name="secretValue" type="password" autocomplete="off" placeholder="Paste the API key or token" /></label></div><div class="form-assist"><button class="button button-secondary" type="button" data-action="discover-media">Scan local network</button><button class="button button-secondary" type="button" data-action="test-media-draft">Test connection</button><a class="form-help-link" data-media-key-help target="_blank" rel="noopener noreferrer" hidden>Get API key</a></div><div class="discovery-results" data-discovery-results="media" aria-live="polite" hidden></div><p class="form-hint">The API key or token is stored on the server with this media source. Leave empty to fall back to the host environment variable.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
 }
 
-function renderAxisRows(state: AppState): string {
-  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
-  return axes.map(([axis, value]) => {
-    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
-    return `<div class="axis-row" data-axis-value="${escapeHtml(axis)}"><span>${escapeHtml(axis)}</span><div class="axis-track"><span style="width:${percentage}%"></span></div><strong>${percentage}%</strong></div>`;
-  }).join('');
-}
-
 function scriptFolderOf(id: string): string {
   const index = id.lastIndexOf('/');
   return index > 0 ? id.slice(0, index) : '';
 }
 
-function renderScripts(state: AppState): string {
-  const axisRows = renderAxisRows(state);
-  const folderList = (state.scriptFolders ?? []).map((folder) => `<div class="folder-item"><span class="folder-name">${escapeHtml(folder)}</span><button class="icon-button" type="button" data-delete-script-folder="${escapeHtml(folder)}" title="Remove folder" aria-label="Remove ${escapeHtml(folder)}">&#10005;</button></div>`).join('');
-  const scriptList = state.scripts.map((script) => {
-    const folder = scriptFolderOf(script.id);
-    return `<button class="script-item ${script.id === state.nowPlaying.id ? 'selected' : ''}" data-load-script="${script.id}"><span class="file-badge">${script.format.slice(0, 3)}</span><span class="script-copy"><strong>${escapeHtml(script.name)}</strong><span>${folder ? `<span class="script-folder">${escapeHtml(folder)}</span> · ` : ''}${script.duration} - ${script.axes} axes - ${script.updated}</span></span><span class="load-label">${script.id === state.nowPlaying.id ? 'Loaded' : 'Load'}</span></button>`;
+interface ScriptTreeFolder {
+  name: string;
+  path: string;
+  folders: Map<string, ScriptTreeFolder>;
+  scripts: ScriptResource[];
+}
+
+function normalizeScriptTreePath(path: string): string {
+  return path.replaceAll('\\', '/').split('/').filter((part) => part && part !== '.' && part !== '..').join('/');
+}
+
+function ensureScriptTreeFolder(root: ScriptTreeFolder, path: string): ScriptTreeFolder {
+  let folder = root;
+  let currentPath = '';
+  for (const name of normalizeScriptTreePath(path).split('/').filter(Boolean)) {
+    currentPath = currentPath ? `${currentPath}/${name}` : name;
+    let child = folder.folders.get(name);
+    if (!child) {
+      child = { name, path: currentPath, folders: new Map(), scripts: [] };
+      folder.folders.set(name, child);
+    }
+    folder = child;
+  }
+  return folder;
+}
+
+function buildScriptTree(scripts: ScriptResource[], paths: string[]): ScriptTreeFolder {
+  const root: ScriptTreeFolder = { name: 'Script library', path: '', folders: new Map(), scripts: [] };
+  paths.forEach((path) => ensureScriptTreeFolder(root, path));
+  scripts.forEach((script) => ensureScriptTreeFolder(root, scriptFolderOf(normalizeScriptTreePath(script.id))).scripts.push(script));
+  return root;
+}
+
+function scriptTreeFileCount(folder: ScriptTreeFolder): number {
+  return folder.scripts.length + [...folder.folders.values()].reduce((total, child) => total + scriptTreeFileCount(child), 0);
+}
+
+function scriptTreeFolderCount(folder: ScriptTreeFolder): number {
+  return folder.folders.size + [...folder.folders.values()].reduce((total, child) => total + scriptTreeFolderCount(child), 0);
+}
+
+function scriptExtension(script: ScriptResource): string {
+  const fileName = normalizeScriptTreePath(script.id).split('/').pop() ?? '';
+  const index = fileName.lastIndexOf('.');
+  return index > 0 ? fileName.slice(index).toLowerCase() : '';
+}
+
+function findScriptTreeFolder(root: ScriptTreeFolder, path: string): ScriptTreeFolder | null {
+  let folder = root;
+  for (const name of normalizeScriptTreePath(path).split('/').filter(Boolean)) {
+    const child = folder.folders.get(name);
+    if (!child) return null;
+    folder = child;
+  }
+  return folder;
+}
+
+function resolveSelectedScriptFolder(root: ScriptTreeFolder): string {
+  if (selectedScriptFolderPath === null) selectedScriptFolderPath = '';
+  if (!findScriptTreeFolder(root, selectedScriptFolderPath)) selectedScriptFolderPath = '';
+  return selectedScriptFolderPath;
+}
+
+function renderScriptTreeFolder(folder: ScriptTreeFolder, selectedFolder: string): string {
+  const containsSelected = selectedFolder === folder.path || selectedFolder.startsWith(`${folder.path}/`);
+  const folders = [...folder.folders.values()]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((child) => renderScriptTreeFolder(child, selectedFolder))
+    .join('');
+  const children = folders || '<span class="script-tree-empty">No subfolders</span>';
+  const fileCount = scriptTreeFileCount(folder);
+  const selected = selectedFolder === folder.path;
+  return `<details class="script-tree-folder" data-script-tree-folder="${escapeHtml(folder.path)}"${containsSelected ? ' open' : ''}><summary class="${selected ? 'selected' : ''}" data-select-script-folder="${escapeHtml(folder.path)}"><span class="script-tree-caret" aria-hidden="true"></span><span class="script-tree-folder-icon" aria-hidden="true"></span><strong>${escapeHtml(folder.name)}</strong><small>${fileCount} ${fileCount === 1 ? 'file' : 'files'}</small></summary><div class="script-tree-children">${children}</div></details>`;
+}
+
+function renderScriptTree(root: ScriptTreeFolder, selectedFolder: string): string {
+  const folders = [...root.folders.values()]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((folder) => renderScriptTreeFolder(folder, selectedFolder))
+    .join('');
+  const content = folders || '<span class="script-tree-empty">No folders found</span>';
+  const selected = selectedFolder.length === 0;
+  return `<div class="script-tree" data-script-tree aria-label="Script folder browser"><button class="script-tree-root${selected ? ' selected' : ''}" type="button" data-select-script-folder=""><span class="script-tree-folder-icon" aria-hidden="true"></span><strong>Script library</strong><small>${scriptTreeFileCount(root)} ${scriptTreeFileCount(root) === 1 ? 'file' : 'files'}</small></button><div class="script-tree-root-children">${content}</div></div>`;
+}
+
+function renderScriptFolderPreview(root: ScriptTreeFolder): string {
+  const selectedFolder = resolveSelectedScriptFolder(root);
+  const folder = findScriptTreeFolder(root, selectedFolder) ?? root;
+  const extensions = [...new Set(folder.scripts.map(scriptExtension).filter(Boolean))].sort();
+  if (scriptPreviewExtension !== 'all' && !extensions.includes(scriptPreviewExtension)) {
+    scriptPreviewExtension = 'all';
+    scriptPreviewPage = 1;
+  }
+  const childFolders = [...folder.folders.values()].sort((left, right) => left.name.localeCompare(right.name));
+  const scripts = [...folder.scripts]
+    .filter((script) => scriptPreviewExtension === 'all' || scriptExtension(script) === scriptPreviewExtension)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const entries = [
+    ...childFolders.map((child) => ({ kind: 'folder' as const, folder: child })),
+    ...scripts.map((script) => ({ kind: 'script' as const, script })),
+  ];
+  const pageCount = Math.max(1, Math.ceil(entries.length / scriptPreviewPageSize));
+  scriptPreviewPage = Math.min(Math.max(1, scriptPreviewPage), pageCount);
+  const pageEntries = entries.slice((scriptPreviewPage - 1) * scriptPreviewPageSize, scriptPreviewPage * scriptPreviewPageSize);
+  const rows = pageEntries.map((entry) => {
+    if (entry.kind === 'folder') {
+      const fileCount = scriptTreeFileCount(entry.folder);
+      return `<button class="script-preview-row script-preview-folder" type="button" data-select-script-folder="${escapeHtml(entry.folder.path)}"><span class="script-tree-folder-icon" aria-hidden="true"></span><span class="script-preview-copy"><strong>${escapeHtml(entry.folder.name)}</strong><small>Folder · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}</small></span><span class="script-preview-action">Open</span></button>`;
+    }
+    const script = entry.script;
+    const extension = scriptExtension(script).replace('.', '').slice(0, 4).toUpperCase() || 'FILE';
+    return `<div class="script-preview-row script-preview-file" title="${escapeHtml(script.id)}"><span class="script-preview-file-type" aria-hidden="true">${escapeHtml(extension)}</span><span class="script-preview-copy"><strong>${escapeHtml(script.name)}</strong><small>${escapeHtml(script.duration)} · ${escapeHtml(script.size)} · ${escapeHtml(script.updated)}</small></span></div>`;
   }).join('');
-  return `${pageHeading('Library', 'Scripts', 'Browse script folders, search, and load before sending a script to the engine.', '<button class="button button-primary" data-action="import-script">Import script</button>')}
-    <div class="script-layout"><section class="panel script-folders"><div class="panel-heading"><div><p class="eyebrow">Folders</p><h2>Script directories</h2></div><span class="result-count">${(state.scriptFolders ?? []).length} folders</span></div><form class="folder-add" data-folder-add><label class="sr-only" for="script-folder-name">New folder</label><input id="script-folder-name" type="text" placeholder="New folder, e.g. projects/2025" autocomplete="off" /><button class="button button-secondary" type="submit">Add folder</button></form><div class="folder-list">${folderList || '<p class="muted">No subfolders yet. Add one to organise scripts.</p>'}</div></section><section class="panel script-browser"><div class="filter-row"><label class="search-field"><span>Search scripts</span><input id="script-filter" type="search" placeholder="Filter by name or folder" autocomplete="off" /></label><span class="result-count">${state.scripts.length} resources</span></div><div class="script-list">${scriptList || '<p class="muted">No scripts found.</p>'}</div></section><section class="panel axis-panel"><p class="eyebrow">Selected resource</p><h2 data-bind="script-name">${escapeHtml(state.nowPlaying.name)}</h2><div class="axis-meta"><span data-bind="script-format">${state.nowPlaying.format}</span><span data-bind="script-duration">${state.nowPlaying.duration}</span><span data-bind="script-channels">${state.nowPlaying.axes} channels</span></div><div class="axis-chart" aria-label="Current axis values">${axisRows || '<span class="muted">No axis values reported</span>'}</div><div class="sync-controls"><label>Position <input id="script-position" type="number" min="0" step="0.1" value="${state.elapsed.toFixed(1)}" aria-label="Script position in seconds" /><span>s</span></label><label>Offset <input id="script-offset" type="number" value="${state.scriptOffset.toFixed(1)}" step="0.1" aria-label="Script offset in seconds" /><span>s</span></label><label>Playback <select id="script-sync-mode" aria-label="Playback synchronization mode"><option value="engine" ${state.syncMode === 'engine' ? 'selected' : ''}>Engine clock</option><option value="media" ${state.syncMode === 'media' ? 'selected' : ''}>Media clock</option></select></label></div></section></div>`;
+  const extensionOptions = ['<option value="all">All suffixes</option>', ...extensions.map((extension) => `<option value="${escapeHtml(extension)}"${scriptPreviewExtension === extension ? ' selected' : ''}>${escapeHtml(extension)}</option>`)].join('');
+  const folderName = folder.path ? folder.name : 'Script library';
+  const folderPath = folder.path ? `/${folder.path}` : '/';
+  const itemLabel = `${entries.length} ${entries.length === 1 ? 'item' : 'items'}`;
+  return `<div class="script-preview-heading"><div><p class="eyebrow">Folder preview</p><h2>${escapeHtml(folderName)}</h2><p class="script-preview-path" title="${escapeHtml(folderPath)}">${escapeHtml(folderPath)}</p></div><span class="result-count">${itemLabel}</span></div><div class="script-preview-toolbar"><label for="script-extension-filter">Suffix<select id="script-extension-filter">${extensionOptions}</select></label><span>${scripts.length} ${scripts.length === 1 ? 'file' : 'files'}</span></div><div class="script-preview-list" aria-label="Contents of ${escapeHtml(folderName)}">${rows || '<div class="script-preview-empty"><strong>This folder is empty</strong><span>No matching script files or subfolders.</span></div>'}</div><div class="script-preview-pagination"><span>Page ${scriptPreviewPage} of ${pageCount}</span><div><button class="icon-button" type="button" data-script-preview-page="${scriptPreviewPage - 1}" aria-label="Previous page" title="Previous page"${scriptPreviewPage <= 1 ? ' disabled' : ''}>&#8592;</button><button class="icon-button" type="button" data-script-preview-page="${scriptPreviewPage + 1}" aria-label="Next page" title="Next page"${scriptPreviewPage >= pageCount ? ' disabled' : ''}>&#8594;</button></div></div>`;
+}
+
+function updateScriptFolderBrowser(state: AppState): void {
+  if (state.route !== 'scripts') return;
+  const root = buildScriptTree(state.scripts, state.scriptFolders ?? []);
+  const selectedFolder = resolveSelectedScriptFolder(root);
+  const preview = appRoot.querySelector<HTMLElement>('[data-script-folder-preview]');
+  if (preview) preview.innerHTML = renderScriptFolderPreview(root);
+  appRoot.querySelector<HTMLElement>('.script-tree-root')?.classList.toggle('selected', selectedFolder.length === 0);
+  appRoot.querySelectorAll<HTMLDetailsElement>('[data-script-tree-folder]').forEach((details) => {
+    const path = details.dataset.scriptTreeFolder ?? '';
+    details.querySelector<HTMLElement>(':scope > summary')?.classList.toggle('selected', path === selectedFolder);
+    if (path === selectedFolder || selectedFolder.startsWith(`${path}/`)) details.open = true;
+  });
+}
+
+function renderScripts(state: AppState): string {
+  const fnosAccess = state.settings?.fnosScriptAccess;
+  if (fnosAccess?.externalRootActive) clearPendingFnosScriptAuthorization();
+  const pendingAuthorization = hasPendingFnosScriptAuthorization();
+  const fnosStatus = !fnosAccess?.available ? '' : fnosAccess.restartRequired || pendingAuthorization
+    ? 'Restart required'
+    : fnosAccess.externalRootActive
+      ? 'Active'
+      : fnosAccess.externalRootConfigured
+        ? 'Folder unavailable'
+        : 'Not configured';
+  const fnosStatusKind: Status | 'pass' | 'warn' = fnosAccess?.externalRootActive
+    ? 'pass'
+    : fnosAccess?.externalRootConfigured || pendingAuthorization
+      ? 'warn'
+      : 'offline';
+  const fnosDetail = fnosAccess && fnosAccess.authorizedDirectoryCount > 1
+    ? `${fnosAccess.authorizedDirectoryCount} folders authorized; the first folder is mounted.`
+    : fnosAccess?.externalRootActive
+      ? 'Mapped read-only; source files remain untouched.'
+      : fnosAccess?.systemVersion
+        ? `fnOS ${fnosAccess.systemVersion}`
+        : 'fnOS application folder access';
+  const fnosMode = fnosAccess?.available === true;
+  const fnosFolderAccess = fnosMode ? `<div class="fnos-folder-access" data-fnos-script-access><div class="fnos-folder-status">${statusDot(fnosStatusKind)}<div><span>fnOS folder mapping</span><strong>${escapeHtml(fnosStatus)}</strong><small>${escapeHtml(fnosDetail)}</small></div></div><div class="fnos-folder-actions"><button class="button button-primary" type="button" data-action="authorize-fnos-scripts">Add mapping</button><button class="button button-secondary" type="button" data-action="remove-fnos-script-mapping"${fnosAccess.externalRootConfigured || pendingAuthorization ? '' : ' disabled'} title="Manage authorized folders in fnOS App Settings">Remove mapping</button></div></div>` : '';
+  const root = buildScriptTree(state.scripts, state.scriptFolders ?? []);
+  const selectedFolder = resolveSelectedScriptFolder(root);
+  const folderSummary = `${scriptTreeFolderCount(root)} folders`;
+  const scriptTree = renderScriptTree(root, selectedFolder);
+  const pageActions = fnosMode ? '' : '<button class="button button-primary" data-action="import-script">Import script</button>';
+  return `${pageHeading('Library', 'Scripts', 'Browse the script library used by routed source sessions.', pageActions)}
+    <div class="script-layout"><section class="panel script-folders"><div class="panel-heading"><div><p class="eyebrow">Folders</p><h2>Script directories</h2></div><span class="result-count">${folderSummary}</span></div>${fnosFolderAccess}${scriptTree}</section><section class="panel script-folder-preview" data-script-folder-preview>${renderScriptFolderPreview(root)}</section></div>`;
 }
 
 function updateStatusBindings(state: AppState) {
@@ -466,26 +721,8 @@ function updateStatusBindings(state: AppState) {
     if (element && element.textContent !== value) element.textContent = value;
   };
   if (state.route === 'runtime') {
-    const durationSeconds = durationFromLabel(state.nowPlaying.duration);
-    const currentSeconds = durationSeconds > 0 ? Math.min(state.elapsed, durationSeconds) : Math.max(0, state.elapsed);
-    const progress = durationSeconds > 0 ? Math.round((currentSeconds / durationSeconds) * 100) : 0;
-    setText('[data-bind="script-name"]', state.nowPlaying.name);
-    setText('[data-bind="script-format"]', state.nowPlaying.format);
-    setText('[data-bind="script-axes"]', `${state.nowPlaying.axes} axes`);
-    setText('[data-bind="script-size"]', state.nowPlaying.size);
-    setText('[data-bind="timeline-elapsed"]', formatTime(currentSeconds));
-    setText('[data-bind="timeline-duration"]', state.nowPlaying.duration);
     setText('[data-bind="health-score"]', `${state.health.filter((check) => check.status === 'pass').length}/${state.health.length}`);
     setText('.metric-grid .metric-card:nth-child(4) strong', String(state.logs.length));
-    const progressBar = main.querySelector<HTMLElement>('[data-bind="timeline-progress"]');
-    if (progressBar) progressBar.style.width = `${progress}%`;
-    const playback = main.querySelector<HTMLButtonElement>('[data-action="playback"]');
-    if (playback) {
-      const label = state.playing ? 'Pause playback' : 'Resume playback';
-      playback.textContent = state.playing ? 'Pause' : 'Play';
-      playback.setAttribute('aria-label', label);
-      playback.title = label;
-    }
     main.querySelectorAll<HTMLElement>('[data-runtime-playback]').forEach((control) => {
       const source = state.media.find((item) => item.id === control.dataset.runtimePlayback);
       if (!source) return;
@@ -544,35 +781,6 @@ function updateStatusBindings(state: AppState) {
     }
     return;
   }
-  if (state.route !== 'scripts') return;
-  setText('[data-bind="script-name"]', state.nowPlaying.name);
-  setText('[data-bind="script-format"]', state.nowPlaying.format);
-  setText('[data-bind="script-duration"]', state.nowPlaying.duration);
-  setText('[data-bind="script-channels"]', `${state.nowPlaying.axes} channels`);
-  const position = main.querySelector<HTMLInputElement>('#script-position');
-  if (position && document.activeElement !== position) position.value = state.elapsed.toFixed(1);
-  main.querySelectorAll<HTMLButtonElement>('[data-load-script]').forEach((button) => {
-    const selected = button.dataset.loadScript === state.nowPlaying.id;
-    button.classList.toggle('selected', selected);
-    const loadLabel = button.querySelector<HTMLElement>('.load-label');
-    if (loadLabel) loadLabel.textContent = selected ? 'Loaded' : 'Load';
-  });
-  const axisChart = main.querySelector<HTMLElement>('.axis-chart');
-  if (!axisChart) return;
-  const axes = Object.entries(state.axisValues).slice(0, state.nowPlaying.axes);
-  const rows = Array.from(axisChart.querySelectorAll<HTMLElement>('[data-axis-value]'));
-  const sameAxes = rows.length === axes.length && rows.every((row, index) => row.dataset.axisValue === axes[index][0]);
-  if (!sameAxes) {
-    axisChart.innerHTML = renderAxisRows(state) || '<span class="muted">No axis values reported</span>';
-    return;
-  }
-  axes.forEach(([, value], index) => {
-    const percentage = Math.round(Math.max(0, Math.min(1, value)) * 100);
-    const bar = rows[index].querySelector<HTMLElement>('.axis-track span');
-    const label = rows[index].querySelector<HTMLElement>('strong');
-    if (bar) bar.style.width = `${percentage}%`;
-    if (label) label.textContent = `${percentage}%`;
-  });
 }
 
 function renderOutputs(state: AppState): string {
@@ -588,7 +796,7 @@ function renderOutputForm(): string {
 
 function renderDeviceSettings(state: AppState): string {
   return `${pageHeading('Devices', 'Axis settings', 'Tune the fixed TCode axis set and save it as one device configuration.', '<button class="button button-primary" data-action="focus-axis-form">Edit axis configuration</button>')}
-    <div class="notice notice-info"><strong>One configuration, 11 fixed axes.</strong><span>All rows are validated together, persisted in one server file, and applied to the engine as one snapshot.</span></div>
+    <div class="notice notice-info"><strong>One configuration, 11 fixed axes.</strong><span>All rows are validated together, persisted in one server file, and applied to routed output sessions as one snapshot.</span></div>
     <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Live configuration preview</p><h2 id="axis-map-title">Axis motion map</h2></div><span class="result-count">Normalized + calibrated travel</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes)}</div></section>
     ${renderDeviceAxisForm(state.deviceAxes)}
     ${renderServerSettings(state)}`;
@@ -609,7 +817,7 @@ function renderServerSettings(state: AppState): string {
   const migrationDetail = migration?.error ?? (migrationState === 'disabled' ? 'No legacy desktop import was requested.' : 'No migration warnings reported.');
   return `<section class="content-grid diagnostics-settings-grid">
     <section class="panel" aria-labelledby="repository-settings-title"><div class="panel-heading"><div><p class="eyebrow">Repository</p><h2 id="repository-settings-title">Server-managed storage</h2></div><span class="result-count">${state.scripts.length} scripts</span></div><dl class="settings-list"><div><dt>Scripts root</dt><dd title="${escapeHtml(settings.scriptsRoot)}">${escapeHtml(settings.scriptsRoot)}</dd></div><div><dt>Configuration root</dt><dd title="${escapeHtml(settings.configRoot)}">${escapeHtml(settings.configRoot)}</dd></div><div><dt>Logs root</dt><dd title="${escapeHtml(settings.logsRoot)}">${escapeHtml(settings.logsRoot)}</dd></div><div><dt>Keys root</dt><dd title="${escapeHtml(settings.keysRoot)}">${escapeHtml(settings.keysRoot)}</dd></div></dl><p class="settings-note">Paths are read-only here; uploads and log exports use the server boundary.</p></section>
-    <section class="panel" aria-labelledby="general-settings-title"><div class="panel-heading"><div><p class="eyebrow">General</p><h2 id="general-settings-title">Effective runtime</h2></div><span class="status-badge status-online">Active</span></div><dl class="settings-list"><div><dt>Schema</dt><dd>v${settings.schemaVersion}</dd></div><div><dt>Engine cadence</dt><dd>${settings.tickHz} Hz</dd></div><div><dt>Browser clients</dt><dd>${settings.maxWebSocketClients}</dd></div><div><dt>API surface</dt><dd>REST v1 + WebSocket</dd></div></dl><p class="settings-note">Cadence and client limits are host configuration values; changing them requires a controlled service restart.</p></section>
+    <section class="panel" aria-labelledby="general-settings-title"><div class="panel-heading"><div><p class="eyebrow">General</p><h2 id="general-settings-title">Effective runtime</h2></div><span class="status-badge status-online">Active</span></div><dl class="settings-list"><div><dt>Schema</dt><dd>v${settings.schemaVersion}</dd></div><div><dt>Runtime cadence</dt><dd>${settings.tickHz} Hz</dd></div><div><dt>Browser clients</dt><dd>${settings.maxWebSocketClients}</dd></div><div><dt>API surface</dt><dd>REST v1 + WebSocket</dd></div></dl><p class="settings-note">Cadence and client limits are host configuration values; changing them requires a controlled service restart.</p></section>
   </section>
   <section class="content-grid diagnostics-settings-grid">
     <section class="panel" aria-labelledby="security-settings-title"><div class="panel-heading"><div><p class="eyebrow">Security</p><h2 id="security-settings-title">Access policy</h2></div><span class="status-badge ${settings.authenticationRequired ? 'status-online' : 'status-warning'}">${settings.authenticationRequired ? 'Protected' : 'Review'}</span></div><dl class="settings-list"><div><dt>API authentication</dt><dd>${settings.authenticationRequired ? 'Required' : 'Disabled'}</dd></div><div><dt>Browser session</dt><dd>${settings.authenticationRequired ? 'Token-bound WebSocket' : 'No token configured'}</dd></div><div><dt>Token visibility</dt><dd>Never returned by API</dd></div><div><dt>Secret fields</dt><dd>Redacted from responses and logs</dd></div></dl><p class="settings-note">Secret values are intentionally absent from this view and from diagnostic exports.</p></section>
@@ -898,6 +1106,110 @@ async function testOutputDraft(form: HTMLFormElement, button: HTMLButtonElement)
   }
 }
 
+function axisOutputRange(axis: string): [number, number] | null {
+  const row = document.querySelector<HTMLElement>(`[data-axis-row="${axis}"]`);
+  const minimum = row?.querySelector<HTMLInputElement>('[data-axis-field="minimum"]');
+  const maximum = row?.querySelector<HTMLInputElement>('[data-axis-field="maximum"]');
+  if (!minimum || !maximum) return null;
+  return [Number(minimum.value), Number(maximum.value)];
+}
+
+function applyAxisOutputRange(axis: string, minimum: number, maximum: number) {
+  const row = document.querySelector<HTMLElement>(`[data-axis-row="${axis}"]`);
+  const minimumInput = row?.querySelector<HTMLInputElement>('[data-axis-field="minimum"]');
+  const maximumInput = row?.querySelector<HTMLInputElement>('[data-axis-field="maximum"]');
+  if (!row || !minimumInput || !maximumInput) return;
+  const roundedMinimum = Math.max(0, Math.min(.99, Math.round(minimum * 100) / 100));
+  const roundedMaximum = Math.min(1, Math.max(.01, Math.round(maximum * 100) / 100));
+  minimumInput.value = String(Math.min(roundedMinimum, roundedMaximum - .01));
+  maximumInput.value = String(Math.max(roundedMaximum, roundedMinimum + .01));
+  synchronizeAxisRow(row);
+  const form = row.closest<HTMLFormElement>('[data-resource-form="axis"]');
+  if (form) updateAxisVisualization(form);
+}
+
+function handleAxisRangePointerDown(event: PointerEvent) {
+  const control = (event.target as Element).closest<SVGElement>('[data-axis-drag]');
+  const svg = control?.closest<SVGSVGElement>('[data-axis-map]');
+  const mode = control?.dataset.axisDrag as AxisRangeDragMode | undefined;
+  if (!control || !svg || !mode || event.button !== 0) return;
+  const candidates = control.dataset.axis
+    ? [control.dataset.axis]
+    : (control.dataset.axisCandidates ?? '').split(',').filter(Boolean);
+  const ranges: Record<string, [number, number]> = {};
+  const vectors: Record<string, { x: number; y: number }> = {};
+  candidates.forEach((axis) => {
+    const range = axisOutputRange(axis);
+    if (range) ranges[axis] = range;
+    vectors[axis] = axisDragVectors[axis];
+  });
+  if (control.dataset.axis && Number.isFinite(Number(control.dataset.axisVectorX)) && Number.isFinite(Number(control.dataset.axisVectorY)))
+    vectors[control.dataset.axis] = { x: Number(control.dataset.axisVectorX), y: Number(control.dataset.axisVectorY) };
+  const validCandidates = candidates.filter((axis) => ranges[axis] && axisDragVectors[axis]);
+  if (validCandidates.length === 0) return;
+  const bounds = svg.getBoundingClientRect();
+  axisRangeDrag = {
+    pointerId: event.pointerId,
+    mode,
+    axis: control.dataset.axis ?? null,
+    candidates: validCandidates,
+    startX: event.clientX,
+    startY: event.clientY,
+    scaleX: svg.viewBox.baseVal.width / Math.max(1, bounds.width),
+    scaleY: svg.viewBox.baseVal.height / Math.max(1, bounds.height),
+    ranges,
+    vectors,
+  };
+  appRoot.setPointerCapture(event.pointerId);
+  document.body.classList.add('is-axis-range-dragging');
+  event.preventDefault();
+}
+
+function handleAxisRangePointerMove(event: PointerEvent) {
+  const drag = axisRangeDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const clientDeltaX = event.clientX - drag.startX;
+  const clientDeltaY = event.clientY - drag.startY;
+  const deltaX = clientDeltaX * drag.scaleX;
+  const deltaY = clientDeltaY * drag.scaleY;
+  if (!drag.axis) {
+    const distance = Math.hypot(clientDeltaX, clientDeltaY);
+    if (distance < 4) return;
+    drag.axis = drag.candidates.reduce((best, axis) => {
+      const vector = drag.vectors[axis];
+      const bestVector = drag.vectors[best];
+      const alignment = Math.abs((deltaX * vector.x + deltaY * vector.y) / (Math.hypot(deltaX, deltaY) * Math.hypot(vector.x, vector.y)));
+      const bestAlignment = Math.abs((deltaX * bestVector.x + deltaY * bestVector.y) / (Math.hypot(deltaX, deltaY) * Math.hypot(bestVector.x, bestVector.y)));
+      return alignment > bestAlignment ? axis : best;
+    });
+  }
+  const axis = drag.axis;
+  const vector = drag.vectors[axis];
+  const range = drag.ranges[axis];
+  if (!vector || !range) return;
+  const delta = (deltaX * vector.x + deltaY * vector.y) / (vector.x ** 2 + vector.y ** 2);
+  let [minimum, maximum] = range;
+  if (drag.mode === 'window') {
+    const span = maximum - minimum;
+    minimum = Math.max(0, Math.min(1 - span, minimum + delta));
+    maximum = minimum + span;
+  } else if (drag.mode === 'minimum') {
+    minimum = Math.max(0, Math.min(maximum - .01, minimum + delta));
+  } else {
+    maximum = Math.min(1, Math.max(minimum + .01, maximum + delta));
+  }
+  applyAxisOutputRange(axis, minimum, maximum);
+  event.preventDefault();
+}
+
+function handleAxisRangePointerUp(event: PointerEvent) {
+  if (!axisRangeDrag || axisRangeDrag.pointerId !== event.pointerId) return;
+  axisRangeDrag = null;
+  document.body.classList.remove('is-axis-range-dragging');
+  if (appRoot.hasPointerCapture(event.pointerId)) appRoot.releasePointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
 function handleRoutingPointerDown(event: PointerEvent) {
   const port = (event.target as Element).closest<HTMLElement>('[data-route-source-port]');
   const sourceId = port?.dataset.routeSourcePort;
@@ -953,6 +1265,24 @@ function handleClick(event: MouseEvent) {
     store.setRoute(route);
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
+    return;
+  }
+  const folderTarget = target.closest<HTMLElement>('[data-select-script-folder]');
+  if (folderTarget) {
+    const details = folderTarget.tagName === 'SUMMARY' ? folderTarget.parentElement as HTMLDetailsElement : null;
+    const nextOpen = details ? !details.open : false;
+    if (details) event.preventDefault();
+    selectedScriptFolderPath = normalizeScriptTreePath(folderTarget.getAttribute('data-select-script-folder') ?? '');
+    scriptPreviewExtension = 'all';
+    scriptPreviewPage = 1;
+    updateScriptFolderBrowser(store.getState());
+    if (details) details.open = nextOpen;
+    return;
+  }
+  const previewPage = target.closest<HTMLButtonElement>('[data-script-preview-page]')?.dataset.scriptPreviewPage;
+  if (previewPage) {
+    scriptPreviewPage = Number(previewPage);
+    updateScriptFolderBrowser(store.getState());
     return;
   }
   const scriptMatch = target.closest<HTMLElement>('[data-runtime-script-match]');
@@ -1049,8 +1379,6 @@ function handleClick(event: MouseEvent) {
     if (form && button) void testOutputDraft(form, button);
     return;
   }
-  if (action === 'playback') store.togglePlayback();
-  if (action === 'engine') store.toggleEngine();
   if (action === 'refresh') showToast('Demo snapshot refreshed');
   if (action === 'focus-media-form') {
     document.querySelector<HTMLInputElement>('[data-resource-form="media"] input[name="name"]')?.focus();
@@ -1150,6 +1478,25 @@ function handleClick(event: MouseEvent) {
     }
   }
   if (action === 'import-script') importInput.click();
+  if (action === 'authorize-fnos-scripts') {
+    void authorizeFnosScriptFolder()
+      .then(async (outcome) => {
+        if (outcome.status === 'authorized') {
+          await store.refreshDiagnostics();
+          showToast('Folder authorized. Restart MultiFunPlayer to mount it.');
+        } else if (outcome.status === 'redirected') {
+          showToast('fnOS authorization opened in a new tab.');
+        } else if (outcome.status === 'error') {
+          showToast(outcome.message, 'error');
+        }
+      })
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'fnOS folder authorization failed.', 'error'));
+  }
+  if (action === 'remove-fnos-script-mapping') {
+    void openFnosAppSettings()
+      .then(() => showToast('Remove folder access in fnOS App Settings. Source files are not deleted.'))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Unable to open fnOS application settings.', 'error'));
+  }
   if (action === 'download-logs') {
     void store.downloadLogs()
       .then((blob) => {
@@ -1162,10 +1509,6 @@ function handleClick(event: MouseEvent) {
     void store.refreshDiagnostics()
       .then(() => showToast('Diagnostics refreshed'))
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Diagnostics refresh failed.', 'error'));
-  }
-  if (action === 'load-next') {
-    const next = store.getState().scripts.find((script) => script.id !== store.getState().nowPlaying.id);
-    if (next) store.loadScript(next);
   }
   const mediaId = target.closest<HTMLElement>('[data-media-toggle]')?.dataset.mediaToggle;
   if (mediaId) {
@@ -1229,18 +1572,6 @@ function handleClick(event: MouseEvent) {
       .then(() => showToast('Output target deleted'))
       .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target deletion failed.', 'error'));
   }
-  const deleteFolder = target.closest<HTMLElement>('[data-delete-script-folder]')?.dataset.deleteScriptFolder;
-  if (deleteFolder) {
-    void store.deleteFolder(deleteFolder)
-      .then(() => showToast(`Removed folder ${deleteFolder}`))
-      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder delete failed.', 'error'));
-    return;
-  }
-  const scriptId = target.closest<HTMLElement>('[data-load-script]')?.dataset.loadScript;
-  if (scriptId) {
-    const script = store.getState().scripts.find((item) => item.id === scriptId);
-    if (script) store.loadScript(script);
-  }
 }
 
 async function handleSubmit(event: SubmitEvent) {
@@ -1266,16 +1597,6 @@ async function handleSubmit(event: SubmitEvent) {
     } catch (error) {
       renderAuthScreen(error instanceof Error ? error.message : 'Authentication failed.');
     }
-    return;
-  }
-  if (form.dataset.folderAdd) {
-    event.preventDefault();
-    const input = form.querySelector<HTMLInputElement>('#script-folder-name');
-    const path = input?.value.trim() ?? '';
-    if (!path) return;
-    void store.createFolder(path)
-      .then(() => { if (input) input.value = ''; })
-      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder create failed.', 'error'));
     return;
   }
   const kind = form.dataset.resourceForm;
@@ -1457,9 +1778,11 @@ function handleInput(event: Event) {
       setDiscoveryResults(form, 'output', '');
     }
   }
-  if (target.id === 'script-filter') {
-    const query = target.value.trim().toLowerCase();
-    document.querySelectorAll<HTMLElement>('.script-item').forEach((item) => { item.hidden = query.length > 0 && !item.textContent?.toLowerCase().includes(query); });
+  if (target.id === 'script-extension-filter' && event.type === 'change') {
+    scriptPreviewExtension = target.value;
+    scriptPreviewPage = 1;
+    updateScriptFolderBrowser(store.getState());
+    return;
   }
   if (target.id === 'log-filter') {
     const level = target.value;
@@ -1467,20 +1790,13 @@ function handleInput(event: Event) {
     const table = document.querySelector<HTMLDivElement>('#log-table');
     if (table) table.innerHTML = renderLogTable(logs);
   }
-  if (target.id === 'script-position' && event.type === 'change') {
-    const position = Number(target.value) + store.getState().scriptOffset;
-    void store.seek(position)
-      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Seek failed.', 'error'));
-  }
-  if (target.id === 'script-offset' && event.type === 'change') {
-    const offset = Number(target.value);
-    if (Number.isFinite(offset)) store.setScriptOffset(offset);
-  }
-  if (target.id === 'script-sync-mode' && event.type === 'change')
-    store.setSyncMode(target.value as SyncMode);
 }
 
 appRoot.addEventListener('click', handleClick);
+appRoot.addEventListener('pointerdown', handleAxisRangePointerDown);
+appRoot.addEventListener('pointermove', handleAxisRangePointerMove);
+appRoot.addEventListener('pointerup', handleAxisRangePointerUp);
+appRoot.addEventListener('pointercancel', handleAxisRangePointerUp);
 appRoot.addEventListener('pointerdown', handleRoutingPointerDown);
 appRoot.addEventListener('pointermove', handleRoutingPointerMove);
 appRoot.addEventListener('pointerup', handleRoutingPointerUp);
@@ -1491,10 +1807,7 @@ appRoot.addEventListener('change', handleInput);
 importInput.addEventListener('change', () => { void importSelectedFile(); });
 unsubscribeStore = store.subscribe(render);
 window.setInterval(() => {
-  // Consume the 20 Hz server stream continuously, but paint bound status fields
-  // at 10 Hz. Forms and navigation stay mounted while these values change.
-  if (store.getState().route === 'runtime' || store.getState().route === 'scripts')
-    store.tick();
+  if (store.getState().route === 'runtime') store.tick();
 }, 100);
 window.setInterval(() => {
   if (store.getState().route === 'runtime')
@@ -1503,6 +1816,13 @@ window.setInterval(() => {
 window.addEventListener('resize', () => {
   if (store.getState().route === 'runtime') drawRuntimeWires();
 });
+window.addEventListener('storage', (event) => {
+  if (event.key !== fnosPendingAuthorizationKey || event.newValue !== '1') return;
+  void store.refreshDiagnostics()
+    .then(() => showToast('Folder authorized. Restart MultiFunPlayer to mount it.'))
+    .catch(() => undefined);
+});
+const fnosAuthorizationCallback = consumeFnosAuthorizationCallback();
 const initialRoute = window.location.hash.slice(1) as Route;
 
 // A static preview remains useful without a backend. When served by ASP.NET
@@ -1510,6 +1830,10 @@ const initialRoute = window.location.hash.slice(1) as Route;
 void (async () => {
   if (new URLSearchParams(window.location.search).get('demo') === '1') return;
   await connectRemoteStore();
+  if (fnosAuthorizationCallback?.status === 'authorized')
+    showToast('Folder authorized. Restart MultiFunPlayer to mount it.');
+  else if (fnosAuthorizationCallback?.status === 'error')
+    showToast(fnosAuthorizationCallback.message, 'error');
 })();
 
 if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);

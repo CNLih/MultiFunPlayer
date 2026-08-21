@@ -2,6 +2,7 @@ services:
   multifunplayer:
     image: ${MFP_IMAGE:-multifunplayer:local}
     container_name: multifunplayer
+    user: "${TRIM_UID:-10001}:${TRIM_GID:-10001}"
     ports:
       - "${TRIM_SERVICE_PORT:-8080}:8080"
     environment:
@@ -11,16 +12,22 @@ services:
       MFP_PAIRING_TOKEN: ${MFP_PAIRING_TOKEN:-}
       MFP_JELLYFIN_API_KEY: ${MFP_JELLYFIN_API_KEY:-}
       MFP_SCRIPTS_PATH: /scripts
-      MFP_SCRIPTS_PATHS: ${MFP_SCRIPTS_PATHS:-/scripts}
+      MFP_SCRIPTS_PATHS: ${MFP_SCRIPTS_PATHS:-/scripts;/scripts/external}
       MFP_CONFIG_PATH: /config
       MFP_KEYS_PATH: /keys
       MFP_LOGS_PATH: /logs
       MFP_TICK_HZ: ${MFP_TICK_HZ:-20}
+      MFP_PLATFORM: fnos
+      MFP_FNOS_SYSTEM_VERSION: ${TRIM_SYS_VERSION:-}
     volumes:
       - "${TRIM_PKGVAR:?}/config:/config"
       - "${TRIM_PKGVAR:?}/keys:/keys"
       - "${TRIM_PKGVAR:?}/scripts:/scripts"
       - "${TRIM_PKGVAR:?}/logs:/logs"
+      - type: bind
+        source: "${TRIM_PKGVAR:?}/authorized-scripts"
+        target: /scripts/external
+        read_only: true
     read_only: true
     tmpfs:
       - "/tmp:rw,noexec,nosuid,size=32m"

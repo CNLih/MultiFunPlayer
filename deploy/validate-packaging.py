@@ -110,6 +110,7 @@ class Validator:
             "uninstall_callback",
             "config_init",
             "config_callback",
+            "sync_script_access",
         ):
             relative = f"deploy/fnos/fnpack/cmd/{name}"
             path = self.root / relative
@@ -141,6 +142,8 @@ class Validator:
                        "manifest service_port is 8080")
             self.check("fnpack:manifest-ui", manifest_value("desktop_uidir") == "ui",
                        "manifest points to the Web entry directory")
+            self.check("fnpack:manifest-micro-app", manifest_value("micro_app") == "true",
+                       "manifest enables the fnOS Web SDK host")
 
         if fnpack_compose is not None:
             for token in (
@@ -172,8 +175,16 @@ class Validator:
             self.check("fnpack:compose:healthcheck-static-tool",
                        '["CMD", "/bin/busybox", "wget"' in fnpack_compose,
                        "fnOS Compose health check uses the runtime-native busybox path")
-            self.check("fnpack:compose:volume-count", fnpack_compose.count("TRIM_PKGVAR") == 4,
-                       "exactly four persistent roots are mounted")
+            self.check("fnpack:compose:package-user",
+                       'user: "${TRIM_UID:-10001}:${TRIM_GID:-10001}"' in fnpack_compose,
+                       "container identity follows the fnOS package user")
+            self.check("fnpack:compose:external-scripts",
+                       "authorized-scripts" in fnpack_compose and
+                       "target: /scripts/external" in fnpack_compose and
+                       "read_only: true" in fnpack_compose,
+                       "authorized Scripts folder is mounted read-only")
+            self.check("fnpack:compose:volume-count", fnpack_compose.count("TRIM_PKGVAR") == 5,
+                       "four persistent roots and the authorized Scripts entry are mounted")
 
         if fnpack_ui is not None:
             try:
@@ -182,8 +193,8 @@ class Validator:
                 self.check("fnpack:ui:json", False, f"invalid JSON: {exc}")
                 ui_config = None
             entry = ui_config.get(".url", {}).get("multifunplayer.Application", {}) if isinstance(ui_config, dict) else {}
-            self.check("fnpack:ui:entry", isinstance(entry, dict) and entry.get("type") == "url",
-                       "Web entry is declared as a URL")
+            self.check("fnpack:ui:entry", isinstance(entry, dict) and entry.get("type") == "iframe",
+                       "Web entry is hosted for fnOS SDK access")
             self.check("fnpack:ui:port", isinstance(entry, dict) and entry.get("port") == "8080",
                        "Web entry targets the container port")
             self.check("fnpack:ui:path", isinstance(entry, dict) and entry.get("url") == "/",
@@ -206,6 +217,9 @@ class Validator:
             share_names = {share.get("name") for share in shares if isinstance(share, dict)}
             self.check("fnpack:resource:shares", share_names == {"config", "keys", "scripts", "logs"},
                        "resource declares all four persistent data shares")
+            scopes = resource.get("api-scope", []) if isinstance(resource, dict) else []
+            self.check("fnpack:resource:shared-access", scopes == ["trim.file.sharedAccess"],
+                       "resource requests only shared folder authorization")
             projects = resource.get("docker-project", {}).get("projects", []) if isinstance(resource, dict) else []
             self.check("fnpack:resource:docker", any(
                 isinstance(project, dict) and project.get("name") == "multifunplayer" and project.get("path") == "docker"

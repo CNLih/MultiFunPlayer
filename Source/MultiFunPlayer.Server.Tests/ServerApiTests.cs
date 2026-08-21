@@ -129,8 +129,45 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
 
         Assert.Equal(1, settings.GetProperty("schemaVersion").GetInt32());
         Assert.True(settings.GetProperty("scriptsRoot").GetString()!.Length > 0);
+        Assert.False(settings.GetProperty("fnosScriptAccess").GetProperty("available").GetBoolean());
         Assert.False(settings.TryGetProperty("authToken", out _));
         Assert.Equal(JsonValueKind.Array, serial.ValueKind);
+    }
+
+    [Fact]
+    public async Task Fnos_script_access_reports_restart_and_applied_generations()
+    {
+        using var temp = new TemporaryDirectory();
+        var configRoot = Path.Combine(temp.Path, "config");
+        Directory.CreateDirectory(configRoot);
+        var statePath = Path.Combine(configRoot, ".fnos-script-access.state");
+        await File.WriteAllTextAsync(statePath,
+            "schemaVersion=1\ngeneration=managed\nauthorizedDirectoryCount=0\nselectedDirectoryAvailable=0\n");
+        var environment = new Dictionary<string, string?>
+        {
+            ["MFP_PLATFORM"] = "fnos",
+            ["MFP_FNOS_SYSTEM_VERSION"] = "1.2.0401"
+        };
+        var running = new FnosScriptAccess(configRoot, environment);
+        await running.StartAsync(CancellationToken.None);
+
+        await File.WriteAllTextAsync(statePath,
+            "schemaVersion=1\ngeneration=authorized\nauthorizedDirectoryCount=2\nselectedDirectoryAvailable=1\n");
+        var pending = running.Snapshot();
+        Assert.True(pending.Available);
+        Assert.True(pending.ExternalRootConfigured);
+        Assert.False(pending.ExternalRootActive);
+        Assert.True(pending.RestartRequired);
+        Assert.Equal(2, pending.AuthorizedDirectoryCount);
+        Assert.Equal(0, pending.MountedDirectoryCount);
+
+        var restarted = new FnosScriptAccess(configRoot, environment);
+        await restarted.StartAsync(CancellationToken.None);
+        var active = restarted.Snapshot();
+        Assert.True(active.ExternalRootActive);
+        Assert.False(active.RestartRequired);
+        Assert.Equal(1, active.MountedDirectoryCount);
+        Assert.Equal("1.2.0401", active.SystemVersion);
     }
 
     [Fact]
