@@ -165,8 +165,10 @@ export interface ApiMediaSource {
     canSetPlaybackSpeed: boolean;
     canLoop: boolean;
   } | null;
-  /** Saved secret value (API key / token), editable through the web UI. */
-  secretValue?: string | null;
+  /** Whether a secret (API key / token) is stored for this source. */
+  hasSecretValue: boolean;
+  /** Masked hint (e.g. ••••c59a) so the UI can show a key is set without leaking it. */
+  secretValueHint?: string | null;
 }
 
 export interface ApiRuntimeSourceRoute {

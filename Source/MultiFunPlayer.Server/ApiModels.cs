@@ -128,7 +128,8 @@ public sealed record MediaSourceResponse(
     MediaClockResponse? MediaState = null,
     string? DeviceId = null,
     MediaControlCapabilitiesResponse? Controls = null,
-    string? SecretValue = null);
+    bool HasSecretValue = false,
+    string? SecretValueHint = null);
 
 public sealed record MediaControlCapabilitiesResponse(
     bool CanPlayPause,

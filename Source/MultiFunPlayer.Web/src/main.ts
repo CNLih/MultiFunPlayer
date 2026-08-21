@@ -1072,7 +1072,13 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('kind') as HTMLSelectElement).value = source.kind.toLowerCase();
       (form.elements.namedItem('endpoint') as HTMLInputElement).value = source.endpoint === '(internal)' ? '' : source.endpoint;
       (form.elements.namedItem('deviceId') as HTMLInputElement).value = source.deviceId ?? '';
-      (form.elements.namedItem('secretValue') as HTMLInputElement).value = source.secretValue ?? '';
+      const secretInput = form.elements.namedItem('secretValue') as HTMLInputElement | null;
+      if (secretInput) {
+        secretInput.value = '';
+        secretInput.placeholder = source.hasSecretValue
+          ? `Leave empty to keep ${source.secretValueHint ?? 'current key'}`
+          : 'Paste the API key or token';
+      }
       (form.elements.namedItem('enabled') as HTMLInputElement).checked = source.enabled ?? true;
       (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
       synchronizeMediaForm(form, false);

@@ -255,6 +255,12 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             // name, so editing another field cannot clear credentials.
             if (definition.SecretRef is null && _sources[id].Definition.SecretRef is not null)
                 definition = definition with { SecretRef = _sources[id].Definition.SecretRef };
+            // A blank secret value means "keep the existing stored value", so a
+            // normal edit cannot clear the credential. The value itself is never
+            // returned by the API; only a masked hint is.
+            if (string.IsNullOrWhiteSpace(definition.SecretValue)
+                && _sources[id].Definition.SecretValue is not null)
+                definition = definition with { SecretValue = _sources[id].Definition.SecretValue };
             await DisconnectLockedAsync(_sources[id], cancellationToken).ConfigureAwait(false);
             var source = new RuntimeSource(definition);
             _sources[id] = source;
@@ -726,6 +732,9 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             || kind.Equals("mpc", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string MaskSecret(string value)
+        => value.Length <= 4 ? "\u2022\u2022\u2022\u2022" : "\u2022\u2022\u2022\u2022" + value[^4..];
+
     private static string? ResolveSecret(MediaSourceDefinition definition)
     {
         // A secret value saved through the web control room takes precedence;
@@ -754,11 +763,12 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
     private static MediaSourceResponse ToResponse(RuntimeSource source)
     {
         var capability = Kinds[source.Definition.Kind];
+        var hasSecret = !string.IsNullOrWhiteSpace(source.Definition.SecretValue);
         return new(source.Definition.Id, source.Definition.Name, source.Definition.Kind,
             source.Definition.Endpoint, source.Definition.Enabled, source.Definition.AutoConnect,
             capability.Integration, capability.Implementation, source.Connected, source.LastError,
             ToClockResponse(source), source.Definition.DeviceId, ControlsFor(source),
-            source.Definition.SecretValue);
+            hasSecret, hasSecret ? MaskSecret(source.Definition.SecretValue!) : null);
     }
 
     private static MediaClockResponse? ToClockResponse(RuntimeSource source)

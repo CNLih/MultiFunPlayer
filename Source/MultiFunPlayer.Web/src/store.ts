@@ -16,7 +16,8 @@ export interface MediaSource {
   enabled?: boolean;
   autoConnect?: boolean;
   deviceId?: string | null;
-  secretValue?: string | null;
+  hasSecretValue: boolean;
+  secretValueHint?: string | null;
   mediaState?: {
     playing: boolean;
     positionSeconds: number;
@@ -204,9 +205,9 @@ const initialState: AppState = {
   scriptOffset: 0,
   syncMode: 'engine',
   media: [
-    { id: 'media-1', name: 'Local media library', kind: 'Jellyfin', endpoint: 'http://media.local:8096', status: 'online', latency: 12, capabilities: ['ready', 'direct'], mediaState: { playing: true, positionSeconds: 262, durationSeconds: 512, playbackSpeed: 1, path: '/media/Amber Protocol Session 04.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
-    { id: 'media-2', name: 'OFS relay', kind: 'OFS', endpoint: 'ws://localhost:8020', status: 'online', latency: 48, capabilities: ['ready', 'direct'], mediaState: { playing: false, positionSeconds: 84, durationSeconds: 198, playbackSpeed: 1, path: '/projects/Orbit Calibrtion sweep.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: true, canLoop: true } },
-    { id: 'media-3', name: 'Demo stream', kind: 'Plex', endpoint: 'http://demo.local:32400', status: 'offline', latency: 0, capabilities: ['ready', 'direct'], controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
+    { id: 'media-1', name: 'Local media library', kind: 'Jellyfin', endpoint: 'http://media.local:8096', status: 'online', latency: 12, hasSecretValue: false, capabilities: ['ready', 'direct'], mediaState: { playing: true, positionSeconds: 262, durationSeconds: 512, playbackSpeed: 1, path: '/media/Amber Protocol Session 04.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
+    { id: 'media-2', name: 'OFS relay', kind: 'OFS', endpoint: 'ws://localhost:8020', status: 'online', latency: 48, hasSecretValue: false, capabilities: ['ready', 'direct'], mediaState: { playing: false, positionSeconds: 84, durationSeconds: 198, playbackSpeed: 1, path: '/projects/Orbit Calibrtion sweep.mp4' }, controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: true, canLoop: true } },
+    { id: 'media-3', name: 'Demo stream', kind: 'Plex', endpoint: 'http://demo.local:32400', status: 'offline', latency: 0, hasSecretValue: false, capabilities: ['ready', 'direct'], controls: { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: false, canLoop: true } },
   ],
   scripts: [
     { id: 'script-amber', name: 'Amber Protocol / Session 04', format: 'TCode 0.4', duration: '08:32', updated: 'Today, 09:42', size: '1.8 MB', axes: 6 },
@@ -395,6 +396,7 @@ export function createMockStore() {
         enabled: input.enabled,
         autoConnect: input.autoConnect,
         deviceId: input.deviceId ?? null,
+        hasSecretValue: Boolean(input.secretValue),
         controls: input.kind.toLowerCase() === 'internal'
           ? { canPlayPause: false, canSeek: false, canSetPlaybackSpeed: false, canLoop: false }
           : { canPlayPause: true, canSeek: true, canSetPlaybackSpeed: input.kind.toLowerCase() === 'ofs', canLoop: true },
@@ -684,7 +686,8 @@ export function createRemoteStore(client: MfpApiClient) {
     enabled: source.enabled,
     autoConnect: source.autoConnect,
     deviceId: source.deviceId,
-    secretValue: source.secretValue ?? null,
+    hasSecretValue: source.hasSecretValue,
+    secretValueHint: source.secretValueHint ?? null,
     mediaState: source.mediaState ? {
       playing: source.mediaState.playing,
       positionSeconds: source.mediaState.positionSeconds,
