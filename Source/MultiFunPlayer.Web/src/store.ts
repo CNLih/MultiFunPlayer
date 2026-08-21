@@ -16,6 +16,7 @@ export interface MediaSource {
   enabled?: boolean;
   autoConnect?: boolean;
   deviceId?: string | null;
+  secretValue?: string | null;
   mediaState?: {
     playing: boolean;
     positionSeconds: number;
@@ -88,6 +89,8 @@ export interface MediaSourceInput {
   autoConnect: boolean;
   deviceId?: string | null;
   secretRef?: string | null;
+  /** Secret value (API key / token) persisted with the media source. */
+  secretValue?: string | null;
 }
 
 export interface OutputTargetInput {
@@ -681,6 +684,7 @@ export function createRemoteStore(client: MfpApiClient) {
     enabled: source.enabled,
     autoConnect: source.autoConnect,
     deviceId: source.deviceId,
+    secretValue: source.secretValue ?? null,
     mediaState: source.mediaState ? {
       playing: source.mediaState.playing,
       positionSeconds: source.mediaState.positionSeconds,
@@ -911,7 +915,7 @@ export function createRemoteStore(client: MfpApiClient) {
       notify();
     },
     async createMediaSource(input: MediaSourceInput): Promise<MediaSource> {
-      await client.createMediaSource({ ...input, secretRef: input.secretRef || null });
+      await client.createMediaSource({ ...input, secretRef: input.secretRef || null, secretValue: input.secretValue || null });
       await refreshResourcesAfter();
       const source = state.media.find((item) => item.id === input.id);
       if (!source) throw new Error('The server did not return the created media source.');
@@ -920,7 +924,7 @@ export function createRemoteStore(client: MfpApiClient) {
       return source;
     },
     async updateMediaSource(id: string, input: MediaSourceInput): Promise<MediaSource> {
-      await client.updateMediaSource(id, { ...input, secretRef: input.secretRef || null });
+      await client.updateMediaSource(id, { ...input, secretRef: input.secretRef || null, secretValue: input.secretValue || null });
       await refreshResourcesAfter();
       const source = state.media.find((item) => item.id === input.id);
       if (!source) throw new Error('The server did not return the updated media source.');

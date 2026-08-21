@@ -431,7 +431,7 @@ function renderMediaSourceCard(source: AppState['media'][number]): string {
 }
 
 function renderMediaForm(): string {
-  return `<form class="resource-form panel" data-resource-form="media"><input type="hidden" name="id" /><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-name">Name <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-name" name="name" placeholder="Generated from kind" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="vlc">VLC</option><option value="mpc">MPC-HC/BE</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option></select></label><label for="media-endpoint" data-media-field="endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="Select a kind to fill its default" /></label><label for="media-device-id" data-media-field="device">Remote device id <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-device-id" name="deviceId" maxlength="256" placeholder="Session or playback client id" /></label><label for="media-secret-ref" data-media-field="secret">Secret environment variable <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-secret-ref" name="secretRef" maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="Uses the standard variable when empty" /></label></div><div class="form-assist"><button class="button button-secondary" type="button" data-action="discover-media">Scan local network</button><button class="button button-secondary" type="button" data-action="test-media-draft">Test connection</button><a class="form-help-link" data-media-key-help target="_blank" rel="noopener noreferrer" hidden>Get API key</a></div><div class="discovery-results" data-discovery-results="media" aria-live="polite" hidden></div><p class="form-hint">Credentials stay in server environment variables. An empty secret field uses the standard variable for the selected type; editing with it empty retains the saved reference.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
+  return `<form class="resource-form panel" data-resource-form="media"><input type="hidden" name="id" /><div class="panel-heading"><div><p class="eyebrow">New input</p><h2>Register media source</h2></div><span class="result-count">Persisted on server</span></div><div class="resource-form-grid"><label for="media-name">Name <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-name" name="name" placeholder="Generated from kind" /></label><label for="media-kind">Kind<select id="media-kind" name="kind"><option value="internal">Internal</option><option value="emby">Emby</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option><option value="vlc">VLC</option><option value="mpc">MPC-HC/BE</option><option value="ofs">OFS</option><option value="mpv">mpv proxy</option></select></label><label for="media-endpoint" data-media-field="endpoint">Endpoint<input id="media-endpoint" name="endpoint" placeholder="Select a kind to fill its default" /></label><label for="media-device-id" data-media-field="device">Remote device id <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-device-id" name="deviceId" maxlength="256" placeholder="Session or playback client id" /></label><label for="media-secret" data-media-field="secret">API key / secret <span class="optional-marker" aria-hidden="true">Optional</span><input id="media-secret" name="secretValue" type="password" autocomplete="off" placeholder="Paste the API key or token" /></label></div><div class="form-assist"><button class="button button-secondary" type="button" data-action="discover-media">Scan local network</button><button class="button button-secondary" type="button" data-action="test-media-draft">Test connection</button><a class="form-help-link" data-media-key-help target="_blank" rel="noopener noreferrer" hidden>Get API key</a></div><div class="discovery-results" data-discovery-results="media" aria-live="polite" hidden></div><p class="form-hint">The API key or token is stored on the server with this media source. Leave empty to fall back to the host environment variable.</p><div class="resource-form-options"><label><input type="checkbox" name="enabled" checked /> Enabled</label><label><input type="checkbox" name="autoConnect" checked /> Connect on startup</label><button class="button button-primary" type="submit">Create source</button><button class="button button-secondary" type="button" data-resource-cancel="media">Cancel</button></div></form>`;
 }
 
 function renderAxisRows(state: AppState): string {
@@ -724,9 +724,8 @@ function synchronizeMediaForm(form: HTMLFormElement, applyDefault: boolean) {
   if (deviceField) deviceField.hidden = !['emby', 'jellyfin', 'plex'].includes(kind);
   const secretField = form.querySelector<HTMLElement>('[data-media-field="secret"]');
   if (secretField) secretField.hidden = !(kind in mediaSecretDefaults);
-  const secret = form.elements.namedItem('secretRef') as HTMLInputElement | null;
-  if (secret) secret.placeholder = mediaSecretDefaults[kind]
-    ? `Defaults to ${mediaSecretDefaults[kind]}` : 'Uses the standard variable when empty';
+  const secret = form.elements.namedItem('secretValue') as HTMLInputElement | null;
+  if (secret) secret.placeholder = 'Paste the API key or token';
   const discover = form.querySelector<HTMLButtonElement>('[data-action="discover-media"]');
   if (discover) discover.hidden = !['emby', 'jellyfin'].includes(kind);
   const keyHelp = form.querySelector<HTMLAnchorElement>('[data-media-key-help]');
@@ -777,7 +776,7 @@ function readMediaSourceForm(form: HTMLFormElement): MediaSourceInput {
   return {
     id: value('id'), name: value('name'), kind: value('kind'), endpoint: value('endpoint'),
     enabled: values.get('enabled') === 'on', autoConnect: values.get('autoConnect') === 'on',
-    deviceId: value('deviceId') || null, secretRef: value('secretRef') || null,
+    deviceId: value('deviceId') || null, secretValue: value('secretValue') || null,
   };
 }
 
@@ -1073,7 +1072,7 @@ function handleClick(event: MouseEvent) {
       (form.elements.namedItem('kind') as HTMLSelectElement).value = source.kind.toLowerCase();
       (form.elements.namedItem('endpoint') as HTMLInputElement).value = source.endpoint === '(internal)' ? '' : source.endpoint;
       (form.elements.namedItem('deviceId') as HTMLInputElement).value = source.deviceId ?? '';
-      (form.elements.namedItem('secretRef') as HTMLInputElement).value = '';
+      (form.elements.namedItem('secretValue') as HTMLInputElement).value = source.secretValue ?? '';
       (form.elements.namedItem('enabled') as HTMLInputElement).checked = source.enabled ?? true;
       (form.elements.namedItem('autoConnect') as HTMLInputElement).checked = source.autoConnect ?? true;
       synchronizeMediaForm(form, false);

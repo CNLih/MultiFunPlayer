@@ -127,7 +127,8 @@ public sealed record MediaSourceResponse(
     string? LastError,
     MediaClockResponse? MediaState = null,
     string? DeviceId = null,
-    MediaControlCapabilitiesResponse? Controls = null);
+    MediaControlCapabilitiesResponse? Controls = null,
+    string? SecretValue = null);
 
 public sealed record MediaControlCapabilitiesResponse(
     bool CanPlayPause,
@@ -154,7 +155,8 @@ public sealed record MediaSourceRequest(
     bool Enabled = true,
     bool AutoConnect = true,
     string? DeviceId = null,
-    string? SecretRef = null);
+    string? SecretRef = null,
+    string? SecretValue = null);
 
 public sealed record SeekRequest(double PositionSeconds);
 

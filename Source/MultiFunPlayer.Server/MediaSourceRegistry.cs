@@ -27,7 +27,8 @@ public sealed record MediaSourceDefinition(
     bool Enabled = true,
     bool AutoConnect = true,
     string? DeviceId = null,
-    string? SecretRef = null);
+    string? SecretRef = null,
+    string? SecretValue = null);
 
 public sealed record MediaClockSample(
     bool Connected,
@@ -702,6 +703,8 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         if (definition.SecretRef is { Length: > 128 }
             || (definition.SecretRef is not null && !IsEnvironmentVariableName(definition.SecretRef)))
             return "secretRef must be a valid environment variable name.";
+        if (definition.SecretValue is { Length: > 4096 })
+            return "secret value must be at most 4096 characters.";
         return null;
     }
 
@@ -725,6 +728,10 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
 
     private static string? ResolveSecret(MediaSourceDefinition definition)
     {
+        // A secret value saved through the web control room takes precedence;
+        // otherwise fall back to the host environment variable reference.
+        if (!string.IsNullOrWhiteSpace(definition.SecretValue))
+            return definition.SecretValue;
         var environmentName = definition.SecretRef;
         if (string.IsNullOrWhiteSpace(environmentName))
         {
@@ -750,7 +757,8 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         return new(source.Definition.Id, source.Definition.Name, source.Definition.Kind,
             source.Definition.Endpoint, source.Definition.Enabled, source.Definition.AutoConnect,
             capability.Integration, capability.Implementation, source.Connected, source.LastError,
-            ToClockResponse(source), source.Definition.DeviceId, ControlsFor(source));
+            ToClockResponse(source), source.Definition.DeviceId, ControlsFor(source),
+            source.Definition.SecretValue);
     }
 
     private static MediaClockResponse? ToClockResponse(RuntimeSource source)

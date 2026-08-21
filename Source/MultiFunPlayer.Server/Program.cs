@@ -450,7 +450,7 @@ public static class ServerProgram
     private static MediaSourceDefinition ToDefinition(string? id, MediaSourceRequest request)
         => new(id ?? string.Empty, request.Name ?? string.Empty, request.Kind ?? string.Empty,
             request.Endpoint ?? string.Empty, request.Enabled, request.AutoConnect,
-            request.DeviceId, request.SecretRef);
+            request.DeviceId, request.SecretRef, request.SecretValue);
 
     private static OutputTargetDefinition ToTestDefinition(OutputTargetRequest request)
         => ToDefinition(string.IsNullOrWhiteSpace(request.Id) ? "connection-test" : request.Id,

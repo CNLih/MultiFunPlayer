@@ -165,6 +165,8 @@ export interface ApiMediaSource {
     canSetPlaybackSpeed: boolean;
     canLoop: boolean;
   } | null;
+  /** Saved secret value (API key / token), editable through the web UI. */
+  secretValue?: string | null;
 }
 
 export interface ApiRuntimeSourceRoute {
@@ -183,8 +185,10 @@ export interface ApiMediaSourceRequest {
   enabled: boolean;
   autoConnect: boolean;
   deviceId?: string | null;
-  /** Environment variable name only; the secret value never crosses the API. */
+  /** Optional environment variable name for backward compatibility. */
   secretRef?: string | null;
+  /** Secret value (API key / token) persisted with the media source. */
+  secretValue?: string | null;
 }
 
 export interface ApiOutputTarget {
