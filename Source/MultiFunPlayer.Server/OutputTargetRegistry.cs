@@ -431,7 +431,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                         "MFP_THE_HANDY_CONNECTION_KEY is required for The Handy output.");
                 adapter = new TheHandyOutputAdapter(target.Definition.Id,
                     ParseTheHandyUri(target.Definition.Endpoint), connectionKey,
-                    target.Definition.SourceAxis, _theHandyHandlerFactory?.Invoke());
+                    string.IsNullOrWhiteSpace(target.Definition.SourceAxis) ? "L0" : target.Definition.SourceAxis,
+                    _theHandyHandlerFactory?.Invoke());
                 var result = await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 if (!result.Connected)
                     throw new InvalidOperationException(result.Error ?? "The Handy connection failed.");
@@ -455,7 +456,8 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 adapter = new ButtplugOutputAdapter(target.Definition.Id,
                     ParseButtplugUri(target.Definition.Endpoint), new ButtplugOutputOptions
                     {
-                        SourceAxis = target.Definition.SourceAxis,
+                        SourceAxis = string.IsNullOrWhiteSpace(target.Definition.SourceAxis)
+                            ? "L0" : target.Definition.SourceAxis,
                         DeviceName = target.Definition.DeviceName,
                         DeviceIndex = target.Definition.DeviceIndex,
                         ActuatorType = target.Definition.ActuatorType,
@@ -729,7 +731,12 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
 
     private static string? ValidateSourceAxis(string sourceAxis)
     {
-        if (string.IsNullOrWhiteSpace(sourceAxis) || sourceAxis.Length > 64
+        // Empty means "all axes": for TCode-family transports the full frame is
+        // sent anyway, so an empty source axis is valid. Single-channel devices
+        // (The Handy / Buttplug) resolve an empty value to L0 at connect time.
+        if (string.IsNullOrWhiteSpace(sourceAxis))
+            return null;
+        if (sourceAxis.Length > 64
             || sourceAxis.Any(character => !char.IsLetterOrDigit(character) && character is not ('_' or '-')))
             return "invalid source axis";
         return null;
