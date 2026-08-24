@@ -138,8 +138,8 @@ class Validator:
                        "manifest has no unexpanded template placeholders")
             self.check("fnpack:manifest-appname", manifest_value("appname") == "multifunplayer",
                        "manifest appname matches the package directory")
-            self.check("fnpack:manifest-port", manifest_value("service_port") == "8080",
-                       "manifest service_port is 8080")
+            self.check("fnpack:manifest-port", manifest_value("service_port") == "8081",
+                       "manifest service_port is 8081")
             self.check("fnpack:manifest-ui", manifest_value("desktop_uidir") == "ui",
                        "manifest points to the Web entry directory")
             self.check("fnpack:manifest-micro-app", manifest_value("micro_app") == "true",
@@ -195,7 +195,7 @@ class Validator:
             entry = ui_config.get(".url", {}).get("multifunplayer.Application", {}) if isinstance(ui_config, dict) else {}
             self.check("fnpack:ui:entry", isinstance(entry, dict) and entry.get("type") == "iframe",
                        "Web entry is hosted for fnOS SDK access")
-            self.check("fnpack:ui:port", isinstance(entry, dict) and entry.get("port") == "8080",
+            self.check("fnpack:ui:port", isinstance(entry, dict) and entry.get("port") == "8081",
                        "Web entry targets the container port")
             self.check("fnpack:ui:path", isinstance(entry, dict) and entry.get("url") == "/",
                        "Web entry opens the SPA root")

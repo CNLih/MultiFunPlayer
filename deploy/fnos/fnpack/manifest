@@ -8,6 +8,6 @@ maintainer            = MultiFunPlayer contributors
 distributor           = MultiFunPlayer contributors
 desktop_uidir         = ui
 desktop_applaunchname = multifunplayer.Application
-service_port          = 8080
+service_port          = 8081
 checkport             = true
 micro_app             = true

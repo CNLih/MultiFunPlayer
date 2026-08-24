@@ -1,12 +1,16 @@
 #!/bin/sh
-set -eu
+set -u
 
+# Prepare the persisted data shares for the non-root container user (mfp,
+# uid/gid 10001 by default). Every step is defensive: missing TRIM_PKGVAR or a
+# chown permission failure must NOT abort the fnOS install.
 mfp_uid=${TRIM_UID:-10001}
 mfp_gid=${TRIM_GID:-10001}
-for d in config keys scripts logs; do
-    mkdir -p "${TRIM_PKGVAR:?}/$d"
-    if [ -n "${TRIM_PKGVAR:-}" ] && [ -d "${TRIM_PKGVAR}/$d" ]; then
-        chown -R "$mfp_uid:$mfp_gid" "${TRIM_PKGVAR}/$d"
-    fi
-done
+root=${TRIM_PKGVAR:-}
+if [ -n "$root" ]; then
+    for d in config keys scripts logs; do
+        mkdir -p "$root/$d" 2>/dev/null || true
+        chown -R "$mfp_uid:$mfp_gid" "$root/$d" 2>/dev/null || true
+    done
+fi
 exit 0

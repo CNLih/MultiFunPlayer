@@ -355,7 +355,7 @@ public static class ServerProgram
                     error ?? "The folder could not be created.", "folder_create_failed");
             return Results.Created($"/api/v1/script-folders/{Uri.EscapeDataString(folder!)}", new { folder });
         });
-        app.MapDelete("/api/v1/script-folders/{path:required}", (string path, ScriptCatalog catalog) =>
+        app.MapDelete("/api/v1/script-folders", (string? path, ScriptCatalog catalog) =>
         {
             if (!catalog.TryDeleteFolder(path, out var error))
                 return Problem(StatusCodes.Status400BadRequest, "Folder delete failed",

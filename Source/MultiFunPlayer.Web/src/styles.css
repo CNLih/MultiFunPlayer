@@ -334,7 +334,11 @@ h2 { margin-bottom: 7px; font-size: 17px; line-height: 1.25; }
 .script-tree-root:hover, .script-tree-root.selected, .script-tree-folder summary.selected { border-color: #2d6d67; background: var(--teal-soft); }
 .script-tree-root-children { display: grid; gap: 3px; margin: 5px 0 0 9px; padding-left: 11px; border-left: 1px solid var(--line-soft); }
 .script-tree-folder { min-width: 0; }
-.script-tree-folder summary { display: grid; grid-template-columns: 10px 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 36px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; color: var(--text); cursor: pointer; list-style: none; }
+.script-tree-folder summary { display: grid; grid-template-columns: 10px 18px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 36px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; color: var(--text); cursor: pointer; list-style: none; }
+.script-tree-folder summary .script-tree-delete { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; background: none; color: var(--subtle); font-size: 12px; line-height: 1; border-radius: 4px; cursor: pointer; }
+.script-tree-folder summary .script-tree-delete:hover { color: #c0392b; background: rgba(192, 57, 43, 0.12); }
+.folder-add { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+.folder-add input { flex: 1 1 auto; min-width: 0; }
 .script-tree-folder summary::-webkit-details-marker { display: none; }
 .script-tree-folder summary:hover { border-color: var(--line); background: var(--surface-soft); }
 .script-tree-caret { width: 6px; height: 6px; border-top: 1px solid var(--muted); border-right: 1px solid var(--muted); transform: rotate(45deg); }

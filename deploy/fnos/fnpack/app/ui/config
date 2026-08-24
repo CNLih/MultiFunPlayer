@@ -5,7 +5,7 @@
             "desc": "MultiFunPlayer Web control room",
             "icon": "images/icon_{0}.png",
             "type": "iframe",
-            "port": "8080",
+            "port": "8081",
             "protocol": "http",
             "url": "/",
             "allUsers": false

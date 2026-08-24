@@ -618,7 +618,7 @@ function renderScriptTreeFolder(folder: ScriptTreeFolder, selectedFolder: string
   const children = folders || '<span class="script-tree-empty">No subfolders</span>';
   const fileCount = scriptTreeFileCount(folder);
   const selected = selectedFolder === folder.path;
-  return `<details class="script-tree-folder" data-script-tree-folder="${escapeHtml(folder.path)}"${containsSelected ? ' open' : ''}><summary class="${selected ? 'selected' : ''}" data-select-script-folder="${escapeHtml(folder.path)}"><span class="script-tree-caret" aria-hidden="true"></span><span class="script-tree-folder-icon" aria-hidden="true"></span><strong>${escapeHtml(folder.name)}</strong><small>${fileCount} ${fileCount === 1 ? 'file' : 'files'}</small></summary><div class="script-tree-children">${children}</div></details>`;
+  return `<details class="script-tree-folder" data-script-tree-folder="${escapeHtml(folder.path)}"${containsSelected ? ' open' : ''}><summary class="${selected ? 'selected' : ''}" data-select-script-folder="${escapeHtml(folder.path)}"><span class="script-tree-caret" aria-hidden="true"></span><span class="script-tree-folder-icon" aria-hidden="true"></span><strong>${escapeHtml(folder.name)}</strong><button class="script-tree-delete" type="button" data-delete-script-folder="${escapeHtml(folder.path)}" title="Delete folder" aria-label="Delete ${escapeHtml(folder.name)}">&#10005;</button><small>${fileCount} ${fileCount === 1 ? 'file' : 'files'}</small></summary><div class="script-tree-children">${children}</div></details>`;
 }
 
 function renderScriptTree(root: ScriptTreeFolder, selectedFolder: string): string {
@@ -711,7 +711,7 @@ function renderScripts(state: AppState): string {
   const scriptTree = renderScriptTree(root, selectedFolder);
   const pageActions = fnosMode ? '' : '<button class="button button-primary" data-action="import-script">Import script</button>';
   return `${pageHeading('Library', 'Scripts', 'Browse the script library used by routed source sessions.', pageActions)}
-    <div class="script-layout"><section class="panel script-folders"><div class="panel-heading"><div><p class="eyebrow">Folders</p><h2>Script directories</h2></div><span class="result-count">${folderSummary}</span></div>${fnosFolderAccess}${scriptTree}</section><section class="panel script-folder-preview" data-script-folder-preview>${renderScriptFolderPreview(root)}</section></div>`;
+    <div class="script-layout"><section class="panel script-folders"><div class="panel-heading"><div><p class="eyebrow">Folders</p><h2>Script directories</h2></div><span class="result-count">${folderSummary}</span></div>${fnosFolderAccess}<form class="folder-add" data-folder-add><label class="sr-only" for="script-folder-name">New folder</label><input id="script-folder-name" type="text" placeholder="New folder, e.g. projects/2025" autocomplete="off" /><button class="button button-secondary" type="submit">Add folder</button></form>${scriptTree}</section><section class="panel script-folder-preview" data-script-folder-preview>${renderScriptFolderPreview(root)}</section></div>`;
 }
 
 function updateStatusBindings(state: AppState) {
@@ -1269,6 +1269,15 @@ function handleClick(event: MouseEvent) {
     document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
     return;
   }
+  const deleteFolderPath = target.closest<HTMLElement>('[data-delete-script-folder]')?.dataset.deleteScriptFolder;
+  if (deleteFolderPath) {
+    event.preventDefault();
+    event.stopPropagation();
+    void store.deleteFolder(deleteFolderPath)
+      .then(() => showToast(`Removed folder ${deleteFolderPath}`))
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder delete failed.', 'error'));
+    return;
+  }
   const folderTarget = target.closest<HTMLElement>('[data-select-script-folder]');
   if (folderTarget) {
     const details = folderTarget.tagName === 'SUMMARY' ? folderTarget.parentElement as HTMLDetailsElement : null;
@@ -1599,6 +1608,16 @@ async function handleSubmit(event: SubmitEvent) {
     } catch (error) {
       renderAuthScreen(error instanceof Error ? error.message : 'Authentication failed.');
     }
+    return;
+  }
+  if (form.dataset.folderAdd) {
+    event.preventDefault();
+    const input = form.querySelector<HTMLInputElement>('#script-folder-name');
+    const path = input?.value.trim() ?? '';
+    if (!path) return;
+    void store.createFolder(path)
+      .then(() => { if (input) input.value = ''; })
+      .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Folder create failed.', 'error'));
     return;
   }
   const kind = form.dataset.resourceForm;

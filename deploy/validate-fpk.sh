@@ -35,7 +35,7 @@ manifest=$(tar -xOf "$package" manifest)
 for required in \
     '^appname[[:space:]]*=[[:space:]]*multifunplayer$' \
     '^version[[:space:]]*=[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+$' \
-    '^service_port[[:space:]]*=[[:space:]]*8080$' \
+    '^service_port[[:space:]]*=[[:space:]]*8081$' \
     '^desktop_uidir[[:space:]]*=[[:space:]]*ui$' \
     '^micro_app[[:space:]]*=[[:space:]]*true$'; do
     printf '%s\n' "$manifest" | grep -Eq "$required" || {

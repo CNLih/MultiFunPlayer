@@ -387,7 +387,7 @@ export class MfpApiClient {
   }
 
   async deleteScriptFolder(path: string): Promise<void> {
-    await this.request<unknown>(`/script-folders/${encodeURIComponent(path)}`, {
+    await this.request<unknown>(`/script-folders?path=${encodeURIComponent(path)}`, {
       method: 'DELETE',
     });
   }

@@ -28,6 +28,7 @@ services:
         source: "${TRIM_PKGVAR:?}/authorized-scripts"
         target: /scripts/external
         read_only: true
+      - "/usr/trim:/usr/trim:ro"
     read_only: true
     tmpfs:
       - "/tmp:rw,noexec,nosuid,size=32m"

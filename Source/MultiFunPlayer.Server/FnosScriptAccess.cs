@@ -6,6 +6,7 @@ public sealed class FnosScriptAccess : IHostedService
 {
     public const string ExternalScriptsRoot = "/scripts/external";
     private const string StateFileName = ".fnos-script-access.state";
+    private const string FnosVersionFile = "/usr/trim/BUILD_VERSION";
     private readonly string _statePath;
     private readonly bool _available;
     private readonly string? _systemVersion;
@@ -20,10 +21,32 @@ public sealed class FnosScriptAccess : IHostedService
     {
         _statePath = Path.Combine(configRoot, StateFileName);
         _systemVersion = ReadValue(environment, "MFP_FNOS_SYSTEM_VERSION")
-            ?? ReadValue(environment, "TRIM_SYS_VERSION");
+            ?? ReadValue(environment, "TRIM_SYS_VERSION")
+            ?? ReadMountedVersion();
         _available = string.Equals(ReadValue(environment, "MFP_PLATFORM"), "fnos",
                 StringComparison.OrdinalIgnoreCase)
-            || _systemVersion is not null;
+            || _systemVersion is not null
+            || Directory.Exists("/usr/trim");
+    }
+
+    /// <summary>Read the fnOS version from a read-only mount of the host
+    /// /usr/trim directory (present when the app runs on a real fnOS device).</summary>
+    private static string? ReadMountedVersion()
+    {
+        try
+        {
+            return File.Exists(FnosVersionFile)
+                ? File.ReadAllText(FnosVersionFile).Trim()
+                : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)

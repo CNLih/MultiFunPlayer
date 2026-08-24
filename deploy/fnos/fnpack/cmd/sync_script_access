@@ -1,7 +1,13 @@
 #!/bin/sh
-set -eu
+set -u
 
-root=${TRIM_PKGVAR:?}
+# Wire the authorized fnOS folder into the container as /scripts/external and
+# record the access state. Defensive: without a TRIM_PKGVAR path we skip
+# gracefully instead of failing the fnOS install.
+root=${TRIM_PKGVAR:-}
+if [ -z "$root" ]; then
+    exit 0
+fi
 empty_root="$root/authorized-scripts-empty"
 link_path="$root/authorized-scripts"
 state_path="$root/config/.fnos-script-access.state"
@@ -20,7 +26,7 @@ while [ -n "$remaining" ]; do
     [ -n "$selected" ] || selected=$candidate
 done
 
-mkdir -p "$empty_root" "$root/config"
+mkdir -p "$empty_root" "$root/config" 2>/dev/null || true
 target=$empty_root
 available=0
 if [ -n "$selected" ] && [ -d "$selected" ]; then
@@ -29,18 +35,21 @@ if [ -n "$selected" ] && [ -d "$selected" ]; then
 fi
 
 if [ -e "$link_path" ] && [ ! -L "$link_path" ]; then
-    printf '%s\n' "Cannot configure Scripts access because $link_path is not a symbolic link." \
-        > "${TRIM_TEMP_LOGFILE:-/dev/stderr}"
-    exit 1
+    # A stale real directory blocks the symlink; move it aside so install can
+    # proceed and the authorized folder can be mounted.
+    backup="$link_path.stale.$$"
+    mv "$link_path" "$backup" 2>/dev/null || true
 fi
+ln -sfn "$target" "$link_path" 2>/dev/null || true
 
-ln -sfn "$target" "$link_path"
-generation=$(printf '%s\n%s' "$selected" "$available" | cksum | awk '{print $1}')
+generation=$(printf '%s\n%s' "$selected" "$available" 2>/dev/null | cksum 2>/dev/null | awk '{print $1}' 2>/dev/null)
+[ -n "$generation" ] || generation=0
 temporary_state="$state_path.$$"
 {
     printf 'schemaVersion=1\n'
     printf 'generation=%s\n' "$generation"
     printf 'authorizedDirectoryCount=%s\n' "$count"
     printf 'selectedDirectoryAvailable=%s\n' "$available"
-} > "$temporary_state"
-mv "$temporary_state" "$state_path"
+} > "$temporary_state" 2>/dev/null || true
+mv "$temporary_state" "$state_path" 2>/dev/null || true
+exit 0
