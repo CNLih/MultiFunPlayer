@@ -1,6 +1,7 @@
 import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppState, type DeviceAxisSetting, type MediaSourceInput, type OutputTargetInput, type Route, type RuntimeSourceRoute, type ScriptMatchMode, type ScriptResource, type Status, type StoreChange } from './store';
 import { ApiError, MfpApiClient, type ApiMediaServerDiscovery } from './api';
 import { authorizeFnosScriptFolder, clearPendingFnosScriptAuthorization, consumeFnosAuthorizationCallback, fnosPendingAuthorizationKey, hasPendingFnosScriptAuthorization, openFnosAppSettings } from './fnos';
+import { destroyOsrAxisPreview, modeledAxisNames, mountOsrAxisPreview, updateOsrAxisPreview, type ModeledAxisName } from './osr-axis-preview';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -13,20 +14,19 @@ let store = demoStore;
 let unsubscribeStore: () => void = () => {};
 let renderedRoute: Route | null = null;
 let routingDrag: { sourceId: string; pointerId: number } | null = null;
-type AxisRangeDragMode = 'window' | 'minimum' | 'maximum';
-type AxisRangeDrag = {
-  pointerId: number;
-  mode: AxisRangeDragMode;
-  axis: string | null;
-  candidates: string[];
-  startX: number;
-  startY: number;
-  scaleX: number;
-  scaleY: number;
-  ranges: Record<string, [number, number]>;
-  vectors: Record<string, { x: number; y: number }>;
-};
-let axisRangeDrag: AxisRangeDrag | null = null;
+let selectedAxisPreview: ModeledAxisName = 'L0';
+const axisPreviewPositions: Record<ModeledAxisName, number> = Object.fromEntries(
+  modeledAxisNames.map((axis) => [axis, 0.5]),
+) as Record<ModeledAxisName, number>;
+let axisPreviewSweepTimer: number | undefined;
+let axisPreviewSweepStartedAt = 0;
+let axisPreviewSimulationTimer: number | undefined;
+let axisPreviewSimulationAxisIndex = 0;
+let axisPreviewSimulationPhase = 0;
+let axisPreviewSimulationLastFrameAt = 0;
+let axisPreviewSimulationAxes: ModeledAxisName[] = [];
+let axisPreviewSimulationRestore: { axis: ModeledAxisName; positions: Record<ModeledAxisName, number> } | null = null;
+const axisPreviewSimulationAxisDuration = 1800;
 let selectedScriptFolderPath: string | null = null;
 let scriptPreviewExtension = 'all';
 let scriptPreviewPage = 1;
@@ -93,14 +93,6 @@ const axisFriendlyNames: Record<string, string> = {
 };
 const axisTravelUnit = (axis: string): string => axis.startsWith('L') ? 'mm' : axis.startsWith('R') ? '°' : '%';
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
-const axisDragVectors: Record<string, { x: number; y: number }> = {
-  L0: { x: 0, y: -200 },
-  L1: { x: 75, y: -48 },
-  L2: { x: 300, y: 0 },
-  R0: { x: 220, y: 0 },
-  R1: { x: 210, y: 0 },
-  R2: { x: 70, y: 125 },
-};
 
 function effectiveAxisBounds(axis: DeviceAxisSetting): [number, number] {
   const sourceMinimum = axis.limitEnabled ? axis.limitMinimum : 0;
@@ -118,140 +110,34 @@ function axisOrDefault(axes: DeviceAxisSetting[], name: string): DeviceAxisSetti
   };
 }
 
+function applyAxisPreview(axis: DeviceAxisSetting, input: number): number {
+  let value = Number.isFinite(input) ? Math.max(0, Math.min(1, input)) : 0.5;
+  if (axis.inverted) value = 1 - value;
+  if (axis.limitEnabled) value = Math.max(axis.limitMinimum, Math.min(axis.limitMaximum, value));
+  return axis.minimum + (axis.maximum - axis.minimum) * value;
+}
+
+function axisTravelSummary(axis: DeviceAxisSetting): string {
+  const [minimum, maximum] = effectiveAxisBounds(axis);
+  const outputSpan = axis.maximum - axis.minimum;
+  const effectiveSpan = maximum - minimum;
+  const unit = axisTravelUnit(axis.axis);
+  if (axis.maximumTravel == null || !Number.isFinite(axis.maximumTravel) || axis.maximumTravel <= 0)
+    return `${percent(outputSpan)} output${axis.limitEnabled ? `, ${percent(effectiveSpan)} after safety limit` : ''}; full travel not calibrated`;
+  return `${axis.maximumTravel.toFixed(1)} ${unit} full, ${(axis.maximumTravel * outputSpan).toFixed(1)} ${unit} output${axis.limitEnabled ? `, ${(axis.maximumTravel * effectiveSpan).toFixed(1)} ${unit} after limit` : ''}`;
+}
+
+function renderPreviewRange(axis: DeviceAxisSetting, group: 'output' | 'limit'): string {
+  const minimum = group === 'output' ? axis.minimum : axis.limitMinimum;
+  const maximum = group === 'output' ? axis.maximum : axis.limitMaximum;
+  const minimumField = group === 'output' ? 'minimum' : 'limitMinimum';
+  const maximumField = group === 'output' ? 'maximum' : 'limitMaximum';
+  return `<div class="dual-range-control axis-preview-range${group === 'limit' && !axis.limitEnabled ? ' is-disabled' : ''}" data-axis-preview-range="${group}" style="--range-start:${minimum * 100}%;--range-end:${maximum * 100}%"><div class="dual-range-track"><span></span></div><input class="dual-range-input range-lower" data-axis-preview-field="${minimumField}" aria-label="Preview ${escapeHtml(axis.axis)} ${group === 'output' ? 'output minimum' : 'limit minimum'}" type="range" min="0" max="1" step="0.01" value="${minimum}" /><input class="dual-range-input range-upper" data-axis-preview-field="${maximumField}" aria-label="Preview ${escapeHtml(axis.axis)} ${group === 'output' ? 'output maximum' : 'limit maximum'}" type="range" min="0" max="1" step="0.01" value="${maximum}" /><div class="dual-range-values"><output data-axis-preview-range-value="minimum">${percent(minimum)}</output><output data-axis-preview-range-value="maximum">${percent(maximum)}</output></div></div>`;
+}
+
 function renderDeviceAxisVisualization(axes: DeviceAxisSetting[]): string {
-  const bounds = Object.fromEntries(['L0', 'L1', 'L2'].map((name) => {
-    const axis = axisOrDefault(axes, name);
-    return [name, [axis.minimum, axis.maximum]];
-  })) as Record<string, [number, number]>;
-  const project = (x: number, y: number, z: number) => ({ x: 145 + x * 300 + z * 75, y: 290 - y * 200 - z * 48 });
-  const cubePoints = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => [
-    project(x0, y0, z0), project(x1, y0, z0), project(x1, y1, z0), project(x0, y1, z0),
-    project(x0, y0, z1), project(x1, y0, z1), project(x1, y1, z1), project(x0, y1, z1),
-  ];
-  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
-  const lines = (points: { x: number; y: number }[], className: string) => edges.map(([from, to]) => `<line class="${className}" x1="${points[from].x}" y1="${points[from].y}" x2="${points[to].x}" y2="${points[to].y}" />`).join('');
-  const outer = cubePoints(0, 1, 0, 1, 0, 1);
-  const active = cubePoints(bounds.L2[0], bounds.L2[1], bounds.L0[0], bounds.L0[1], bounds.L1[0], bounds.L1[1]);
-  const silhouette = [active[0], active[1], active[5], active[6], active[7], active[3]]
-    .map((point) => `${point.x},${point.y}`).join(' ');
-  const directionMarker = (axis: string) => axisOrDefault(axes, axis).inverted
-    ? 'marker-start="url(#axis-linear-direction-arrow)"' : 'marker-end="url(#axis-linear-direction-arrow)"';
-  const handle = (axis: 'L0' | 'L1' | 'L2', mode: 'minimum' | 'maximum') => {
-    const value = bounds[axis][mode === 'minimum' ? 0 : 1];
-    const midpoint = (first: { x: number; y: number }, second: { x: number; y: number }) => ({
-      x: (first.x + second.x) / 2,
-      y: (first.y + second.y) / 2,
-    });
-    const origin = axis === 'L2'
-      ? midpoint(...(mode === 'minimum' ? [active[0], active[3]] : [active[1], active[2]]) as [{ x: number; y: number }, { x: number; y: number }])
-      : axis === 'L0'
-        ? midpoint(...(mode === 'minimum' ? [active[0], active[1]] : [active[3], active[2]]) as [{ x: number; y: number }, { x: number; y: number }])
-        : mode === 'minimum' ? active[0] : active[6];
-    const vector = axisDragVectors[axis];
-    const direction = mode === 'minimum' ? -1 : 1;
-    const length = Math.hypot(vector.x, vector.y);
-    const endpoint = {
-      x: origin.x + direction * vector.x / length * 28,
-      y: origin.y + direction * vector.y / length * 28,
-    };
-    return `<g class="axis-linear-bound-handle" data-axis-drag="${mode}" data-axis="${axis}" role="slider" tabindex="0" aria-label="${axis} output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-linear-bound-arrow" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" marker-end="url(#axis-linear-handle-arrow)" /><line class="axis-linear-bound-hit" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" /></g>`;
-  };
-  const renderTravelCard = (axis: DeviceAxisSetting) => {
-    const [minimum, maximum] = effectiveAxisBounds(axis);
-    const outputSpan = axis.maximum - axis.minimum;
-    const effectiveSpan = maximum - minimum;
-    const unit = axisTravelUnit(axis.axis);
-    const travel = axis.maximumTravel == null || !Number.isFinite(axis.maximumTravel) || axis.maximumTravel <= 0
-      ? `${percent(outputSpan)} output${axis.limitEnabled ? ` · ${percent(effectiveSpan)} after safety limit` : ''} · full travel not calibrated`
-      : `${axis.maximumTravel.toFixed(1)} ${unit} full · ${(axis.maximumTravel * outputSpan).toFixed(1)} ${unit} output${axis.limitEnabled ? ` · ${(axis.maximumTravel * effectiveSpan).toFixed(1)} ${unit} after limit` : ''}`;
-    const start = axis.inverted ? axis.maximum : axis.minimum;
-    const end = axis.inverted ? axis.minimum : axis.maximum;
-    return `<article class="axis-travel-card" data-axis-travel-summary="${escapeHtml(axis.axis)}"><div><strong>${escapeHtml(axis.axis)}</strong><span>${escapeHtml(axisFriendlyNames[axis.axis] ?? 'Standard axis')}</span></div><b>${percent(start)} → ${percent(end)}${axis.inverted ? ' · reversed' : ''}</b><small>${escapeHtml(travel)}</small></article>`;
-  };
-  const spatialCards = axes.filter((axis) => !axis.axis.startsWith('R')).map(renderTravelCard).join('');
-  const rotationCards = axes.filter((axis) => axis.axis.startsWith('R')).map(renderTravelCard).join('');
-
-  const roll = axisOrDefault(axes, 'R1');
-  const pitch = axisOrDefault(axes, 'R2');
-  const twist = axisOrDefault(axes, 'R0');
-  const sphere = { x: 295, y: 205, radius: 126 };
-  const halfTravelRadians = (axis: DeviceAxisSetting) => Math.min(75, (axis.maximumTravel ?? 120) / 2) * Math.PI / 180;
-  const orientationPoint = (rollValue: number, pitchValue: number) => {
-    const rollAngle = (rollValue * 2 - 1) * halfTravelRadians(roll);
-    const pitchAngle = (pitchValue * 2 - 1) * halfTravelRadians(pitch);
-    const tangentRoll = Math.tan(rollAngle);
-    const tangentPitch = Math.tan(pitchAngle);
-    const normalization = Math.hypot(tangentRoll, tangentPitch, 1);
-    const horizontal = tangentRoll / normalization;
-    const depth = tangentPitch / normalization;
-    const vertical = 1 / normalization;
-    return {
-      x: sphere.x + sphere.radius * (horizontal + depth * .34),
-      y: sphere.y - sphere.radius * vertical + sphere.radius * depth * .27,
-    };
-  };
-  const orientationDerivative = (axis: 'R1' | 'R2', value: number, otherValue: number) => {
-    const before = Math.max(0, value - .01);
-    const after = Math.min(1, value + .01);
-    const first = axis === 'R1' ? orientationPoint(before, otherValue) : orientationPoint(otherValue, before);
-    const second = axis === 'R1' ? orientationPoint(after, otherValue) : orientationPoint(otherValue, after);
-    const divisor = Math.max(.001, after - before);
-    return { x: (second.x - first.x) / divisor, y: (second.y - first.y) / divisor };
-  };
-  const boundaryPoints = (rollMinimum: number, rollMaximum: number, pitchMinimum: number, pitchMaximum: number) => {
-    const samples = 12;
-    const points: { x: number; y: number }[] = [];
-    for (let index = 0; index <= samples; index += 1) points.push(orientationPoint(rollMinimum + (rollMaximum - rollMinimum) * index / samples, pitchMinimum));
-    for (let index = 1; index <= samples; index += 1) points.push(orientationPoint(rollMaximum, pitchMinimum + (pitchMaximum - pitchMinimum) * index / samples));
-    for (let index = 1; index <= samples; index += 1) points.push(orientationPoint(rollMaximum - (rollMaximum - rollMinimum) * index / samples, pitchMaximum));
-    for (let index = 1; index < samples; index += 1) points.push(orientationPoint(rollMinimum, pitchMaximum - (pitchMaximum - pitchMinimum) * index / samples));
-    return points;
-  };
-  const pathFromPoints = (points: { x: number; y: number }[], close = false) => points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ') + (close ? ' Z' : '');
-  const maximumBoundary = boundaryPoints(0, 1, 0, 1);
-  const outputBoundary = boundaryPoints(roll.minimum, roll.maximum, pitch.minimum, pitch.maximum);
-  const maximumCorners = [orientationPoint(0, 0), orientationPoint(1, 0), orientationPoint(1, 1), orientationPoint(0, 1)];
-  const outputCorners = [
-    orientationPoint(roll.minimum, pitch.minimum), orientationPoint(roll.maximum, pitch.minimum),
-    orientationPoint(roll.maximum, pitch.maximum), orientationPoint(roll.minimum, pitch.maximum),
-  ];
-  const coneEdges = (points: { x: number; y: number }[], className: string) => points
-    .map((point) => `<line class="${className}" x1="${sphere.x}" y1="${sphere.y}" x2="${point.x}" y2="${point.y}" />`).join('');
-  const orientationHandle = (axis: 'R1' | 'R2', mode: 'minimum' | 'maximum') => {
-    const setting = axis === 'R1' ? roll : pitch;
-    const other = axis === 'R1' ? (pitch.minimum + pitch.maximum) / 2 : (roll.minimum + roll.maximum) / 2;
-    const value = mode === 'minimum' ? setting.minimum : setting.maximum;
-    const origin = axis === 'R1' ? orientationPoint(value, other) : orientationPoint(other, value);
-    const vector = orientationDerivative(axis, value, other);
-    const vectorLength = Math.max(1, Math.hypot(vector.x, vector.y));
-    const direction = mode === 'minimum' ? -1 : 1;
-    const endpoint = { x: origin.x + direction * vector.x / vectorLength * 28, y: origin.y + direction * vector.y / vectorLength * 28 };
-    return `<g class="axis-orientation-bound-handle" data-axis-drag="${mode}" data-axis="${axis}" data-axis-vector-x="${vector.x}" data-axis-vector-y="${vector.y}" role="slider" tabindex="0" aria-label="${axis} output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-orientation-bound-arrow" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" marker-end="url(#axis-orientation-handle-arrow)" /><line class="axis-orientation-bound-hit" x1="${origin.x}" y1="${origin.y}" x2="${endpoint.x}" y2="${endpoint.y}" /></g>`;
-  };
-  const twistSweep = Math.min(330, Math.max(45, twist.maximumTravel ?? 300)) * Math.PI / 180;
-  const twistStart = Math.PI / 2 + (Math.PI * 2 - twistSweep) / 2;
-  const twistPoint = (value: number) => {
-    const angle = twistStart + value * twistSweep;
-    return { x: sphere.x + 154 * Math.cos(angle), y: sphere.y + 43 * Math.sin(angle) };
-  };
-  const twistDerivative = (value: number) => {
-    const angle = twistStart + value * twistSweep;
-    return { x: -154 * Math.sin(angle) * twistSweep, y: 43 * Math.cos(angle) * twistSweep };
-  };
-  const twistPath = (minimum: number, maximum: number) => pathFromPoints(Array.from({ length: 49 }, (_, index) => twistPoint(minimum + (maximum - minimum) * index / 48)));
-  const twistHandle = (mode: 'minimum' | 'maximum') => {
-    const value = mode === 'minimum' ? twist.minimum : twist.maximum;
-    const point = twistPoint(value);
-    const tangent = twistDerivative(value);
-    const tangentLength = Math.max(1, Math.hypot(tangent.x, tangent.y));
-    const normal = { x: -tangent.y / tangentLength * 6, y: tangent.x / tangentLength * 6 };
-    return `<g class="axis-rotation-bound-handle" data-axis-drag="${mode}" data-axis="R0" data-axis-vector-x="${tangent.x}" data-axis-vector-y="${tangent.y}" role="slider" tabindex="0" aria-label="R0 output ${mode}" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${value}"><line class="axis-rotation-bound-tick" x1="${point.x - normal.x}" y1="${point.y - normal.y}" x2="${point.x + normal.x}" y2="${point.y + normal.y}" /><line class="axis-rotation-bound-hit" x1="${point.x - normal.x}" y1="${point.y - normal.y}" x2="${point.x + normal.x}" y2="${point.y + normal.y}" /></g>`;
-  };
-  const twistMiddleVector = twistDerivative((twist.minimum + twist.maximum) / 2);
-  const twistMarker = twist.inverted ? 'marker-start="url(#axis-twist-range-arrow)"' : 'marker-end="url(#axis-twist-range-arrow)"';
-
-  return `<div class="axis-spatial-layout axis-linear-layout"><div class="axis-cuboid-wrap"><svg class="axis-cuboid" data-axis-map viewBox="0 0 590 350" role="img" aria-label="Normalized linear axis movement volume"><defs><marker id="axis-linear-direction-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker><marker id="axis-linear-handle-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>${lines(outer, 'axis-cube-outer')}<polygon class="axis-cube-drag-surface" points="${silhouette}" data-axis-drag="window" data-axis-candidates="L2,L0,L1" aria-label="Move linear output range"><title>Drag horizontally, vertically, or diagonally to move the corresponding linear output range</title></polygon>${lines(active, 'axis-cube-active')}${handle('L0', 'minimum')}${handle('L0', 'maximum')}${handle('L1', 'minimum')}${handle('L1', 'maximum')}${handle('L2', 'minimum')}${handle('L2', 'maximum')}<line class="axis-direction l2" x1="120" y1="318" x2="500" y2="318" ${directionMarker('L2')} /><text x="505" y="323">L2 · Left / Right</text><line class="axis-direction l0" x1="115" y1="300" x2="115" y2="52" ${directionMarker('L0')} /><text x="44" y="42">L0 · Up / Down</text><line class="axis-direction l1" x1="130" y1="305" x2="230" y2="240" ${directionMarker('L1')} /><text x="225" y="230">L1 · Forward / Backward</text></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Maximum travel</span><span><i class="legend-active"></i> Output range</span><span><i class="legend-direction"></i> Direction</span></div></div><div class="axis-travel-grid">${spatialCards}</div></div><div class="axis-rotation-layout"><div class="axis-orientation-wrap"><div class="axis-rotation-heading"><span>Rotational envelope</span><small>R0 / R1 / R2</small></div><svg class="axis-orientation-sphere" data-axis-map viewBox="0 0 590 400" role="img" aria-label="Roll pitch and twist movement envelope"><defs><marker id="axis-orientation-handle-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker><marker id="axis-twist-range-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs><circle class="axis-sphere-outline" cx="${sphere.x}" cy="${sphere.y}" r="${sphere.radius}" /><ellipse class="axis-sphere-grid" cx="${sphere.x}" cy="${sphere.y}" rx="${sphere.radius}" ry="42" /><ellipse class="axis-sphere-grid" cx="${sphere.x}" cy="${sphere.y}" rx="43" ry="${sphere.radius}" /><line class="axis-neutral-diameter" x1="${sphere.x}" y1="${sphere.y - sphere.radius}" x2="${sphere.x}" y2="${sphere.y + sphere.radius}" />${coneEdges(maximumCorners, 'axis-cone-maximum')}${coneEdges(outputCorners, 'axis-cone-edge')}<path class="axis-orientation-maximum" d="${pathFromPoints(maximumBoundary, true)}" /><path class="axis-orientation-envelope" d="${pathFromPoints(outputBoundary, true)}" /><path class="axis-orientation-envelope-hit" d="${pathFromPoints(outputBoundary, true)}" data-axis-drag="window" data-axis-candidates="R1,R2" aria-label="Move roll or pitch output range"><title>Drag in four directions to move the Roll or Pitch range</title></path>${orientationHandle('R1', 'minimum')}${orientationHandle('R1', 'maximum')}${orientationHandle('R2', 'minimum')}${orientationHandle('R2', 'maximum')}<path class="axis-rotation-maximum" d="${twistPath(0, 1)}" /><path class="axis-rotation-active" d="${twistPath(twist.minimum, twist.maximum)}" ${twistMarker} /><path class="axis-rotation-hit" d="${twistPath(twist.minimum, twist.maximum)}" data-axis-drag="window" data-axis="R0" data-axis-vector-x="${twistMiddleVector.x}" data-axis-vector-y="${twistMiddleVector.y}" aria-label="Move R0 output range"><title>Drag around the ring to move the Twist range</title></path>${twistHandle('minimum')}${twistHandle('maximum')}<text class="axis-orientation-label" x="76" y="72">R1 · Roll</text><text class="axis-orientation-label" x="430" y="72">R2 · Pitch</text><text class="axis-orientation-label" x="430" y="350">R0 · Twist</text><line class="axis-origin-cross" x1="${sphere.x - 7}" y1="${sphere.y}" x2="${sphere.x + 7}" y2="${sphere.y}" /><line class="axis-origin-cross" x1="${sphere.x}" y1="${sphere.y - 7}" x2="${sphere.x}" y2="${sphere.y + 7}" /></svg><div class="axis-visual-legend"><span><i class="legend-outer"></i> Maximum angle</span><span><i class="legend-active"></i> Roll / Pitch output</span><span><i class="legend-twist"></i> Twist output</span></div></div><div class="axis-travel-grid axis-rotation-cards">${rotationCards}</div></div>`;
+  const axis = axisOrDefault(axes, selectedAxisPreview);
+  return `<div class="axis-model-layout"><div class="axis-model-stage" data-axis-model-host role="img" aria-label="Interactive SR6 axis movement preview"><span class="axis-model-status">Loading SR6 model...</span></div><div class="axis-model-controls"><div class="axis-model-tabs" role="tablist" aria-label="Axis to preview">${modeledAxisNames.map((name) => `<button class="axis-model-tab${name === selectedAxisPreview ? ' is-active' : ''}" type="button" role="tab" aria-selected="${name === selectedAxisPreview}" data-axis-preview-select="${name}"><strong>${name}</strong><span>${escapeHtml(axisFriendlyNames[name])}</span></button>`).join('')}</div><div class="axis-preview-simulation"><div><strong>Simulation</strong><span data-axis-preview-simulation-status>6 axes</span></div><button class="button button-primary" type="button" data-axis-preview-simulate>Simulate all axes</button></div><div class="axis-model-selected"><div><p class="eyebrow">Selected movement</p><h3><span data-axis-preview-name>${axis.axis}</span> <small data-axis-preview-friendly>${escapeHtml(axisFriendlyNames[axis.axis])}</small></h3></div><output data-axis-preview-output>${percent(applyAxisPreview(axis, axisPreviewPositions[selectedAxisPreview]))}</output></div><label class="axis-preview-position"><span>Input position <output data-axis-preview-input-value>${percent(axisPreviewPositions[selectedAxisPreview])}</output></span><input data-axis-preview-position aria-label="${axis.axis} preview input position" type="range" min="0" max="1" step="0.01" value="${axisPreviewPositions[selectedAxisPreview]}" /></label><div class="axis-preview-presets"><button class="button button-secondary" type="button" data-axis-preview-preset="0">Minimum</button><button class="button button-secondary" type="button" data-axis-preview-preset="0.5">Center</button><button class="button button-secondary" type="button" data-axis-preview-preset="1">Maximum</button><button class="button button-secondary" type="button" data-axis-preview-sweep>Sweep axis</button></div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><strong>Output range</strong><span data-axis-preview-output-summary>${percent(axis.minimum)} to ${percent(axis.maximum)}</span></div>${renderPreviewRange(axis, 'output')}</div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><label class="axis-checkbox"><input data-axis-preview-field="limitEnabled" aria-label="Preview ${axis.axis} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Safety limit</label><span data-axis-preview-limit-summary>${axis.limitEnabled ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled'}</span></div>${renderPreviewRange(axis, 'limit')}</div><label class="axis-preview-reverse axis-checkbox"><input data-axis-preview-field="inverted" aria-label="Preview ${axis.axis} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> Reverse this axis</label><p class="axis-preview-travel" data-axis-travel-summary="${axis.axis}"></p></div></div>`;
 }
 
 function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', minimum: number, maximum: number): string {
@@ -261,6 +147,8 @@ function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', min
 }
 
 function renderAuthScreen(message = '') {
+  stopAxisPreviewAnimations();
+  destroyOsrAxisPreview();
   renderedRoute = null;
   appRoot.innerHTML = `<main class="auth-shell"><section class="auth-panel panel" aria-labelledby="auth-title"><div class="brand-lockup"><div class="brand-mark" aria-hidden="true">MFP</div><div><strong>MultiFunPlayer</strong><span>Web access</span></div></div><p class="eyebrow">Protected server</p><h1 id="auth-title">Connect to your control room</h1><p class="page-description">Use an existing access token, or complete the one-time pairing flow.</p>${message ? `<p class="auth-error" role="alert">${escapeHtml(message)}</p>` : ''}<form data-auth-form="server" class="auth-form"><label for="auth-access-token">Access token<input id="auth-access-token" name="accessToken" type="password" autocomplete="current-password" placeholder="Bearer token" /></label><div class="auth-divider"><span>or pair this browser</span></div><label for="auth-pairing-token">Pairing token<input id="auth-pairing-token" name="pairingToken" type="password" autocomplete="one-time-code" placeholder="One-time pairing token" /></label><label for="auth-new-token">New access token<input id="auth-new-token" name="newAuthToken" type="password" autocomplete="new-password" minlength="16" placeholder="At least 16 characters" /></label><div class="auth-actions"><button class="button button-primary" type="submit" data-auth-mode="connect">Connect</button><button class="button button-secondary" type="submit" data-auth-mode="pair">Pair and connect</button></div></form></section></main>`;
 }
@@ -336,6 +224,12 @@ function prepareRouteControls(main: HTMLElement) {
   if (mediaForm) synchronizeMediaForm(mediaForm, true);
   const outputForm = main.querySelector<HTMLFormElement>('[data-resource-form="output"]');
   if (outputForm) synchronizeOutputForm(outputForm, true);
+  const axisForm = main.querySelector<HTMLFormElement>('[data-resource-form="axis"]');
+  const axisModelHost = main.querySelector<HTMLElement>('[data-axis-model-host]');
+  if (axisForm && axisModelHost) {
+    updateAxisVisualization(axisForm);
+    void mountOsrAxisPreview(axisModelHost).then(() => updateAxisVisualization(axisForm));
+  }
   if (main.querySelector('[data-runtime-router]'))
     window.requestAnimationFrame(() => drawRuntimeWires());
 }
@@ -367,6 +261,8 @@ function render(state: AppState, change: StoreChange = 'full') {
     updateStatusBindings(state);
     return;
   }
+  stopAxisPreviewAnimations();
+  destroyOsrAxisPreview();
   main.innerHTML = renderRoute(state);
   renderedRoute = state.route;
   prepareRouteControls(main);
@@ -797,7 +693,7 @@ function renderOutputForm(): string {
 function renderDeviceSettings(state: AppState): string {
   return `${pageHeading('Devices', 'Axis settings', 'Tune the fixed TCode axis set and save it as one device configuration.', '<button class="button button-primary" data-action="focus-axis-form">Edit axis configuration</button>')}
     <div class="notice notice-info"><strong>One configuration, 11 fixed axes.</strong><span>All rows are validated together, persisted in one server file, and applied to routed output sessions as one snapshot.</span></div>
-    <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Live configuration preview</p><h2 id="axis-map-title">Axis motion map</h2></div><span class="result-count">Normalized + calibrated travel</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes)}</div></section>
+    <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Mechanical preview</p><h2 id="axis-map-title">SR6 axis model</h2></div><span class="result-count">L0 / L1 / L2 / R0 / R1 / R2</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes)}</div></section>
     ${renderDeviceAxisForm(state.deviceAxes)}
     ${renderServerSettings(state)}`;
 }
@@ -1106,108 +1002,203 @@ async function testOutputDraft(form: HTMLFormElement, button: HTMLButtonElement)
   }
 }
 
-function axisOutputRange(axis: string): [number, number] | null {
-  const row = document.querySelector<HTMLElement>(`[data-axis-row="${axis}"]`);
-  const minimum = row?.querySelector<HTMLInputElement>('[data-axis-field="minimum"]');
-  const maximum = row?.querySelector<HTMLInputElement>('[data-axis-field="maximum"]');
-  if (!minimum || !maximum) return null;
-  return [Number(minimum.value), Number(maximum.value)];
+function currentAxisForm(): HTMLFormElement | null {
+  return document.querySelector<HTMLFormElement>('[data-resource-form="axis"]');
 }
 
-function applyAxisOutputRange(axis: string, minimum: number, maximum: number) {
-  const row = document.querySelector<HTMLElement>(`[data-axis-row="${axis}"]`);
-  const minimumInput = row?.querySelector<HTMLInputElement>('[data-axis-field="minimum"]');
-  const maximumInput = row?.querySelector<HTMLInputElement>('[data-axis-field="maximum"]');
-  if (!row || !minimumInput || !maximumInput) return;
-  const roundedMinimum = Math.max(0, Math.min(.99, Math.round(minimum * 100) / 100));
-  const roundedMaximum = Math.min(1, Math.max(.01, Math.round(maximum * 100) / 100));
-  minimumInput.value = String(Math.min(roundedMinimum, roundedMaximum - .01));
-  maximumInput.value = String(Math.max(roundedMaximum, roundedMinimum + .01));
-  synchronizeAxisRow(row);
-  const form = row.closest<HTMLFormElement>('[data-resource-form="axis"]');
-  if (form) updateAxisVisualization(form);
+function selectedAxisSetting(form: HTMLFormElement): DeviceAxisSetting {
+  return axisOrDefault(readDeviceAxisForm(form), selectedAxisPreview);
 }
 
-function handleAxisRangePointerDown(event: PointerEvent) {
-  const control = (event.target as Element).closest<SVGElement>('[data-axis-drag]');
-  const svg = control?.closest<SVGSVGElement>('[data-axis-map]');
-  const mode = control?.dataset.axisDrag as AxisRangeDragMode | undefined;
-  if (!control || !svg || !mode || event.button !== 0) return;
-  const candidates = control.dataset.axis
-    ? [control.dataset.axis]
-    : (control.dataset.axisCandidates ?? '').split(',').filter(Boolean);
-  const ranges: Record<string, [number, number]> = {};
-  const vectors: Record<string, { x: number; y: number }> = {};
-  candidates.forEach((axis) => {
-    const range = axisOutputRange(axis);
-    if (range) ranges[axis] = range;
-    vectors[axis] = axisDragVectors[axis];
+function updateAxisPreviewPose(form: HTMLFormElement): void {
+  const axis = selectedAxisSetting(form);
+  const inputValue = axisPreviewPositions[selectedAxisPreview];
+  const outputValue = applyAxisPreview(axis, inputValue);
+  const positionInput = document.querySelector<HTMLInputElement>('[data-axis-preview-position]');
+  const inputOutput = document.querySelector<HTMLOutputElement>('[data-axis-preview-input-value]');
+  const modelOutput = document.querySelector<HTMLOutputElement>('[data-axis-preview-output]');
+  if (positionInput && document.activeElement !== positionInput) positionInput.value = String(inputValue);
+  if (positionInput) positionInput.setAttribute('aria-label', `${axis.axis} preview input position`);
+  if (inputOutput) inputOutput.value = percent(inputValue);
+  if (modelOutput) modelOutput.value = percent(outputValue);
+  const values = Object.fromEntries(modeledAxisNames.map((name) => [name, name === selectedAxisPreview ? outputValue : 0.5])) as Record<ModeledAxisName, number>;
+  updateOsrAxisPreview(values);
+}
+
+function synchronizeAxisPreviewControls(form: HTMLFormElement): void {
+  const axis = selectedAxisSetting(form);
+  document.querySelectorAll<HTMLButtonElement>('[data-axis-preview-select]').forEach((button) => {
+    const active = button.dataset.axisPreviewSelect === selectedAxisPreview;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
   });
-  if (control.dataset.axis && Number.isFinite(Number(control.dataset.axisVectorX)) && Number.isFinite(Number(control.dataset.axisVectorY)))
-    vectors[control.dataset.axis] = { x: Number(control.dataset.axisVectorX), y: Number(control.dataset.axisVectorY) };
-  const validCandidates = candidates.filter((axis) => ranges[axis] && axisDragVectors[axis]);
-  if (validCandidates.length === 0) return;
-  const bounds = svg.getBoundingClientRect();
-  axisRangeDrag = {
-    pointerId: event.pointerId,
-    mode,
-    axis: control.dataset.axis ?? null,
-    candidates: validCandidates,
-    startX: event.clientX,
-    startY: event.clientY,
-    scaleX: svg.viewBox.baseVal.width / Math.max(1, bounds.width),
-    scaleY: svg.viewBox.baseVal.height / Math.max(1, bounds.height),
-    ranges,
-    vectors,
+  const setText = (selector: string, value: string) => {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) element.textContent = value;
   };
-  appRoot.setPointerCapture(event.pointerId);
-  document.body.classList.add('is-axis-range-dragging');
-  event.preventDefault();
+  setText('[data-axis-preview-name]', axis.axis);
+  setText('[data-axis-preview-friendly]', axisFriendlyNames[axis.axis]);
+  setText('[data-axis-preview-output-summary]', `${percent(axis.minimum)} to ${percent(axis.maximum)}`);
+  setText('[data-axis-preview-limit-summary]', axis.limitEnabled
+    ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled');
+
+  const values: Record<string, number | boolean> = {
+    minimum: axis.minimum,
+    maximum: axis.maximum,
+    limitEnabled: axis.limitEnabled,
+    limitMinimum: axis.limitMinimum,
+    limitMaximum: axis.limitMaximum,
+    inverted: axis.inverted,
+  };
+  document.querySelectorAll<HTMLInputElement>('[data-axis-preview-field]').forEach((input) => {
+    const field = input.dataset.axisPreviewField ?? '';
+    const value = values[field];
+    if (typeof value === 'boolean') input.checked = value;
+    else if (typeof value === 'number' && document.activeElement !== input) input.value = String(value);
+    const label = field === 'minimum' ? 'output minimum'
+      : field === 'maximum' ? 'output maximum'
+        : field === 'limitMinimum' ? 'limit minimum'
+          : field === 'limitMaximum' ? 'limit maximum'
+            : field === 'limitEnabled' ? 'limit enabled' : 'inverted';
+    input.setAttribute('aria-label', `Preview ${axis.axis} ${label}`);
+  });
+  (['output', 'limit'] as const).forEach((group) => {
+    const minimum = group === 'output' ? axis.minimum : axis.limitMinimum;
+    const maximum = group === 'output' ? axis.maximum : axis.limitMaximum;
+    const range = document.querySelector<HTMLElement>(`[data-axis-preview-range="${group}"]`);
+    if (!range) return;
+    range.style.setProperty('--range-start', `${minimum * 100}%`);
+    range.style.setProperty('--range-end', `${maximum * 100}%`);
+    range.classList.toggle('is-disabled', group === 'limit' && !axis.limitEnabled);
+    const outputs = range.querySelectorAll<HTMLOutputElement>('[data-axis-preview-range-value]');
+    if (outputs[0]) outputs[0].value = percent(minimum);
+    if (outputs[1]) outputs[1].value = percent(maximum);
+  });
+  const summary = document.querySelector<HTMLElement>('.axis-preview-travel');
+  if (summary) {
+    summary.dataset.axisTravelSummary = axis.axis;
+    summary.textContent = axisTravelSummary(axis);
+  }
+  updateAxisPreviewPose(form);
 }
 
-function handleAxisRangePointerMove(event: PointerEvent) {
-  const drag = axisRangeDrag;
-  if (!drag || drag.pointerId !== event.pointerId) return;
-  const clientDeltaX = event.clientX - drag.startX;
-  const clientDeltaY = event.clientY - drag.startY;
-  const deltaX = clientDeltaX * drag.scaleX;
-  const deltaY = clientDeltaY * drag.scaleY;
-  if (!drag.axis) {
-    const distance = Math.hypot(clientDeltaX, clientDeltaY);
-    if (distance < 4) return;
-    drag.axis = drag.candidates.reduce((best, axis) => {
-      const vector = drag.vectors[axis];
-      const bestVector = drag.vectors[best];
-      const alignment = Math.abs((deltaX * vector.x + deltaY * vector.y) / (Math.hypot(deltaX, deltaY) * Math.hypot(vector.x, vector.y)));
-      const bestAlignment = Math.abs((deltaX * bestVector.x + deltaY * bestVector.y) / (Math.hypot(deltaX, deltaY) * Math.hypot(bestVector.x, bestVector.y)));
-      return alignment > bestAlignment ? axis : best;
-    });
-  }
-  const axis = drag.axis;
-  const vector = drag.vectors[axis];
-  const range = drag.ranges[axis];
-  if (!vector || !range) return;
-  const delta = (deltaX * vector.x + deltaY * vector.y) / (vector.x ** 2 + vector.y ** 2);
-  let [minimum, maximum] = range;
-  if (drag.mode === 'window') {
-    const span = maximum - minimum;
-    minimum = Math.max(0, Math.min(1 - span, minimum + delta));
-    maximum = minimum + span;
-  } else if (drag.mode === 'minimum') {
-    minimum = Math.max(0, Math.min(maximum - .01, minimum + delta));
-  } else {
-    maximum = Math.min(1, Math.max(minimum + .01, maximum + delta));
-  }
-  applyAxisOutputRange(axis, minimum, maximum);
-  event.preventDefault();
+function applyAxisPreviewField(input: HTMLInputElement): void {
+  const field = input.dataset.axisPreviewField;
+  const form = currentAxisForm();
+  const row = form?.querySelector<HTMLElement>(`[data-axis-row="${selectedAxisPreview}"]`);
+  const target = field ? row?.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-axis-field="${field}"]`) : null;
+  if (!field || !form || !row || !target) return;
+  if (target instanceof HTMLInputElement && target.type === 'checkbox') target.checked = input.checked;
+  else target.value = input.value;
+  synchronizeAxisRow(row, field);
+  synchronizeAxisPreviewControls(form);
 }
 
-function handleAxisRangePointerUp(event: PointerEvent) {
-  if (!axisRangeDrag || axisRangeDrag.pointerId !== event.pointerId) return;
-  axisRangeDrag = null;
-  document.body.classList.remove('is-axis-range-dragging');
-  if (appRoot.hasPointerCapture(event.pointerId)) appRoot.releasePointerCapture(event.pointerId);
-  event.preventDefault();
+function stopAxisPreviewSweep(): void {
+  if (axisPreviewSweepTimer !== undefined) window.clearInterval(axisPreviewSweepTimer);
+  axisPreviewSweepTimer = undefined;
+  const button = document.querySelector<HTMLButtonElement>('[data-axis-preview-sweep]');
+  if (button) button.textContent = 'Sweep axis';
+}
+
+function setAxisPreviewSimulationUi(running: boolean, status = '6 axes'): void {
+  const button = document.querySelector<HTMLButtonElement>('[data-axis-preview-simulate]');
+  const statusElement = document.querySelector<HTMLElement>('[data-axis-preview-simulation-status]');
+  if (button) button.textContent = running ? 'Stop simulation' : 'Simulate all axes';
+  if (statusElement) statusElement.textContent = status;
+  document.querySelectorAll<HTMLInputElement | HTMLButtonElement>('[data-axis-preview-select], [data-axis-preview-preset], [data-axis-preview-position], [data-axis-preview-field], [data-axis-preview-sweep]')
+    .forEach((control) => { control.disabled = running; });
+}
+
+function stopAxisPreviewSimulation(): void {
+  if (axisPreviewSimulationTimer !== undefined) window.clearInterval(axisPreviewSimulationTimer);
+  axisPreviewSimulationTimer = undefined;
+  axisPreviewSimulationAxes = [];
+  axisPreviewSimulationAxisIndex = 0;
+  axisPreviewSimulationPhase = 0;
+  const restore = axisPreviewSimulationRestore;
+  axisPreviewSimulationRestore = null;
+  if (restore) {
+    selectedAxisPreview = restore.axis;
+    Object.assign(axisPreviewPositions, restore.positions);
+  }
+  const form = currentAxisForm();
+  if (restore && form) synchronizeAxisPreviewControls(form);
+  setAxisPreviewSimulationUi(false);
+}
+
+function stopAxisPreviewAnimations(): void {
+  stopAxisPreviewSweep();
+  stopAxisPreviewSimulation();
+}
+
+function toggleAxisPreviewSweep(): void {
+  if (axisPreviewSweepTimer !== undefined) {
+    stopAxisPreviewSweep();
+    return;
+  }
+  const form = currentAxisForm();
+  if (!form) return;
+  axisPreviewSweepStartedAt = performance.now();
+  const button = document.querySelector<HTMLButtonElement>('[data-axis-preview-sweep]');
+  if (button) button.textContent = 'Stop sweep';
+  axisPreviewSweepTimer = window.setInterval(() => {
+    const phase = ((performance.now() - axisPreviewSweepStartedAt) % 2400) / 2400;
+    axisPreviewPositions[selectedAxisPreview] = phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
+    updateAxisPreviewPose(form);
+  }, 50);
+}
+
+function updateAxisPreviewSimulation(form: HTMLFormElement): void {
+  const now = performance.now();
+  const elapsed = Math.min(100, Math.max(0, now - axisPreviewSimulationLastFrameAt));
+  axisPreviewSimulationLastFrameAt = now;
+  axisPreviewSimulationPhase += elapsed / axisPreviewSimulationAxisDuration;
+  if (axisPreviewSimulationPhase >= 1) {
+    axisPreviewSimulationAxisIndex += 1;
+    if (axisPreviewSimulationAxisIndex >= axisPreviewSimulationAxes.length) {
+      stopAxisPreviewSimulation();
+      return;
+    }
+    axisPreviewSimulationPhase = 0;
+  }
+  const axis = axisPreviewSimulationAxes[axisPreviewSimulationAxisIndex];
+  if (selectedAxisPreview !== axis) {
+    selectedAxisPreview = axis;
+    synchronizeAxisPreviewControls(form);
+  }
+  const phase = axisPreviewSimulationPhase;
+  axisPreviewPositions[axis] = phase < 0.25 ? 0.5 - phase * 2
+    : phase < 0.75 ? (phase - 0.25) * 2
+      : 1 - (phase - 0.75) * 2;
+  const statusElement = document.querySelector<HTMLElement>('[data-axis-preview-simulation-status]');
+  if (statusElement) statusElement.textContent = `${axis} · ${axisPreviewSimulationAxisIndex + 1}/${axisPreviewSimulationAxes.length}`;
+  updateAxisPreviewPose(form);
+}
+
+function toggleAxisPreviewSimulation(): void {
+  if (axisPreviewSimulationTimer !== undefined) {
+    stopAxisPreviewSimulation();
+    return;
+  }
+  const form = currentAxisForm();
+  if (!form) return;
+  stopAxisPreviewSweep();
+  const selectedIndex = modeledAxisNames.indexOf(selectedAxisPreview);
+  axisPreviewSimulationAxes = [
+    ...modeledAxisNames.slice(selectedIndex),
+    ...modeledAxisNames.slice(0, selectedIndex),
+  ];
+  axisPreviewSimulationRestore = {
+    axis: selectedAxisPreview,
+    positions: { ...axisPreviewPositions },
+  };
+  axisPreviewSimulationAxisIndex = 0;
+  axisPreviewSimulationPhase = 0;
+  axisPreviewSimulationLastFrameAt = performance.now();
+  setAxisPreviewSimulationUi(true);
+  updateAxisPreviewSimulation(form);
+  axisPreviewSimulationTimer = window.setInterval(() => updateAxisPreviewSimulation(form), 50);
 }
 
 function handleRoutingPointerDown(event: PointerEvent) {
@@ -1265,6 +1256,30 @@ function handleClick(event: MouseEvent) {
     store.setRoute(route);
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
+    return;
+  }
+  const axisPreviewSelect = target.closest<HTMLButtonElement>('[data-axis-preview-select]')?.dataset.axisPreviewSelect;
+  if (axisPreviewSelect && modeledAxisNames.includes(axisPreviewSelect as ModeledAxisName)) {
+    stopAxisPreviewAnimations();
+    selectedAxisPreview = axisPreviewSelect as ModeledAxisName;
+    const form = currentAxisForm();
+    if (form) synchronizeAxisPreviewControls(form);
+    return;
+  }
+  const axisPreviewPreset = target.closest<HTMLButtonElement>('[data-axis-preview-preset]');
+  if (axisPreviewPreset) {
+    stopAxisPreviewAnimations();
+    axisPreviewPositions[selectedAxisPreview] = Number(axisPreviewPreset.dataset.axisPreviewPreset ?? 0.5);
+    const form = currentAxisForm();
+    if (form) updateAxisPreviewPose(form);
+    return;
+  }
+  if (target.closest('[data-axis-preview-sweep]')) {
+    toggleAxisPreviewSweep();
+    return;
+  }
+  if (target.closest('[data-axis-preview-simulate]')) {
+    toggleAxisPreviewSimulation();
     return;
   }
   const folderTarget = target.closest<HTMLElement>('[data-select-script-folder]');
@@ -1700,12 +1715,23 @@ function synchronizeAxisRow(row: HTMLElement, changedField = '') {
 }
 
 function updateAxisVisualization(form: HTMLFormElement) {
-  const preview = document.querySelector<HTMLElement>('[data-axis-visualization]');
-  if (preview) preview.innerHTML = renderDeviceAxisVisualization(readDeviceAxisForm(form));
+  synchronizeAxisPreviewControls(form);
 }
 
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  if (target instanceof HTMLInputElement && target.hasAttribute('data-axis-preview-position')) {
+    stopAxisPreviewAnimations();
+    axisPreviewPositions[selectedAxisPreview] = Number(target.value);
+    const form = currentAxisForm();
+    if (form) updateAxisPreviewPose(form);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.axisPreviewField) {
+    stopAxisPreviewAnimations();
+    applyAxisPreviewField(target);
+    return;
+  }
   const runtimeScriptSearchSourceId = target.dataset.runtimeScriptSearch;
   if (runtimeScriptSearchSourceId && event.type === 'input') {
     const query = target.value.trim().toLowerCase();
@@ -1793,10 +1819,6 @@ function handleInput(event: Event) {
 }
 
 appRoot.addEventListener('click', handleClick);
-appRoot.addEventListener('pointerdown', handleAxisRangePointerDown);
-appRoot.addEventListener('pointermove', handleAxisRangePointerMove);
-appRoot.addEventListener('pointerup', handleAxisRangePointerUp);
-appRoot.addEventListener('pointercancel', handleAxisRangePointerUp);
 appRoot.addEventListener('pointerdown', handleRoutingPointerDown);
 appRoot.addEventListener('pointermove', handleRoutingPointerMove);
 appRoot.addEventListener('pointerup', handleRoutingPointerUp);

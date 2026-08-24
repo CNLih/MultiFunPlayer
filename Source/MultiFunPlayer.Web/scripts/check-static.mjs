@@ -15,6 +15,7 @@ const required = [
   'tests/control-room.spec.ts',
   'public/manifest.webmanifest',
   'public/sw.js',
+  'public/third-party-licenses.txt',
   'static/index.html',
 ];
 const missing = required.filter((file) => !existsSync(join(root, file)));
