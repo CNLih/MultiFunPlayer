@@ -21,6 +21,7 @@
     "vite": "^6.4.3"
   },
   "dependencies": {
-    "@trimjs/web-app": "0.4.2"
+    "@trimjs/web-app": "0.4.2",
+    "osr-emu": "0.7.0"
   }
 }

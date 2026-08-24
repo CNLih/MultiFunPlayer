@@ -58,72 +58,66 @@ test.describe('control room demo journey', () => {
     }
   });
 
-  test('edits linear and rotational output ranges from the axis motion map', async ({ page }) => {
+  test('configures mechanical axes through the SR6 model preview', async ({ page }) => {
+    test.setTimeout(90_000);
     await page.goto('/?demo=1#settings');
 
-    await expect(page.locator('.axis-cube-outer')).toHaveCount(12);
-    await expect(page.locator('.axis-cube-outer').first()).toHaveCSS('stroke-dasharray', /5/);
-    await expect(page.locator('.axis-linear-bound-handle')).toHaveCount(6);
-    await expect(page.locator('.axis-orientation-sphere')).toBeVisible();
-    await expect(page.locator('.axis-neutral-diameter')).toHaveCount(1);
-    await expect(page.locator('.axis-neutral-diameter')).toHaveCSS('stroke-dasharray', /5/);
-    await expect(page.locator('.axis-orientation-maximum')).toHaveCount(1);
-    await expect(page.locator('.axis-orientation-bound-handle')).toHaveCount(4);
-    await expect(page.locator('.axis-rotation-bound-handle')).toHaveCount(2);
-    await expect(page.locator('.axis-range-handle')).toHaveCount(0);
-    await expect(page.locator('.axis-rotation-maximum')).toHaveCount(1);
-    await expect(page.locator('.axis-rotation-active')).toHaveCount(1);
-    const cubeBounds = await page.locator('.axis-cuboid-wrap').boundingBox();
-    const sphereBounds = await page.locator('.axis-orientation-wrap').boundingBox();
-    expect(cubeBounds).not.toBeNull();
-    expect(sphereBounds).not.toBeNull();
-    expect(sphereBounds!.y).toBeGreaterThan(cubeBounds!.y + cubeBounds!.height);
-    const maximumEnvelope = page.locator('.axis-orientation-maximum');
-    const uncalibratedEnvelope = await maximumEnvelope.getAttribute('d');
-    await page.getByLabel('R1 maximum travel', { exact: true }).fill('60');
-    await expect.poll(() => maximumEnvelope.getAttribute('d')).not.toBe(uncalibratedEnvelope);
-    await expect(page.locator('[data-axis-travel-summary="R1"]')).toContainText('60.0 ° full');
+    const model = page.locator('[data-axis-model-host]');
+    await expect(model).toHaveAttribute('data-model-state', 'ready', { timeout: 20_000 });
+    await expect(model.locator('canvas')).toHaveCount(1);
+    const modelScreenshot = await model.screenshot({ path: test.info().outputPath('sr6-model.png') });
+    expect(modelScreenshot.byteLength).toBeGreaterThan(10_000);
+    await expect(page.locator('[data-axis-preview-select]')).toHaveCount(6);
+    await expect(page.locator('.axis-cuboid, .axis-orientation-sphere')).toHaveCount(0);
 
-    const l2Minimum = page.getByLabel('L2 minimum', { exact: true });
-    const l2Maximum = page.getByLabel('L2 maximum', { exact: true });
-    await l2Minimum.fill('0.2');
-    await l2Maximum.fill('0.6');
-    const frame = page.locator('[data-axis-drag="window"][data-axis-candidates="L2,L0,L1"]');
-    await frame.scrollIntoViewIfNeeded();
-    const frameBox = await frame.boundingBox();
-    expect(frameBox).not.toBeNull();
-    await page.mouse.move(frameBox!.x + frameBox!.width / 2, frameBox!.y + frameBox!.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(frameBox!.x + frameBox!.width / 2 + 45, frameBox!.y + frameBox!.height / 2, { steps: 5 });
-    await page.mouse.up();
-    await expect.poll(async () => Number(await l2Minimum.inputValue())).toBeGreaterThan(0.2);
-    const shiftedMinimum = Number(await l2Minimum.inputValue());
-    const shiftedMaximum = Number(await l2Maximum.inputValue());
-    expect(shiftedMaximum - shiftedMinimum).toBeCloseTo(0.4, 2);
+    await page.locator('[data-axis-preview-select="L2"]').click();
+    await page.getByLabel('Preview L2 output minimum', { exact: true }).fill('0.2');
+    await page.getByLabel('Preview L2 output maximum', { exact: true }).fill('0.6');
+    await page.getByLabel('Preview L2 limit enabled', { exact: true }).check();
+    await page.getByLabel('Preview L2 limit minimum', { exact: true }).fill('0.25');
+    await page.getByLabel('Preview L2 limit maximum', { exact: true }).fill('0.75');
+    await page.getByRole('button', { name: 'Minimum', exact: true }).click();
 
-    const r1Minimum = page.getByLabel('R1 minimum', { exact: true });
-    const r1Maximum = page.getByLabel('R1 maximum', { exact: true });
-    await r1Minimum.fill('0.2');
-    await r1Maximum.fill('0.8');
-    const rollMaximumHandle = page.locator('[data-axis-drag="maximum"][data-axis="R1"]');
-    await rollMaximumHandle.scrollIntoViewIfNeeded();
-    const rollHandleBox = await rollMaximumHandle.boundingBox();
-    expect(rollHandleBox).not.toBeNull();
-    const rollVector = await rollMaximumHandle.evaluate((element) => ({
-      x: Number((element as SVGElement).dataset.axisVectorX),
-      y: Number((element as SVGElement).dataset.axisVectorY),
-    }));
-    const rollVectorLength = Math.hypot(rollVector.x, rollVector.y);
-    await page.mouse.move(rollHandleBox!.x + rollHandleBox!.width / 2, rollHandleBox!.y + rollHandleBox!.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(
-      rollHandleBox!.x + rollHandleBox!.width / 2 - rollVector.x / rollVectorLength * 30,
-      rollHandleBox!.y + rollHandleBox!.height / 2 - rollVector.y / rollVectorLength * 30,
-      { steps: 5 },
+    await expect(page.locator('[data-axis-preview-output]')).toHaveText('30%');
+    await expect.poll(async () => Number(await model.getAttribute('data-axis-l2'))).toBeCloseTo(0.3, 2);
+    await expect(page.getByLabel('L2 minimum', { exact: true })).toHaveValue('0.2');
+    await expect(page.getByLabel('L2 maximum', { exact: true })).toHaveValue('0.6');
+
+    await page.getByLabel('Preview L2 inverted', { exact: true }).check();
+    await expect(page.locator('[data-axis-preview-output]')).toHaveText('50%');
+    await expect.poll(async () => Number(await model.getAttribute('data-axis-l2'))).toBeCloseTo(0.5, 2);
+
+    const simulationStart = await page.getByRole('button', { name: 'Simulate all axes', exact: true }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      return {
+        status: document.querySelector('[data-axis-preview-simulation-status]')?.textContent,
+        sweepDisabled: (document.querySelector('[data-axis-preview-sweep]') as HTMLButtonElement | null)?.disabled,
+        output: Number(document.querySelector('[data-axis-model-host]')?.getAttribute('data-axis-l2')),
+      };
+    });
+    expect(simulationStart.status).toBe('L2 · 1/6');
+    expect(simulationStart.sweepDisabled).toBe(true);
+    expect(simulationStart.output).toBeCloseTo(0.4, 2);
+    await expect.poll(async () => Number(await model.getAttribute('data-axis-l2'))).toBeGreaterThan(0.45);
+    await page.getByRole('button', { name: 'Stop simulation', exact: true }).evaluate((button) =>
+      (button as HTMLButtonElement).click(),
     );
-    await page.mouse.up();
-    await expect.poll(async () => Number(await r1Maximum.inputValue())).toBeLessThan(0.8);
-    expect(Number(await r1Maximum.inputValue())).toBeGreaterThan(Number(await r1Minimum.inputValue()));
+    await expect(page.getByRole('button', { name: 'Simulate all axes', exact: true })).toBeVisible();
+    await expect(page.locator('[data-axis-preview-simulation-status]')).toHaveText('6 axes');
+    await expect(page.locator('[data-axis-preview-select="L2"]')).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => Number(await model.getAttribute('data-axis-l2'))).toBeCloseTo(0.5, 2);
+
+    await page.locator('[data-axis-preview-select="R1"]').click();
+    await page.getByRole('button', { name: 'Maximum', exact: true }).click();
+    await expect.poll(async () => Number(await model.getAttribute('data-axis-r1'))).toBeCloseTo(1, 2);
+    await page.getByRole('button', { name: 'Sweep axis', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Stop sweep', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Stop sweep', exact: true }).click();
+
+    await page.getByRole('button', { name: 'Output targets' }).click();
+    await page.getByRole('button', { name: 'Device settings' }).click();
+    await expect(page.locator('[data-axis-model-host]')).toHaveAttribute('data-model-state', 'ready', { timeout: 20_000 });
+    await expect(page.locator('[data-axis-model-host] canvas')).toHaveCount(1);
   });
 
   test('completes media, output, axis configuration, and diagnostics journeys', async ({ page }) => {

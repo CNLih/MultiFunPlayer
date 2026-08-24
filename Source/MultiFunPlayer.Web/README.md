@@ -28,5 +28,7 @@ The compose file in this directory builds only the static web preview. The combi
 ## Scope notes
 
 - State is held in `src/store.ts`; `src/api.ts` maps REST commands and the WebSocket state contract into the same store shape used by the preview. Connected Emby/Jellyfin/Plex/OFS media cards expose backend-owned play, pause, and bounded seek commands when a normalized remote media clock is available.
+- Device settings lazy-load the MIT-licensed `osr-emu` SR6 model to preview and edit the six mechanical TCode axes. This preview only changes the existing axis configuration draft and never opens an output transport.
 - `public/sw.js` uses a versioned shell cache and removes older cache names on activation.
+- Third-party notices shipped with the Web build are recorded in `public/third-party-licenses.txt`.
 - No credentials, tokens, private endpoints, or user data are embedded in the prototype.
