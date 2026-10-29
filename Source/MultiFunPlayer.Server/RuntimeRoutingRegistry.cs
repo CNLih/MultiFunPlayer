@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading.Channels;
 using MultiFunPlayer.Application;
 using MultiFunPlayer.Infrastructure.Storage;
 
@@ -50,13 +51,91 @@ public sealed class RuntimeRoutingRegistry : IHostedService, IAsyncDisposable
         {
             _logger.LogWarning(exception, "Runtime route persistence is unavailable.");
         }
+        _sources.Changed += OnMediaSourcesChanged;
     }
+
+    private void OnMediaSourcesChanged()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        RefreshScriptBindings();
+    }
+
+    public event Action? Changed;
+
+    // Published route arrays are immutable inside the registry; the public API
+    // still receives defensive copies. The scheduler can reuse this snapshot.
+    internal RuntimeSourceRouteDefinition[] Current => Volatile.Read(ref _routes);
 
     public IReadOnlyList<RuntimeSourceRouteResponse> List()
     {
         _gate.Wait();
         try { return ToResponses(_routes); }
         finally { _gate.Release(); }
+    }
+
+    public bool RefreshScriptBindings()
+    {
+        var current = Volatile.Read(ref _routes);
+        if (current.Length == 0)
+            return false;
+
+        var changed = false;
+        var updated = current.Select(route =>
+        {
+            if (route.ScriptMatchMode is not ("exact" or "fuzzy"))
+                return route;
+
+            var mediaPath = _sources.GetClock(route.SourceId)?.State.Path;
+            var matchedScriptId = string.IsNullOrWhiteSpace(mediaPath)
+                ? null
+                : _matcher.Match(mediaPath, fuzzy: route.ScriptMatchMode == "fuzzy");
+
+            if (!string.Equals(route.ScriptId, matchedScriptId, StringComparison.OrdinalIgnoreCase))
+            {
+                changed = true;
+                return route with { ScriptId = matchedScriptId };
+            }
+            return route;
+        }).ToArray();
+
+        if (!changed)
+            return false;
+
+        _gate.Wait();
+        try
+        {
+            var freshChanged = false;
+            var fresh = _routes.Select(route =>
+            {
+                if (route.ScriptMatchMode is not ("exact" or "fuzzy"))
+                    return route;
+
+                var mediaPath = _sources.GetClock(route.SourceId)?.State.Path;
+                var matchedScriptId = string.IsNullOrWhiteSpace(mediaPath)
+                    ? null
+                    : _matcher.Match(mediaPath, fuzzy: route.ScriptMatchMode == "fuzzy");
+
+                if (!string.Equals(route.ScriptId, matchedScriptId, StringComparison.OrdinalIgnoreCase))
+                {
+                    freshChanged = true;
+                    return route with { ScriptId = matchedScriptId };
+                }
+                return route;
+            }).ToArray();
+
+            if (!freshChanged)
+                return false;
+
+            _routes = fresh;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        Changed?.Invoke();
+        return true;
     }
 
     public RuntimeSourceRouteDefinition[] Snapshot()
@@ -173,7 +252,7 @@ public sealed class RuntimeRoutingRegistry : IHostedService, IAsyncDisposable
 
     private async Task ApplyOutputRoutingAsync(CancellationToken cancellationToken)
     {
-        var routedOutputs = Snapshot().SelectMany(route => route.OutputIds).ToArray();
+        var routedOutputs = Current.SelectMany(route => route.OutputIds).ToArray();
         await _outputs.SetRuntimeRoutedOutputsAsync(routedOutputs, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -248,7 +327,10 @@ public sealed class RuntimeRoutingRegistry : IHostedService, IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _sources.Changed -= OnMediaSourcesChanged;
             _gate.Dispose();
+        }
         return ValueTask.CompletedTask;
     }
 }
@@ -262,6 +344,9 @@ public sealed class RuntimeRouteTicker : BackgroundService
     private readonly RuntimeScriptEvaluator _scriptEvaluator;
     private readonly ILogger<RuntimeRouteTicker> _logger;
     private readonly TimeSpan _interval;
+    private readonly Channel<bool> _wake = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+    private RuntimeSourceRouteDefinition[]? _lastRoutes;
     private readonly HashSet<string> _loopTriggered = new(StringComparer.OrdinalIgnoreCase);
 
     public RuntimeRouteTicker(RuntimeRoutingRegistry routes, MediaSourceRegistry sources,
@@ -276,31 +361,85 @@ public sealed class RuntimeRouteTicker : BackgroundService
         _scriptEvaluator = scriptEvaluator;
         _logger = logger;
         _interval = TimeSpan.FromSeconds(1d / ServerOptions.ResolveTickHz(configuration));
+        _routes.Changed += Wake;
+        _sources.Changed += Wake;
+        _outputs.Changed += Wake;
+        _scriptEvaluator.Changed += Wake;
+        _engine.SnapshotChanged += OnEngineChanged;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(_interval);
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        PeriodicTimer? timer = null;
+        try
         {
-            try { await TickAsync(stoppingToken).ConfigureAwait(false); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception exception) { _logger.LogError(exception, "Runtime route tick failed."); }
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                while (_wake.Reader.TryRead(out _)) { }
+                var playing = false;
+                try { playing = await TickAsync(stoppingToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+                catch (Exception exception) { _logger.LogError(exception, "Runtime route tick failed."); }
+                if (playing)
+                {
+                    timer ??= new PeriodicTimer(_interval);
+                    await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    timer?.Dispose();
+                    timer = null;
+                    await _wake.Reader.ReadAsync(stoppingToken).ConfigureAwait(false);
+                }
+            }
         }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        finally { timer?.Dispose(); }
     }
 
-    private async Task TickAsync(CancellationToken cancellationToken)
+    private void Wake() => _wake.Writer.TryWrite(true);
+
+    private void OnEngineChanged(object? sender, EngineSnapshot snapshot)
     {
-        var axisConfigurations = _engine.AxisConfigurations;
-        foreach (var route in _routes.Snapshot())
+        if (_routes.Current.Length > 0) Wake();
+    }
+
+    public override void Dispose()
+    {
+        _routes.Changed -= Wake;
+        _sources.Changed -= Wake;
+        _outputs.Changed -= Wake;
+        _scriptEvaluator.Changed -= Wake;
+        _engine.SnapshotChanged -= OnEngineChanged;
+        base.Dispose();
+    }
+
+    private async Task<bool> TickAsync(CancellationToken cancellationToken)
+    {
+        _routes.RefreshScriptBindings();
+        var routes = _routes.Current;
+        if (!ReferenceEquals(routes, _lastRoutes))
         {
+            _scriptEvaluator.RetainScripts(routes.Where(route => route.ScriptId is not null)
+                .Select(route => route.ScriptId!).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            _loopTriggered.Clear();
+            _lastRoutes = routes;
+        }
+        if (routes.Length == 0) return false;
+        var playing = false;
+        var axisConfigurations = _engine.AxisConfigurations;
+        foreach (var route in routes)
+        {
+            if (!_outputs.HasConnectedRoute(route.OutputIds)) continue;
             var internalSource = _sources.GetKind(route.SourceId)?.Equals("internal",
                 StringComparison.OrdinalIgnoreCase) == true;
             MediaClockResponse? state = null;
+            var routePlaying = false;
             TimeSpan position;
             if (internalSource)
             {
                 position = _engine.Current.Position;
+                routePlaying = _engine.State == PlayerState.Playing;
             }
             else
             {
@@ -311,6 +450,7 @@ public sealed class RuntimeRouteTicker : BackgroundService
                 position = TimeSpan.FromSeconds(Math.Max(0, state.PositionSeconds));
                 if (state.Playing)
                 {
+                    routePlaying = true;
                     var elapsed = DateTimeOffset.UtcNow - sample.UpdatedAtUtc;
                     position += TimeSpan.FromSeconds(Math.Max(0, elapsed.TotalSeconds) *
                         Math.Clamp(state.PlaybackSpeed, 0.25, 4));
@@ -329,12 +469,16 @@ public sealed class RuntimeRouteTicker : BackgroundService
             {
                 if (_engine.Current.ScriptName is null)
                     continue;
-                frame = _engine.Evaluate(position);
+                // The internal clock was already evaluated by EngineTicker.
+                var snapshot = _engine.Current;
+                frame = internalSource ? new OutputFrame(snapshot.Position, snapshot.Values)
+                    : _engine.Evaluate(position);
             }
             else
             {
                 continue;
             }
+            playing |= routePlaying;
             foreach (var outputId in route.OutputIds)
                 _outputs.PublishRouted(outputId, frame);
 
@@ -350,5 +494,6 @@ public sealed class RuntimeRouteTicker : BackgroundService
             else if (position.TotalSeconds < Math.Max(0, state.DurationSeconds - 1))
                 _loopTriggered.Remove(route.SourceId);
         }
+        return playing;
     }
 }

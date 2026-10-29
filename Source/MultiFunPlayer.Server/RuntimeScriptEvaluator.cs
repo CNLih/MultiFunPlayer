@@ -8,7 +8,8 @@ public sealed class RuntimeScriptEvaluator
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, ScriptEngine> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _failed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTimeOffset> _failed = new(StringComparer.OrdinalIgnoreCase);
+    private const int CacheCapacity = 128;
     private readonly ScriptCatalog _catalog;
     private readonly ILogger<RuntimeScriptEvaluator> _logger;
 
@@ -16,6 +17,19 @@ public sealed class RuntimeScriptEvaluator
     {
         _catalog = catalog;
         _logger = logger;
+    }
+
+    public event Action? Changed;
+
+    public void RetainScripts(IReadOnlySet<string> scriptIds)
+    {
+        lock (_gate)
+        {
+            foreach (var key in _cache.Keys.Where(key => !scriptIds.Contains(key)).ToArray())
+                _cache.Remove(key);
+            foreach (var key in _failed.Keys.Where(key => !scriptIds.Contains(key)).ToArray())
+                _failed.Remove(key);
+        }
     }
 
     public bool TryEvaluate(string scriptId, TimeSpan position,
@@ -42,11 +56,14 @@ public sealed class RuntimeScriptEvaluator
             _cache.Remove(scriptId);
             _failed.Remove(scriptId);
         }
+        Changed?.Invoke();
     }
 
     private bool TryLoad(string scriptId, out ScriptEngine? evaluator)
     {
         evaluator = null;
+        if (_failed.TryGetValue(scriptId, out var retryAfter) && DateTimeOffset.UtcNow < retryAfter)
+            return false;
         try
         {
             if (!_catalog.TryRead(scriptId, out var content))
@@ -64,6 +81,8 @@ public sealed class RuntimeScriptEvaluator
             else
                 return LogFailure(scriptId, "The script contains no actions.");
 
+            if (_cache.Count >= CacheCapacity)
+                _cache.Remove(_cache.Keys.First());
             _cache[scriptId] = evaluator;
             _failed.Remove(scriptId);
             return true;
@@ -76,8 +95,11 @@ public sealed class RuntimeScriptEvaluator
 
     private bool LogFailure(string scriptId, string reason)
     {
-        if (_failed.Add(scriptId))
+        if (!_failed.ContainsKey(scriptId))
             _logger.LogWarning("Runtime script {ScriptId} is unavailable: {Reason}", scriptId, reason);
+        if (_failed.Count >= CacheCapacity)
+            _failed.Remove(_failed.Keys.First());
+        _failed[scriptId] = DateTimeOffset.UtcNow.AddSeconds(5);
         return false;
     }
 }

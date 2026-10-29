@@ -1500,6 +1500,69 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     }
 
     [Fact]
+    public async Task Runtime_route_automatically_rematches_script_when_media_path_changes()
+    {
+        StubNetworkHandler.VlcUri = "file:///media/remote.mp4";
+        using var temp = new TemporaryDirectory();
+        var storage = new StorageOptions
+        {
+            ConfigRoot = Path.Combine(temp.Path, "config"),
+            LogsRoot = Path.Combine(temp.Path, "logs")
+        };
+        var catalog = new ScriptCatalog(Path.Combine(temp.Path, "scripts"));
+        Assert.True(catalog.TryWrite("remote.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":0}]}", overwrite: false, out _, out _, out _));
+        Assert.True(catalog.TryWrite("next_movie.funscript",
+            "{\"actions\":[{\"at\":0,\"pos\":0}]}", overwrite: false, out _, out _, out _));
+        using var engine = new MultiFunPlayer.Application.HeadlessPlayerEngine();
+        await using var sources = new MediaSourceRegistry(storage,
+            NullLogger<MediaSourceRegistry>.Instance, networkFactory: new StubNetworkFactory());
+        await using var outputs = new OutputTargetRegistry(storage, engine,
+            NullLogger<OutputTargetRegistry>.Instance);
+        await sources.StartAsync(CancellationToken.None);
+        await outputs.StartAsync(CancellationToken.None);
+        Assert.Equal(MediaSourceOperationStatus.Success, (await sources.CreateAsync(
+            new MediaSourceDefinition("matched-source", "Matched source", "vlc",
+                "http://media.example.local", DeviceId: "remote-player"))).Status);
+        Assert.Equal(OutputTargetOperationStatus.Success, (await outputs.CreateAsync(
+            new OutputTargetDefinition("matched-output", "Matched output", "file",
+                "matched.tcode", Enabled: false, AutoConnect: false))).Status);
+        var matcher = new RuntimeScriptMatcher(catalog);
+        await using var routes = new RuntimeRoutingRegistry(storage, sources, outputs, catalog,
+            matcher, NullLogger<RuntimeRoutingRegistry>.Instance);
+        await routes.StartAsync(CancellationToken.None);
+
+        var saved = await routes.SetAsync([
+            new RuntimeSourceRouteDefinition("matched-source", ["matched-output"],
+                ScriptMatchMode: "exact")]);
+        Assert.Equal("remote.funscript", Assert.Single(saved.Routes!).ScriptId);
+
+        // Switch media path to next_movie.mp4
+        StubNetworkHandler.VlcPlaylistId = 8;
+        StubNetworkHandler.VlcUri = "file:///media/next_movie.mp4";
+        for (var attempt = 0; attempt < 40 && routes.List()[0].ScriptId != "next_movie.funscript"; attempt++)
+            await Task.Delay(50);
+
+        Assert.Equal("next_movie.funscript", routes.List()[0].ScriptId);
+        StubNetworkHandler.VlcPlaylistId = 7;
+        StubNetworkHandler.VlcUri = "file:///media/remote.mp4";
+    }
+
+    [Fact]
+    public async Task Device_axes_pose_publishes_to_connected_targets()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/v1/device-axes/pose", new
+        {
+            Axes = new Dictionary<string, double> { ["L0"] = 0.25 },
+            IntervalMilliseconds = 50
+        });
+        Assert.True(response.IsSuccessStatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("sent", out _));
+    }
+
+    [Fact]
     public async Task Environment_tick_rate_overrides_configuration_section()
     {
         var previous = Environment.GetEnvironmentVariable("MFP_TICK_HZ");
@@ -1888,6 +1951,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
     private sealed class StubNetworkHandler : HttpMessageHandler
     {
         private readonly NetworkMediaSourceKind _kind;
+        public static long VlcPlaylistId { get; set; } = 7;
+        public static string VlcUri { get; set; } = "file:///media/remote.mp4";
 
         public StubNetworkHandler(NetworkMediaSourceKind kind) => _kind = kind;
 
@@ -1899,8 +1964,8 @@ public sealed class ServerApiTests : IClassFixture<WebApplicationFactory<MultiFu
             {
                 NetworkMediaSourceKind.Vlc => path switch
                 {
-                    "/requests/status.json" => "{\"apiversion\":4,\"state\":\"playing\",\"currentplid\":7,\"length\":12,\"time\":2.5,\"rate\":1}",
-                    "/requests/playlist.json" => "{\"children\":[{\"type\":\"leaf\",\"current\":\"current\",\"uri\":\"file:///media/remote.mp4\"}]}",
+                    "/requests/status.json" => $"{{\"apiversion\":4,\"state\":\"playing\",\"currentplid\":{VlcPlaylistId},\"length\":12,\"time\":2.5,\"rate\":1}}",
+                    "/requests/playlist.json" => $"{{\"children\":[{{\"type\":\"leaf\",\"current\":\"current\",\"uri\":\"{VlcUri}\"}}]}}",
                     _ => "{}"
                 },
                 NetworkMediaSourceKind.Mpc => path switch
