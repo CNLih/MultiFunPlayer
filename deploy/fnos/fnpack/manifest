@@ -1,5 +1,5 @@
 appname               = multifunplayer
-version               = 0.1.0
+version               = 0.1.1
 display_name          = MultiFunPlayer
 desc                  = Browser-controlled MultiFunPlayer server for fnOS.
 platform              = x86

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="830" viewBox="0 0 1200 830" role="img" aria-labelledby="title desc">
+  <title id="title">MultiFunPlayer 当前运行边界</title>
+  <desc id="desc">浏览器通过 REST 和 WebSocket 连接 NAS 中的 Server。Server 内部运行播放、路由、协议适配和存储。远程播放器与设备连接 Server。Windows 桌面版是单独进程，共享 Core 和 Application。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#516479"/></marker>
+    <style>
+      text { font-family: system-ui, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #172b40; }
+      .title { font-size: 22px; font-weight: 700; }
+      .label { font-size: 19px; font-weight: 600; }
+      .body { font-size: 17px; }
+      .note { font-size: 15px; fill: #516479; }
+      .wire { fill: none; stroke: #516479; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="830" rx="16" fill="#f7f9fc"/>
+  <text x="32" y="36" class="title">运行位置决定 CPU、内存和 GPU 开销归属</text>
+  <rect x="32" y="62" width="750" height="142" rx="12" fill="#e7f2ff" stroke="#8cb4de"/>
+  <text x="56" y="96" class="label">客户端：电脑 / 手机浏览器</text>
+  <text x="56" y="128" class="body">Web SPA：main.ts → store.ts → api.ts</text>
+  <text x="56" y="158" class="body">3D / WebGL：启用后按需绘制，使用客户端 CPU / GPU</text>
+  <text x="56" y="184" class="note">界面和预览由浏览器执行；设备输出由后端执行</text>
+  <path d="M 407 211 L 407 270" class="wire" marker-start="url(#arrow)"/>
+  <rect x="219" y="226" width="376" height="30" rx="6" fill="#f7f9fc"/>
+  <text x="407" y="247" text-anchor="middle" class="body">REST 操作 / WebSocket 状态</text>
+  <rect x="32" y="274" width="750" height="504" rx="12" fill="#eef6ef" stroke="#8db99b"/>
+  <text x="56" y="305" class="label">NAS / Linux：同一个 MultiFunPlayer.Server 进程</text>
+  <rect x="64" y="326" width="686" height="78" rx="8" fill="#fff" stroke="#b6cbdc"/>
+  <text x="88" y="356" class="label">ASP.NET API + 资源 Registry + StateBroadcaster</text>
+  <text x="88" y="384" class="body">认证、命令、资源连接与状态推送；同时提供 Web 静态文件</text>
+  <path d="M 227 404 L 227 445" class="wire"/>
+  <path d="M 586 404 L 586 445" class="wire"/>
+  <rect x="64" y="448" width="326" height="110" rx="8" fill="#fff" stroke="#b6cbdc"/>
+  <text x="84" y="480" class="label">内部播放</text>
+  <text x="84" y="509" class="body">EngineTicker → 播放引擎</text>
+  <text x="84" y="536" class="note">单调时钟、ScriptEngine、轴计算</text>
+  <rect x="422" y="448" width="328" height="110" rx="8" fill="#fff" stroke="#b6cbdc"/>
+  <text x="442" y="480" class="label">显式路由</text>
+  <text x="442" y="509" class="body">RuntimeRouteTicker</text>
+  <text x="442" y="536" class="note">媒体时钟 → 脚本 → 指定输出</text>
+  <path d="M 227 558 L 227 599" class="wire"/>
+  <path d="M 586 558 L 586 599" class="wire"/>
+  <rect x="64" y="602" width="686" height="70" rx="8" fill="#fff" stroke="#b6cbdc"/>
+  <text x="88" y="630" class="label">Infrastructure：媒体适配 / 输出协议 / 有界队列</text>
+  <text x="88" y="655" class="note">HTTP、WebSocket、TCP、UDP、Serial、File 等</text>
+  <rect x="64" y="698" width="686" height="54" rx="8" fill="#ddeade"/>
+  <text x="88" y="731" class="body">数据挂载：/config · /keys · /scripts · /logs</text>
+  <rect x="850" y="62" width="318" height="238" rx="12" fill="#f1edfa" stroke="#b5a3d6"/>
+  <text x="874" y="96" class="label">Windows 桌面版</text>
+  <text x="874" y="130" class="body">单独的 WPF 进程</text>
+  <text x="874" y="161" class="body">Bootstrapper / Stylet</text>
+  <text x="874" y="192" class="body">ScriptViewModel 更新循环</text>
+  <text x="874" y="226" class="note">共享 Core / Application</text>
+  <text x="874" y="253" class="note">保留桌面播放器、输入等集成</text>
+  <text x="874" y="280" class="note">独立运行与验收</text>
+  <rect x="850" y="570" width="318" height="182" rx="12" fill="#fff2df" stroke="#d6b37c"/>
+  <text x="874" y="602" class="label">外部软件与设备</text>
+  <text x="874" y="636" class="body">播放器：状态 / 控制接口</text>
+  <text x="874" y="670" class="body">输出设备：接收运动指令</text>
+  <text x="874" y="707" class="note">从 NAS 容器建立实际连接</text>
+  <text x="874" y="733" class="note">网络地址、权限和协议需匹配</text>
+  <path d="M 755 637 L 845 637" class="wire" marker-start="url(#arrow)"/>
+  <text x="32" y="810" class="note">关闭浏览器不停止后端播放；此图展示职责与运行边界，具体调用顺序见正文。</text>
+</svg>

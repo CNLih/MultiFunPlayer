@@ -23,6 +23,8 @@ complete Windows feature list above.
 
 Start with the
 [current usage, testing, running, and deployment guide](Docs/docs/migration/current-usage-testing-deployment.md).
+For a guided tour of the current code and NAS/browser runtime boundaries, read
+[当前整体框架与代码导读](Docs/docs/migration/architecture-walkthrough.md).
 The repository root `build.sh` is the canonical command entry point:
 
 ```sh
@@ -54,8 +56,7 @@ portable ownership boundaries and verification expectations.
 
 * Support for DeoVR SLR Interactive script streaming (requires SLR subscription)
 
-# Main features
-
+# Main features 
 * Supports **[DeoVR](https://deovr.com/), [MPV](https://mpv.io/), [MPC-HC/BE](https://github.com/clsid2/mpc-hc), [HereSphere](https://store.steampowered.com/app/1234730/HereSphere/), [OpenFunscripter](https://github.com/OpenFunscripter/OFS), [VLC](https://videolan.org/vlc/), [PotPlayer](https://potplayer.daum.net/), [Whirligig](http://whirligig.xyz/), [Plex](https://plex.tv), [Emby](https://emby.media/) and [Jellyfin](https://jellyfin.org/)** video players
 * Internal player to **play scripts without video files** 
 * Supports **[buttplug.io](https://buttplug.io), TCP, UDP, websockets, namedpipes, serial, file and The Handy (experimental)** outputs

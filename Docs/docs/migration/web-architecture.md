@@ -4,6 +4,9 @@ sidebar_position: 4
 
 # Headless Web Architecture
 
+For a guided tour of the current code, runtime boundaries, playback flows,
+Web/3D, and NAS deployment, see [当前整体框架与代码导读](./architecture-walkthrough.md).
+
 The migration keeps timing and protocol behavior in C# while replacing the
 desktop shell with an ASP.NET Core host and a browser client.
 
