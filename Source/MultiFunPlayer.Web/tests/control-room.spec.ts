@@ -61,6 +61,7 @@ test.describe('control room demo journey', () => {
   test('configures mechanical axes through the SR6 model preview', async ({ page }) => {
     test.setTimeout(90_000);
     await page.goto('/?demo=1#settings');
+    await page.getByRole('button', { name: 'Enable 3D preview', exact: true }).click();
 
     const model = page.locator('[data-axis-model-host]');
     await expect(model).toHaveAttribute('data-model-state', 'ready', { timeout: 20_000 });
@@ -116,6 +117,7 @@ test.describe('control room demo journey', () => {
 
     await page.getByRole('button', { name: 'Output targets' }).click();
     await page.getByRole('button', { name: 'Device settings' }).click();
+    await page.getByRole('button', { name: 'Enable 3D preview', exact: true }).click();
     await expect(page.locator('[data-axis-model-host]')).toHaveAttribute('data-model-state', 'ready', { timeout: 20_000 });
     await expect(page.locator('[data-axis-model-host] canvas')).toHaveCount(1);
   });
@@ -352,6 +354,7 @@ test.describe('control room demo journey', () => {
       class MockWebSocket extends EventTarget {
         static readonly OPEN = 1;
         static latest: MockWebSocket | undefined;
+        static connections = 0;
         readyState = MockWebSocket.OPEN;
         private closeListener: EventListener | null = null;
         private revision = 7;
@@ -365,6 +368,7 @@ test.describe('control room demo journey', () => {
         constructor() {
           super();
           MockWebSocket.latest = this;
+          MockWebSocket.connections++;
           const publish = () => this.dispatchEvent(new MessageEvent('message', {
             data: JSON.stringify({ state: 'Playing', script: 'Remote script', positionSeconds: 3, durationSeconds: 60, axes: { L0: 0.25, R2: 0.75 }, revision: this.revision++ }),
           }));
@@ -380,6 +384,9 @@ test.describe('control room demo journey', () => {
       }
 
       Object.defineProperty(window, 'WebSocket', { configurable: true, value: MockWebSocket });
+      Object.defineProperty(window, 'stateStreamStats', {
+        value: () => ({ connections: MockWebSocket.connections, readyState: MockWebSocket.latest?.readyState }),
+      });
       Object.defineProperty(window, 'disconnectStateStream', {
         configurable: true,
         value: () => {
@@ -542,6 +549,22 @@ test.describe('control room demo journey', () => {
     expect(await page.evaluate(() => (window as Window & { stablePlayback?: Element | null }).stablePlayback
       === document.querySelector('[data-runtime-playback="remote-media"]'))).toBeTruthy();
 
+    const connections = await page.evaluate(() => (window as any).stateStreamStats().connections);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(await page.evaluate(() => (window as any).stateStreamStats().readyState)).toBe(3);
+    await page.waitForTimeout(150); // let a request already in flight finish
+    const requestsWhileHidden = bearerSeen.length;
+    await page.waitForTimeout(650);
+    expect(bearerSeen).toHaveLength(requestsWhileHidden);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(await page.evaluate(() => (window as any).stateStreamStats().connections)).toBe(connections + 1);
+
     await page.getByRole('button', { name: 'Device settings' }).click();
     await expect(page.getByRole('heading', { name: 'Server-managed storage' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Effective runtime' })).toBeVisible();
@@ -584,7 +607,8 @@ test.describe('control room demo journey', () => {
     await expect(page.getByRole('button', { name: 'Remove mapping' })).toHaveAttribute('title', /fnOS App Settings/);
     await expect(page.getByPlaceholder('New subfolder, e.g. projects/2025')).toHaveCount(0);
     await expect(page.getByText('No subfolders yet.')).toHaveCount(0);
-    await expect(page.locator('[data-delete-script-folder]')).toHaveCount(0);
+    await expect(page.locator('[data-delete-script-folder]')).toHaveCount(2);
+    await expect(page.getByLabel('New folder', { exact: true })).toBeVisible();
     await expect(page.getByRole('searchbox')).toHaveCount(0);
     const scriptTree = page.locator('[data-script-tree]');
     const scriptPreview = page.locator('[data-script-folder-preview]');
