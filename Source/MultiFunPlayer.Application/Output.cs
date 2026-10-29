@@ -1,7 +1,14 @@
 namespace MultiFunPlayer.Application;
 
 /// <summary>A complete, normalized output update for one engine tick.</summary>
-public sealed record OutputFrame(TimeSpan Position, IReadOnlyDictionary<string, double> Values);
+public sealed record OutputFrame(
+    TimeSpan Position,
+    IReadOnlyDictionary<string, double> Values,
+    double? IntervalMilliseconds = null)
+{
+    public OutputFrame(TimeSpan position, IReadOnlyDictionary<string, double> values, TimeSpan interval)
+        : this(position, values, interval.TotalMilliseconds) { }
+}
 
 /// <summary>
 /// Synchronous boundary for output adapters. Adapters that need asynchronous

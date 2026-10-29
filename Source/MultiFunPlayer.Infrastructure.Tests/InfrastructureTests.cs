@@ -86,6 +86,30 @@ public sealed class InfrastructureTests
     }
 
     [Fact]
+    public async Task TCodeSinkFormatsInterpolationIntervalWhenProvided()
+    {
+        await using var transport = new RecordingTransport("fake-interval");
+        await transport.ConnectAsync();
+        await using var sink = new TCodeOutputSink(transport);
+        sink.Publish(new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 }, 50));
+        for (var attempt = 0; attempt < 40 && transport.Payloads.Count == 0; attempt++)
+            await Task.Delay(10);
+        Assert.Equal("L0500I50\n", Assert.Single(transport.Payloads));
+    }
+
+    [Fact]
+    public void RateLimitedSinkInjectsUpdateRateIntervalIntoInnerSink()
+    {
+        OutputFrame? captured = null;
+        var capture = new ActionSink(f => captured = f);
+        using var sink = new RateLimitedOutputSink(capture, updateRateHz: 20);
+
+        sink.Publish(new OutputFrame(TimeSpan.Zero, new Dictionary<string, double> { ["L0"] = 0.5 }));
+        Assert.NotNull(captured);
+        Assert.Equal(50, captured.IntervalMilliseconds);
+    }
+
+    [Fact]
     public async Task TCodeSink_writes_off_engine_thread_and_reports_async_faults()
     {
         await using var transport = new RecordingTransport("async-fake");
@@ -1065,6 +1089,11 @@ public sealed class InfrastructureTests
                 _ => NotFoundResponse()
             });
         }
+    }
+
+    private sealed class ActionSink(Action<OutputFrame> action) : IOutputSink
+    {
+        public void Publish(OutputFrame frame) => action(frame);
     }
 
     private sealed class RecordingSink : IOutputSink

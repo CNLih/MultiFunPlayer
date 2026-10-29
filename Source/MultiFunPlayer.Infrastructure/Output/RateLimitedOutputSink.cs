@@ -76,7 +76,11 @@ public sealed class RateLimitedOutputSink : IOutputSink, IOutputSinkDiagnostics,
 
         try
         {
-            _inner.Publish(frame);
+            var intervalMs = frame.IntervalMilliseconds ?? (1000.0 / UpdateRateHz);
+            var frameWithInterval = frame.IntervalMilliseconds.HasValue
+                ? frame
+                : new OutputFrame(frame.Position, frame.Values, intervalMs);
+            _inner.Publish(frameWithInterval);
             Interlocked.Increment(ref _sentFrames);
             Interlocked.Exchange(ref _lastSentAtUtcTicks, DateTimeOffset.UtcNow.Ticks);
             Volatile.Write(ref _lastError, null);
