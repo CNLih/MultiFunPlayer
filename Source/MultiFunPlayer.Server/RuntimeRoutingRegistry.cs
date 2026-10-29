@@ -389,6 +389,7 @@ public sealed class RuntimeRouteTicker : BackgroundService
                 {
                     timer?.Dispose();
                     timer = null;
+                    while (_wake.Reader.TryRead(out _)) { }
                     await _wake.Reader.ReadAsync(stoppingToken).ConfigureAwait(false);
                 }
             }

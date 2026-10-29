@@ -2,6 +2,7 @@ import { createMockStore, createRemoteStore, formatTime, statusLabel, type AppSt
 import { ApiError, MfpApiClient, type ApiMediaServerDiscovery } from './api';
 import { authorizeFnosScriptFolder, clearPendingFnosScriptAuthorization, consumeFnosAuthorizationCallback, fnosPendingAuthorizationKey, hasPendingFnosScriptAuthorization, openFnosAppSettings } from './fnos';
 import { destroyOsrAxisPreview, modeledAxisNames, mountOsrAxisPreview, updateOsrAxisPreview, type ModeledAxisName } from './osr-axis-preview';
+import { t, getLanguage, setLanguage } from './locales';
 import './styles.css';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -134,9 +135,9 @@ function renderCalibrationWizardModal(): string {
   let footerHtml = "";
 
   if (wizardState.step === "select-axes") {
-    stepBadge = "Step 1 of 3 · Selection";
-    wizardTitle = "Select axes to calibrate";
-    wizardSubtitle = "Choose which mechanical axes to include in the teach-in calibration wizard.";
+    stepBadge = t("wizard.step1Badge");
+    wizardTitle = t("wizard.step1Title");
+    wizardSubtitle = t("wizard.step1Subtitle");
     const selectedCount = wizardState.selectedAxes.length;
     const cardsHtml = modeledAxisNames.map((axis) => {
       const checked = wizardState.selectedAxes.includes(axis);
@@ -145,27 +146,27 @@ function renderCalibrationWizardModal(): string {
 
     bodyHtml = `
       <div class="axis-wizard-tools">
-        <button type="button" class="button button-secondary" data-axis-wizard-preset="6axes">Standard 6 axes</button>
-        <button type="button" class="button button-secondary" data-axis-wizard-preset="all">Select all</button>
-        <button type="button" class="button button-secondary" data-axis-wizard-preset="none">Clear</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="6axes">{t("wizard.btn6axes")}</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="all">{t("wizard.btnAll")}</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="none">{t("wizard.btnClear")}</button>
       </div>
       <div class="axis-wizard-axes-grid">
         ${cardsHtml}
       </div>
-      <p class="axis-wizard-instruction">For each selected axis, you will set the physical minimum, followed by the maximum with a safety threshold barrier.</p>
+      <p class="axis-wizard-instruction">${t("wizard.step1Instruction")}</p>
     `;
 
     footerHtml = `
-      <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel</button>
-      <button type="button" class="button button-primary" data-axis-wizard-start-calibration ${selectedCount === 0 ? "disabled" : ""}>Start calibration (${selectedCount} axes) &rarr;</button>
+      <button type="button" class="button button-secondary" data-axis-wizard-cancel>{t("common.cancel")}</button>
+      <button type="button" class="button button-primary" data-axis-wizard-start-calibration ${selectedCount === 0 ? "disabled" : ""}>${t("wizard.startCalibration", { count: selectedCount })}</button>
     `;
   } else if (wizardState.step === "calibrating-min") {
     const axis = wizardState.selectedAxes[wizardState.currentAxisIndex] ?? "L0";
     const friendly = axisFriendlyNames[axis] ?? "";
     const progress = `Axis ${wizardState.currentAxisIndex + 1} of ${wizardState.selectedAxes.length}`;
     stepBadge = `Step 2 · ${progress} · Minimum`;
-    wizardTitle = `Set ${axis} minimum position`;
-    wizardSubtitle = `Move slider until ${axis} reaches its lowest/safe inward limit. 3D & device track live.`;
+    wizardTitle = t("wizard.step2MinTitle", { axis });
+    wizardSubtitle = t("wizard.step2MinSubtitle", { axis });
 
     bodyHtml = `
       <div class="axis-wizard-value-display">
@@ -186,8 +187,8 @@ function renderCalibrationWizardModal(): string {
     `;
 
     footerHtml = `
-      <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel wizard</button>
-      <button type="button" class="button button-primary" data-axis-wizard-next="min">Next: Set maximum &rarr;</button>
+      <button type="button" class="button button-secondary" data-axis-wizard-cancel>{t("wizard.cancelWizard")}</button>
+      <button type="button" class="button button-primary" data-axis-wizard-next="min">${t("wizard.nextSetMax")}</button>
     `;
   } else if (wizardState.step === "calibrating-max") {
     const axis = wizardState.selectedAxes[wizardState.currentAxisIndex] ?? "L0";
@@ -195,8 +196,8 @@ function renderCalibrationWizardModal(): string {
     const progress = `Axis ${wizardState.currentAxisIndex + 1} of ${wizardState.selectedAxes.length}`;
     const isLast = wizardState.currentAxisIndex >= wizardState.selectedAxes.length - 1;
     stepBadge = `Step 2 · ${progress} · Maximum`;
-    wizardTitle = `Set ${axis} maximum position`;
-    wizardSubtitle = `Move slider to physical highest safe position. Striped zone shows minimum threshold barrier.`;
+    wizardTitle = t("wizard.step2MaxTitle", { axis });
+    wizardSubtitle = t("wizard.step2MaxSubtitle", { axis });
 
     const barrierPercent = (wizardState.tempMin * 100).toFixed(1);
     const sliderMin = Math.min(0.99, wizardState.tempMin + 0.01);
@@ -227,13 +228,13 @@ function renderCalibrationWizardModal(): string {
     `;
 
     footerHtml = `
-      <button type="button" class="button button-secondary" data-axis-wizard-prev="max">&larr; Back to minimum</button>
-      <button type="button" class="button button-primary" data-axis-wizard-next="max">${isLast ? "Finish & review summary &rarr;" : "Next axis &rarr;"}</button>
+      <button type="button" class="button button-secondary" data-axis-wizard-prev="max">${t("wizard.backToMin")}</button>
+      <button type="button" class="button button-primary" data-axis-wizard-next="max">${isLast ? t("wizard.finishReview") : t("wizard.nextAxis")}</button>
     `;
   } else if (wizardState.step === "summary") {
-    stepBadge = "Step 3 of 3 · Finalize";
-    wizardTitle = "Calibration summary";
-    wizardSubtitle = `Verified ranges and limits for ${Object.keys(wizardState.results).length} axes. Choose how to apply.`;
+    stepBadge = t("wizard.step3Badge");
+    wizardTitle = t("wizard.step3Title");
+    wizardSubtitle = t("wizard.step3Subtitle", { count: Object.keys(wizardState.results).length });
 
     const rowsHtml = Object.entries(wizardState.results).map(([axis, res]) => {
       const span = res.maximum - res.minimum;
@@ -244,7 +245,7 @@ function renderCalibrationWizardModal(): string {
       <div class="axis-wizard-table-wrap">
         <table class="axis-wizard-table">
           <thead>
-            <tr><th>Axis</th><th>Output range</th><th>Safety limit</th><th>Span</th></tr>
+            <tr><th>${t("wizard.colAxis")}</th><th>${t("wizard.colOutputRange")}</th><th>${t("wizard.colSafetyLimit")}</th><th>${t("wizard.colSpan")}</th></tr>
           </thead>
           <tbody>
             ${rowsHtml}
@@ -256,8 +257,8 @@ function renderCalibrationWizardModal(): string {
 
     footerHtml = `
       <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel</button>
-      <button type="button" class="button button-secondary" data-axis-wizard-save="draft">Save draft</button>
-      <button type="button" class="button button-primary" data-axis-wizard-save="apply">Save & apply to hardware</button>
+      <button type="button" class="button button-secondary" data-axis-wizard-save="draft">{t("wizard.saveDraft")}</button>
+      <button type="button" class="button button-primary" data-axis-wizard-save="apply">{t("wizard.saveApply")}</button>
     `;
   }
 
@@ -310,14 +311,22 @@ toastRegion.className = 'toast-region';
 toastRegion.setAttribute('aria-live', 'polite');
 toastRegion.setAttribute('aria-atomic', 'true');
 document.body.append(toastRegion);
-const routes: { id: Route; label: string; hint: string }[] = [
-  { id: 'runtime', label: 'Runtime', hint: 'Playback and health' },
-  { id: 'media', label: 'Media sources', hint: 'Inputs and capabilities' },
-  { id: 'scripts', label: 'Scripts', hint: 'Folders and resources' },
-  { id: 'outputs', label: 'Output targets', hint: 'Connections and rates' },
-  { id: 'settings', label: 'Device settings', hint: 'Axis range and limits' },
-  { id: 'logs', label: 'Logs and health', hint: 'Events and diagnostics' },
-];
+function getRoutes(): { id: Route; label: string; hint: string }[] {
+  return [
+    { id: 'runtime', label: t('nav.runtime'), hint: t('nav.runtimeHint') },
+    { id: 'media', label: t('nav.media'), hint: t('nav.mediaHint') },
+    { id: 'scripts', label: t('nav.scripts'), hint: t('nav.scriptsHint') },
+    { id: 'outputs', label: t('nav.outputs'), hint: t('nav.outputsHint') },
+    { id: 'settings', label: t('nav.settings'), hint: t('nav.settingsHint') },
+    { id: 'logs', label: t('nav.logs'), hint: t('nav.logsHint') },
+  ];
+}
+const routes = new Proxy([] as { id: Route; label: string; hint: string }[], {
+  get: (_target, prop: string | symbol) => {
+    const list = getRoutes();
+    return (list as any)[prop];
+  }
+});
 
 // The default endpoints follow the address the browser uses to reach this
 // server (the fnOS host when deployed), so 127.0.0.1/loopback is replaced by
@@ -354,11 +363,13 @@ const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (charact
 const displayAxis = (axis: string | undefined | null): string => (axis && axis.trim()) ? axis.trim() : 'all';
 const statusClass = (status: Status | 'pass' | 'warn'): string => status === 'pass' ? 'status-online' : `status-${status}`;
 const statusDot = (status: Status | 'pass' | 'warn'): string => `<span class="status-dot ${statusClass(status)}" aria-hidden="true"></span>`;
-const axisFriendlyNames: Record<string, string> = {
-  L0: 'Up / Down', L1: 'Forward / Backward', L2: 'Left / Right',
-  R0: 'Twist', R1: 'Roll', R2: 'Pitch', V0: 'Vibrate', V1: 'Pump',
-  A0: 'Valve', A1: 'Suction', A2: 'Lube',
-};
+const axisFriendlyNames: Record<string, string> = new Proxy({}, {
+  get: (_target, prop: string) => {
+    const key = `axes.${prop}`;
+    const translated = t(key);
+    return translated === key ? prop : translated;
+  }
+});
 const axisTravelUnit = (axis: string): string => axis.startsWith('L') ? 'mm' : axis.startsWith('R') ? '°' : '%';
 const percent = (value: number): string => `${Math.round(value * 100)}%`;
 
@@ -428,7 +439,7 @@ function renderDeviceAxisVisualization(axes: DeviceAxisSetting[], state?: AppSta
     <div class="axis-preview-target-bar">
       <div class="axis-preview-target-header">
         <div>
-          <strong>Real device target</strong>
+          <strong>${t("preview3d.targetHardware")}</strong>
           <span data-axis-target-status-label>${activeTarget ? `${escapeHtml(activeTarget.name)} · ${escapeHtml(activeTarget.endpoint)}` : 'Connect an output target to sync live movements'}</span>
         </div>
         <span class="status-badge ${statusClass(activeTarget?.status ?? 'offline')}" data-axis-target-badge>${statusDot(activeTarget?.status ?? 'offline')}<span data-axis-target-status-text>${statusLabel(activeTarget?.status ?? 'offline')}</span></span>
@@ -437,13 +448,13 @@ function renderDeviceAxisVisualization(axes: DeviceAxisSetting[], state?: AppSta
       <div class="axis-preview-target-sync-row">
         <label class="axis-checkbox" title="Mirror real device movement during playback onto 3D model">
           <input type="checkbox" data-axis-target-sync${followLiveTarget ? ' checked' : ''} />
-          <span>Follow live device movements</span>
+          <span>${t("preview3d.followLive")}</span>
         </label>
         <span data-axis-target-live-hint>${isOnline ? (followLiveTarget ? 'Live mirroring active' : 'Mirroring paused') : 'Device offline'}</span>
       </div>
     </div>`;
 
-  return `<div class="axis-model-layout"><div class="axis-model-stage" data-axis-model-host data-model-state="disabled" role="group" aria-label="Interactive SR6 axis movement preview"><div class="axis-model-status"><button type="button" class="button button-secondary" data-axis-model-enable>Enable 3D preview</button></div></div><div class="axis-model-controls">${syncControlHtml}<div class="axis-model-tabs" role="tablist" aria-label="Axis to preview">${modeledAxisNames.map((name) => `<button class="axis-model-tab${name === selectedAxisPreview ? ' is-active' : ''}" type="button" role="tab" aria-selected="${name === selectedAxisPreview}" data-axis-preview-select="${name}"><strong>${name}</strong><span>${escapeHtml(axisFriendlyNames[name])}</span></button>`).join('')}</div><div class="axis-preview-simulation"><div><strong>Simulation</strong><span data-axis-preview-simulation-status>6 axes</span></div><button class="button button-primary" type="button" data-axis-preview-simulate>Simulate all axes</button></div><div class="axis-model-selected"><div><p class="eyebrow">Selected movement</p><h3><span data-axis-preview-name>${axis.axis}</span> <small data-axis-preview-friendly>${escapeHtml(axisFriendlyNames[axis.axis])}</small></h3></div><output data-axis-preview-output>${percent(applyAxisPreview(axis, axisPreviewPositions[selectedAxisPreview]))}</output></div><label class="axis-preview-position"><span>Input position <output data-axis-preview-input-value>${percent(axisPreviewPositions[selectedAxisPreview])}</output></span><input data-axis-preview-position aria-label="${axis.axis} preview input position" type="range" min="0" max="1" step="0.01" value="${axisPreviewPositions[selectedAxisPreview]}" /></label><div class="axis-wizard-banner"><div><strong>Axis calibration wizard</strong><span>Teach physical min/max step-by-step with live 3D & hardware sync.</span></div><button type="button" class="button button-primary" data-axis-wizard-open>📐 Guided calibration</button></div><div class="axis-preview-presets"><button class="button button-secondary" type="button" data-axis-preview-preset="0">Minimum</button><button class="button button-secondary" type="button" data-axis-preview-preset="0.5">Center</button><button class="button button-secondary" type="button" data-axis-preview-preset="1">Maximum</button><button class="button button-secondary" type="button" data-axis-preview-sweep>Sweep axis</button></div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><strong>Output range</strong><span data-axis-preview-output-summary>${percent(axis.minimum)} to ${percent(axis.maximum)}</span></div>${renderPreviewRange(axis, 'output')}</div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><label class="axis-checkbox"><input data-axis-preview-field="limitEnabled" aria-label="Preview ${axis.axis} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Safety limit</label><span data-axis-preview-limit-summary>${axis.limitEnabled ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled'}</span></div>${renderPreviewRange(axis, 'limit')}</div><label class="axis-preview-reverse axis-checkbox"><input data-axis-preview-field="inverted" aria-label="Preview ${axis.axis} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> Reverse this axis</label><p class="axis-preview-travel" data-axis-travel-summary="${axis.axis}"></p></div></div>`;
+  return `<div class="axis-model-layout"><div class="axis-model-stage" data-axis-model-host data-model-state="disabled" role="group" aria-label="Interactive SR6 axis movement preview"><div class="axis-model-status"><button type="button" class="button button-secondary" data-axis-model-enable>${t("preview3d.enableButton")}</button></div></div><div class="axis-model-controls">${syncControlHtml}<div class="axis-model-tabs" role="tablist" aria-label="Axis to preview">${modeledAxisNames.map((name) => `<button class="axis-model-tab${name === selectedAxisPreview ? ' is-active' : ''}" type="button" role="tab" aria-selected="${name === selectedAxisPreview}" data-axis-preview-select="${name}"><strong>${name}</strong><span>${escapeHtml(axisFriendlyNames[name])}</span></button>`).join('')}</div><div class="axis-preview-simulation"><div><strong>Simulation</strong><span data-axis-preview-simulation-status>6 axes</span></div><button class="button button-primary" type="button" data-axis-preview-simulate>${t("preview3d.simulateAll")}</button></div><div class="axis-model-selected"><div><p class="eyebrow">Selected movement</p><h3><span data-axis-preview-name>${axis.axis}</span> <small data-axis-preview-friendly>${escapeHtml(axisFriendlyNames[axis.axis])}</small></h3></div><output data-axis-preview-output>${percent(applyAxisPreview(axis, axisPreviewPositions[selectedAxisPreview]))}</output></div><label class="axis-preview-position"><span>Input position <output data-axis-preview-input-value>${percent(axisPreviewPositions[selectedAxisPreview])}</output></span><input data-axis-preview-position aria-label="${axis.axis} preview input position" type="range" min="0" max="1" step="0.01" value="${axisPreviewPositions[selectedAxisPreview]}" /></label><div class="axis-wizard-banner"><div><strong>${t("wizard.bannerTitle")}</strong><span>${t("wizard.bannerDesc")}</span></div><button type="button" class="button button-primary" data-axis-wizard-open>${t("wizard.bannerBtn")}</button></div><div class="axis-preview-presets"><button class="button button-secondary" type="button" data-axis-preview-preset="0">${t("preview3d.minimum")}</button><button class="button button-secondary" type="button" data-axis-preview-preset="0.5">${t("preview3d.center")}</button><button class="button button-secondary" type="button" data-axis-preview-preset="1">${t("preview3d.maximum")}</button><button class="button button-secondary" type="button" data-axis-preview-sweep>${t("preview3d.sweepAxis")}</button></div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><strong>Output range</strong><span data-axis-preview-output-summary>${percent(axis.minimum)} to ${percent(axis.maximum)}</span></div>${renderPreviewRange(axis, 'output')}</div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><label class="axis-checkbox"><input data-axis-preview-field="limitEnabled" aria-label="Preview ${axis.axis} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Safety limit</label><span data-axis-preview-limit-summary>${axis.limitEnabled ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled'}</span></div>${renderPreviewRange(axis, 'limit')}</div><label class="axis-preview-reverse axis-checkbox"><input data-axis-preview-field="inverted" aria-label="Preview ${axis.axis} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> ${t("preview3d.reverseAxis")}</label><p class="axis-preview-travel" data-axis-travel-summary="${axis.axis}"></p></div></div>`;
 }
 
 function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', minimum: number, maximum: number): string {
@@ -505,6 +516,7 @@ function renderShell() {
           <div class="breadcrumbs"><span>Workspace</span><span aria-hidden="true">/</span><strong data-bind="route-label"></strong></div>
           <div class="topbar-actions">
             <span class="sync-state">${statusDot('pass')}<span data-bind="last-sync"></span></span>
+            <button type="button" class="lang-switch" data-action="toggle-language" title="Toggle language / 切换语言">🌐 <span>${getLanguage() === 'zh' ? 'English' : '简体中文'}</span></button>
             <button class="icon-button" data-action="refresh" aria-label="Reload workspace" title="Reload workspace">Reload</button>
             <button class="avatar" aria-label="Open account menu">MP</button>
           </div>
@@ -543,9 +555,9 @@ function updateChrome(state: AppState) {
     const element = appRoot.querySelector<HTMLElement>(selector);
     if (element && element.textContent !== value) element.textContent = value;
   };
-  setText('[data-bind="connection-mode"]', state.mode === 'server' ? 'Server API connected' : 'Local demo mode');
-  setText('[data-bind="route-label"]', routes.find((item) => item.id === state.route)?.label ?? 'Workspace');
-  setText('[data-bind="last-sync"]', `Synced ${state.lastSync}`);
+  setText('[data-bind="connection-mode"]', state.mode === 'server' ? t('nav.serverConnected') : t('nav.demoMode'));
+  setText('[data-bind="route-label"]', getRoutes().find((item) => item.id === state.route)?.label ?? t('nav.workspace'));
+  setText('[data-bind="last-sync"]', `${t('nav.synced')} ${state.lastSync}`);
   appRoot.querySelectorAll<HTMLButtonElement>('.nav-item[data-route]').forEach((button) => {
     const active = button.dataset.route === state.route;
     button.classList.toggle('active', active);
@@ -1609,6 +1621,15 @@ function handleRoutingPointerUp(event: PointerEvent) {
 
 function handleClick(event: MouseEvent) {
   const target = event.target as HTMLElement;
+  const langToggle = target.closest<HTMLElement>('[data-action="toggle-language"]');
+  if (langToggle) {
+    event.preventDefault();
+    const nextLang = getLanguage() === 'zh' ? 'en' : 'zh';
+    setLanguage(nextLang);
+    render(store.getState(), 'full');
+    showToast(nextLang === 'zh' ? '已切换至简体中文' : 'Language switched to English');
+    return;
+  }
   const route = target.closest<HTMLElement>('[data-route]')?.dataset.route as Route | undefined;
   if (route) {
     store.setRoute(route);
