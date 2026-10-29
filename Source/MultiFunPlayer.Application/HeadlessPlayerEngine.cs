@@ -1,5 +1,6 @@
 using MultiFunPlayer.Common;
 using MultiFunPlayer.Script;
+using System.Collections.ObjectModel;
 
 namespace MultiFunPlayer.Application;
 
@@ -14,6 +15,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
     private readonly ScriptEngine _scripts;
     private readonly IMediaClock _clock;
     private readonly List<IOutputSink> _sinks = [];
+    private IOutputSink[] _sinkSnapshot = [];
     private readonly Dictionary<string, AxisConfiguration> _axisConfigurations =
         new(StringComparer.OrdinalIgnoreCase);
     private PlayerState _state = PlayerState.Empty;
@@ -21,6 +23,8 @@ public sealed class HeadlessPlayerEngine : IDisposable
     private TimeSpan _clockAnchor;
     private long _revision;
     private bool _disposed;
+    private IReadOnlyDictionary<string, AxisConfiguration> _configurationSnapshot =
+        new ReadOnlyDictionary<string, AxisConfiguration>(new Dictionary<string, AxisConfiguration>());
 
     public HeadlessPlayerEngine(IMediaClock? clock = null, ScriptEngine? scripts = null)
     {
@@ -47,8 +51,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
         get
         {
             lock (_gate)
-                return new Dictionary<string, AxisConfiguration>(_axisConfigurations,
-                    StringComparer.OrdinalIgnoreCase);
+                return _configurationSnapshot;
         }
     }
 
@@ -61,6 +64,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
         {
             ThrowIfDisposed();
             _axisConfigurations[normalized.Axis] = normalized;
+            RefreshConfigurationSnapshot();
             snapshot = SetSnapshotLocked();
         }
         Publish(snapshot);
@@ -77,6 +81,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
             _axisConfigurations.Clear();
             foreach (var configuration in normalized)
                 _axisConfigurations[configuration.Axis] = configuration;
+            RefreshConfigurationSnapshot();
             snapshot = SetSnapshotLocked();
         }
         Publish(snapshot);
@@ -92,6 +97,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
             ThrowIfDisposed();
             if (!_axisConfigurations.Remove(axis))
                 return false;
+            RefreshConfigurationSnapshot();
             snapshot = SetSnapshotLocked();
         }
         Publish(snapshot);
@@ -214,6 +220,8 @@ public sealed class HeadlessPlayerEngine : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
+            if (_state != PlayerState.Playing)
+                return Current;
             if (_state == PlayerState.Playing)
             {
                 _position = PositionFromClockLocked();
@@ -260,6 +268,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
         {
             ThrowIfDisposed();
             _sinks.Add(sink);
+            _sinkSnapshot = [.. _sinks];
         }
         return new SinkRegistration(this, sink);
     }
@@ -281,12 +290,17 @@ public sealed class HeadlessPlayerEngine : IDisposable
                 return;
             _disposed = true;
             _sinks.Clear();
+            _sinkSnapshot = [];
         }
     }
 
     private EngineSnapshot NewSnapshot()
         => new(_state, _scripts.ScriptName, _position, _scripts.Duration,
             new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase), _revision);
+
+    private void RefreshConfigurationSnapshot()
+        => _configurationSnapshot = new ReadOnlyDictionary<string, AxisConfiguration>(
+            new Dictionary<string, AxisConfiguration>(_axisConfigurations, StringComparer.OrdinalIgnoreCase));
 
     private EngineSnapshot SetSnapshotLocked()
     {
@@ -313,7 +327,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
         OutputFrame frame = new(snapshot.Position, snapshot.Values);
         IOutputSink[] sinks;
         lock (_gate)
-            sinks = [.. _sinks];
+            sinks = _sinkSnapshot;
 
         foreach (var sink in sinks)
         {
@@ -328,9 +342,7 @@ public sealed class HeadlessPlayerEngine : IDisposable
         }
 
         var handlers = SnapshotChanged;
-        if (handlers is not null)
-            foreach (EventHandler<EngineSnapshot> handler in handlers.GetInvocationList())
-                handler(this, snapshot);
+        handlers?.Invoke(this, snapshot);
     }
 
     private void RaiseSinkFailed(OutputSinkError error)
@@ -344,7 +356,10 @@ public sealed class HeadlessPlayerEngine : IDisposable
     private void RemoveSink(IOutputSink sink)
     {
         lock (_gate)
+        {
             _sinks.Remove(sink);
+            _sinkSnapshot = [.. _sinks];
+        }
     }
 
     private void ThrowIfDisposed()

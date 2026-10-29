@@ -135,7 +135,16 @@ internal sealed class ScriptViewModel : Screen, IDeviceAxisValueProvider, IDispo
             UpdateUi();
             UpdateMediaLoop();
 
-            stopwatch.SleepPrecise(IsPlaying || dirty ? 2 : 10);
+            if (IsPlaying || dirty)
+                stopwatch.SleepPrecise(2);
+            else
+            {
+                // Idle UI sampling does not need the active output loop's
+                // final busy-spin. Sleep on the cancellation handle instead.
+                var remaining = Math.Max(0, 10 - stopwatch.Elapsed.TotalMilliseconds);
+                if (token.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(remaining)))
+                    break;
+            }
             deltaTime = stopwatch.ElapsedTicks / (double)Stopwatch.Frequency;
             stopwatch.Restart();
         }

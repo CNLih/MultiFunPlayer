@@ -184,11 +184,16 @@ internal abstract class AbstractMediaSource : Screen, IMediaSource
 
         PropertyChanged += OnPropertyChanged;
 
-        while (true)
-            if (statuses.Contains(Status) || statuses.Contains(await channel.Reader.ReadAsync(token)))
-                break;
-
-        PropertyChanged -= OnPropertyChanged;
+        try
+        {
+            while (true)
+                if (statuses.Contains(Status) || statuses.Contains(await channel.Reader.ReadAsync(token)))
+                    break;
+        }
+        finally
+        {
+            PropertyChanged -= OnPropertyChanged;
+        }
 
         void OnPropertyChanged(object sender, PropertyChangedEventArgs e)
         {

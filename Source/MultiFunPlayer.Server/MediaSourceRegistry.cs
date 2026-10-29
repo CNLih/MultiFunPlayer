@@ -94,6 +94,8 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         }
     }
 
+    public event Action? Changed;
+
     public IReadOnlyList<MediaSourceResponse> List()
     {
         _gate.Wait();
@@ -524,6 +526,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                     };
                     await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     source.Connected = true;
+                    Changed?.Invoke();
                     source.LastError = null;
                     return;
                 }
@@ -568,6 +571,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                     };
                     await adapter.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     source.Connected = true;
+                    Changed?.Invoke();
                     source.LastError = null;
                     return;
                 }
@@ -593,6 +597,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
                 }
             }
             source.Connected = true;
+            Changed?.Invoke();
             source.LastError = null;
             return;
         }
@@ -603,7 +608,7 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
             : "The network media adapter is described but not wired in this server version.";
     }
 
-    private static void HandleOfsMessage(RuntimeSource source, OfsMediaEvent message)
+    private void HandleOfsMessage(RuntimeSource source, OfsMediaEvent message)
     {
         if (message.Kind == OfsMediaEventKind.ProtocolError)
         {
@@ -612,45 +617,53 @@ public sealed class MediaSourceRegistry : IHostedService, IAsyncDisposable
         }
 
         source.LastError = null;
+        var changed = source.LastMediaState != message.State;
         source.LastMediaState = message.State;
         source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+        if (changed) Changed?.Invoke();
     }
 
-    private static void HandleNetworkState(RuntimeSource source, NetworkMediaState state)
+    private void HandleNetworkState(RuntimeSource source, NetworkMediaState state)
     {
+        var changed = source.LastNetworkMediaState != state;
         source.LastNetworkMediaState = state;
         source.LastError = null;
         source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+        if (changed) Changed?.Invoke();
     }
 
-    private static void UpdatePlaying(RuntimeSource source, bool playing)
+    private void UpdatePlaying(RuntimeSource source, bool playing)
     {
         if (source.LastNetworkMediaState is { } network)
             source.LastNetworkMediaState = network with { Playing = playing };
         if (source.LastMediaState is { } ofs)
             source.LastMediaState = ofs with { Playing = playing };
         source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+        Changed?.Invoke();
     }
 
-    private static void UpdatePosition(RuntimeSource source, TimeSpan position)
+    private void UpdatePosition(RuntimeSource source, TimeSpan position)
     {
         if (source.LastNetworkMediaState is { } network)
             source.LastNetworkMediaState = network with { Position = position };
         if (source.LastMediaState is { } ofs)
             source.LastMediaState = ofs with { Position = position };
         source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+        Changed?.Invoke();
     }
 
-    private static void UpdatePlaybackSpeed(RuntimeSource source, double playbackSpeed)
+    private void UpdatePlaybackSpeed(RuntimeSource source, double playbackSpeed)
     {
         if (source.LastMediaState is { } ofs)
             source.LastMediaState = ofs with { PlaybackSpeed = playbackSpeed };
         source.MediaStateUpdatedAtUtc = DateTimeOffset.UtcNow;
+        Changed?.Invoke();
     }
 
-    private static async Task DisconnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
+    private async Task DisconnectLockedAsync(RuntimeSource source, CancellationToken cancellationToken)
     {
         source.Connected = false;
+        Changed?.Invoke();
         var ofsAdapter = source.Adapter;
         source.Adapter = null;
         if (ofsAdapter is not null)

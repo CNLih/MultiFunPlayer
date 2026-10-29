@@ -56,6 +56,8 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
 {
     private const string StoreFile = "device-axis-settings.json";
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _stopGate = new();
+    private Task? _stopTask;
     private readonly Dictionary<string, AxisConfiguration> _axes =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly RootedFileStore? _config;
@@ -147,7 +149,15 @@ public sealed class DeviceAxisRegistry : IHostedService, IAsyncDisposable
         }
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        // The host and DI disposal may both request shutdown. Share one flush
+        // and never acquire a semaphore after it has been disposed.
+        lock (_stopGate)
+            return _stopTask ??= StopCoreAsync(cancellationToken);
+    }
+
+    private async Task StopCoreAsync(CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try

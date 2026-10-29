@@ -37,8 +37,8 @@ public sealed class StateBroadcaster
 
     public void Publish(EngineSnapshot snapshot)
     {
-        foreach (var client in _clients.Values)
-            client.WriteLatest(snapshot);
+        foreach (var entry in _clients)
+            entry.Value.WriteLatest(snapshot);
     }
 
     private void Remove(Client client)

@@ -106,11 +106,16 @@ internal abstract class AbstractOutputTarget : Screen, IOutputTarget
 
         PropertyChanged += OnPropertyChanged;
 
-        while (true)
-            if (statuses.Contains(Status) || statuses.Contains(await channel.Reader.ReadAsync(token)))
-                break;
-
-        PropertyChanged -= OnPropertyChanged;
+        try
+        {
+            while (true)
+                if (statuses.Contains(Status) || statuses.Contains(await channel.Reader.ReadAsync(token)))
+                    break;
+        }
+        finally
+        {
+            PropertyChanged -= OnPropertyChanged;
+        }
 
         void OnPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
@@ -589,7 +594,7 @@ internal abstract class AsyncAbstractOutputTarget(int instanceIndex, IApplicatio
     protected async Task FixedUpdateAsync<T>(Func<bool> condition, Func<T, double, Task> body, CancellationToken token) where T : AsyncFixedUpdateContext
     {
         var context = (T)UpdateContexts[DeviceAxisUpdateType.FixedUpdate];
-        var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(context.UpdateInterval));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(context.UpdateInterval));
         var timerInterval = context.UpdateInterval;
 
         var stopwatch = Stopwatch.StartNew();
@@ -605,13 +610,11 @@ internal abstract class AsyncAbstractOutputTarget(int instanceIndex, IApplicatio
 
             if (context.UpdateInterval != timerInterval)
             {
-                timer.Dispose();
-                timer = new PeriodicTimer(TimeSpan.FromMilliseconds(context.UpdateInterval));
+                timer.Period = TimeSpan.FromMilliseconds(context.UpdateInterval);
                 timerInterval = context.UpdateInterval;
             }
         }
 
-        timer.Dispose();
     }
 
     protected Task PolledUpdateAsync(IReadOnlyList<DeviceAxis> axes, Func<bool> condition, Func<AsyncPolledUpdateContext, DeviceAxis, DeviceAxisValueEvent, double, Task> body, CancellationToken cancellationToken)

@@ -7,6 +7,42 @@ namespace MultiFunPlayer.Application.Tests;
 public sealed class EngineTests
 {
     [Fact]
+    public void IdleTicksDoNotAllocateSnapshotsOrRepublishOutputButCommandsStillDo()
+    {
+        using var engine = new HeadlessPlayerEngine(new FakeClock());
+        var sink = new RecordingSink();
+        engine.AddSink(sink);
+        var empty = engine.Current;
+        Assert.Same(empty, engine.Tick());
+        Assert.Empty(sink.Frames);
+        engine.Load(new AxisScript("L0", Resource("stroke", [new(0, 0), new(2, 1)])));
+        var ready = engine.Current;
+        for (var index = 0; index < 100; index++) Assert.Same(ready, engine.Tick());
+        Assert.Single(sink.Frames);
+        engine.Play();
+        engine.Pause();
+        var paused = engine.Current;
+        var sent = sink.Frames.Count;
+        for (var index = 0; index < 100; index++) Assert.Same(paused, engine.Tick());
+        Assert.Equal(sent, sink.Frames.Count);
+        engine.Seek(TimeSpan.FromSeconds(1));
+        Assert.Equal(sent + 1, sink.Frames.Count);
+        Assert.Equal(0.5, sink.Frames[^1].Values["L0"], precision: 10);
+    }
+
+    [Fact]
+    public void ConfigurationSnapshotsRemainStableWhenPoliciesChange()
+    {
+        using var engine = new HeadlessPlayerEngine();
+        engine.SetAxisConfiguration(new AxisConfiguration("L0", Minimum: 0.1));
+        var before = engine.AxisConfigurations;
+        Assert.Same(before, engine.AxisConfigurations);
+        engine.SetAxisConfiguration(new AxisConfiguration("L0", Minimum: 0.2));
+        Assert.Equal(0.1, before["L0"].Minimum);
+        Assert.Equal(0.2, engine.AxisConfigurations["L0"].Minimum);
+    }
+
+    [Fact]
     public void ExplicitTicksProduceInterpolatedValuesWithoutWaiting()
     {
         using var engine = new HeadlessPlayerEngine(new FakeClock());
