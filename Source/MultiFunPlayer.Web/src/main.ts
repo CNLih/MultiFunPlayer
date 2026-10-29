@@ -13,8 +13,275 @@ const apiClient = new MfpApiClient();
 let store = demoStore;
 let unsubscribeStore: () => void = () => {};
 let renderedRoute: Route | null = null;
+let statusRenderTimer: number | undefined;
+let demoTimer: number | undefined;
+let runtimePollTimer: number | undefined;
+let runtimePollActive = false;
+
+function syncRuntimeWork(state: AppState): void {
+  const active = !document.hidden && state.route === 'runtime';
+  const animateDemo = active && state.mode === 'demo' && state.media.some(source => source.mediaState?.playing);
+  if (animateDemo && demoTimer === undefined) demoTimer = window.setInterval(() => store.tick(), 100);
+  if (!animateDemo && demoTimer !== undefined) { clearInterval(demoTimer); demoTimer = undefined; }
+  if (!active || state.mode !== 'server') {
+    if (runtimePollTimer !== undefined) clearTimeout(runtimePollTimer);
+    runtimePollTimer = undefined;
+    return;
+  }
+  if (runtimePollTimer === undefined && !runtimePollActive) {
+    const delay = state.media.some(source => source.mediaState?.playing) ? 500 : 2000;
+    runtimePollTimer = window.setTimeout(async () => {
+      runtimePollTimer = undefined;
+      runtimePollActive = true;
+      try { await store.refreshRuntimeStatus(); } catch { /* reconnect status is shown by the store */ }
+      finally { runtimePollActive = false; syncRuntimeWork(store.getState()); }
+    }, delay);
+  }
+}
+
+function onStoreChanged(state: AppState, change: StoreChange = 'full'): void {
+  syncRuntimeWork(state);
+  if (document.hidden) return;
+  if (change === 'status') {
+    if (statusRenderTimer === undefined) statusRenderTimer = window.setTimeout(() => {
+      statusRenderTimer = undefined;
+      if (!document.hidden) render(store.getState(), 'status');
+    }, 100);
+  } else {
+    if (statusRenderTimer !== undefined) clearTimeout(statusRenderTimer);
+    statusRenderTimer = undefined;
+    render(state, change);
+  }
+}
 let routingDrag: { sourceId: string; pointerId: number } | null = null;
 let selectedAxisPreview: ModeledAxisName = 'L0';
+let selectedAxisTargetId: string | null = null;
+let followLiveTarget = false;
+
+interface WizardResult {
+  minimum: number;
+  maximum: number;
+  limitMinimum: number;
+  limitMaximum: number;
+  limitEnabled: boolean;
+}
+
+let wizardState = {
+  active: false,
+  step: "select-axes" as "select-axes" | "calibrating-min" | "calibrating-max" | "summary",
+  selectedAxes: ["L0", "L1", "L2", "R0", "R1", "R2"],
+  currentAxisIndex: 0,
+  results: {} as Record<string, WizardResult>,
+  tempMin: 0.2,
+  tempMax: 0.8,
+  backupAxes: [] as DeviceAxisSetting[],
+};
+
+let wizardPoseThrottleTimer: number | undefined;
+let wizardPendingPose: { axis: string; value: number } | null = null;
+
+function syncWizardPose(axisName: string, value: number): void {
+  const previewPose: Partial<Record<ModeledAxisName, number>> = {};
+  for (const name of modeledAxisNames) {
+    previewPose[name] = name === axisName ? value : (axisPreviewPositions[name] ?? 0.5);
+  }
+  updateOsrAxisPreview(previewPose);
+
+  wizardPendingPose = { axis: axisName, value };
+  if (wizardPoseThrottleTimer === undefined) {
+    wizardPoseThrottleTimer = window.setTimeout(() => {
+      wizardPoseThrottleTimer = undefined;
+      if (!wizardPendingPose) return;
+      const poseToSend = wizardPendingPose;
+      wizardPendingPose = null;
+      const state = store.getState();
+      const target = state.outputs.find((t) => t.id === selectedAxisTargetId);
+      if (target?.status === "online") {
+        void apiClient.sendDeviceAxesPose({ [poseToSend.axis]: poseToSend.value }, target.id, 50).catch(() => {});
+      }
+    }, 40);
+  }
+}
+
+function applyWizardResultsToForm(results: Record<string, WizardResult>): void {
+  const form = currentAxisForm();
+  if (!form) return;
+  for (const [axisName, res] of Object.entries(results)) {
+    const row = form.querySelector<HTMLElement>(`[data-axis-row="${axisName}"]`);
+    if (!row) continue;
+    const minInput = row.querySelector<HTMLInputElement>('[data-axis-field="minimum"]');
+    const maxInput = row.querySelector<HTMLInputElement>('[data-axis-field="maximum"]');
+    const limitMinInput = row.querySelector<HTMLInputElement>('[data-axis-field="limitMinimum"]');
+    const limitMaxInput = row.querySelector<HTMLInputElement>('[data-axis-field="limitMaximum"]');
+    const limitEnabledInput = row.querySelector<HTMLInputElement>('[data-axis-field="limitEnabled"]');
+    if (minInput) minInput.value = String(Number(res.minimum.toFixed(2)));
+    if (maxInput) maxInput.value = String(Number(res.maximum.toFixed(2)));
+    if (limitMinInput) limitMinInput.value = String(Number(res.limitMinimum.toFixed(2)));
+    if (limitMaxInput) limitMaxInput.value = String(Number(res.limitMaximum.toFixed(2)));
+    if (limitEnabledInput) limitEnabledInput.checked = res.limitEnabled;
+    synchronizeAxisRow(row, "minimum");
+    synchronizeAxisRow(row, "limitMinimum");
+  }
+}
+
+function renderCalibrationWizardModal(): string {
+  if (!wizardState.active) return "";
+
+  let stepBadge = "";
+  let wizardTitle = "";
+  let wizardSubtitle = "";
+  let bodyHtml = "";
+  let footerHtml = "";
+
+  if (wizardState.step === "select-axes") {
+    stepBadge = "Step 1 of 3 · Selection";
+    wizardTitle = "Select axes to calibrate";
+    wizardSubtitle = "Choose which mechanical axes to include in the teach-in calibration wizard.";
+    const selectedCount = wizardState.selectedAxes.length;
+    const cardsHtml = modeledAxisNames.map((axis) => {
+      const checked = wizardState.selectedAxes.includes(axis);
+      return `<label class="axis-wizard-axis-card"><input type="checkbox" data-axis-wizard-select="${axis}" ${checked ? "checked" : ""} /><div><strong>${axis}</strong><span>${escapeHtml(axisFriendlyNames[axis] ?? "")}</span></div></label>`;
+    }).join("");
+
+    bodyHtml = `
+      <div class="axis-wizard-tools">
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="6axes">Standard 6 axes</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="all">Select all</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-preset="none">Clear</button>
+      </div>
+      <div class="axis-wizard-axes-grid">
+        ${cardsHtml}
+      </div>
+      <p class="axis-wizard-instruction">For each selected axis, you will set the physical minimum, followed by the maximum with a safety threshold barrier.</p>
+    `;
+
+    footerHtml = `
+      <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel</button>
+      <button type="button" class="button button-primary" data-axis-wizard-start-calibration ${selectedCount === 0 ? "disabled" : ""}>Start calibration (${selectedCount} axes) &rarr;</button>
+    `;
+  } else if (wizardState.step === "calibrating-min") {
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex] ?? "L0";
+    const friendly = axisFriendlyNames[axis] ?? "";
+    const progress = `Axis ${wizardState.currentAxisIndex + 1} of ${wizardState.selectedAxes.length}`;
+    stepBadge = `Step 2 · ${progress} · Minimum`;
+    wizardTitle = `Set ${axis} minimum position`;
+    wizardSubtitle = `Move slider until ${axis} reaches its lowest/safe inward limit. 3D & device track live.`;
+
+    bodyHtml = `
+      <div class="axis-wizard-value-display">
+        <span>${axis} · ${escapeHtml(friendly)} Minimum</span>
+        <output data-axis-wizard-min-output>${percent(wizardState.tempMin)}</output>
+      </div>
+      <div class="axis-wizard-slider-wrapper">
+        <input type="range" min="0" max="0.95" step="0.01" value="${wizardState.tempMin}" data-axis-wizard-slider="min" aria-label="${axis} minimum limit position" />
+      </div>
+      <div class="axis-wizard-fine-tune">
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="min,-0.05">-5%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="min,-0.01">-1%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="min,0.01">+1%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="min,0.05">+5%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-set="min,0.2">Default (20%)</button>
+      </div>
+      <p class="axis-wizard-instruction">This point defines Output Minimum. In the next step, this value becomes the disabled barrier line for Maximum.</p>
+    `;
+
+    footerHtml = `
+      <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel wizard</button>
+      <button type="button" class="button button-primary" data-axis-wizard-next="min">Next: Set maximum &rarr;</button>
+    `;
+  } else if (wizardState.step === "calibrating-max") {
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex] ?? "L0";
+    const friendly = axisFriendlyNames[axis] ?? "";
+    const progress = `Axis ${wizardState.currentAxisIndex + 1} of ${wizardState.selectedAxes.length}`;
+    const isLast = wizardState.currentAxisIndex >= wizardState.selectedAxes.length - 1;
+    stepBadge = `Step 2 · ${progress} · Maximum`;
+    wizardTitle = `Set ${axis} maximum position`;
+    wizardSubtitle = `Move slider to physical highest safe position. Striped zone shows minimum threshold barrier.`;
+
+    const barrierPercent = (wizardState.tempMin * 100).toFixed(1);
+    const sliderMin = Math.min(0.99, wizardState.tempMin + 0.01);
+
+    bodyHtml = `
+      <div class="axis-wizard-value-display">
+        <span>${axis} · ${escapeHtml(friendly)} Maximum</span>
+        <output data-axis-wizard-max-output>${percent(wizardState.tempMax)}</output>
+      </div>
+      <div class="axis-wizard-slider-wrapper">
+        <div class="axis-wizard-barrier-track">
+          <div class="axis-wizard-barrier-zone" style="width: ${barrierPercent}%" title="Fixed minimum barrier: ${percent(wizardState.tempMin)}"></div>
+          <span class="axis-wizard-barrier-label" style="left: ${barrierPercent}%">Min: ${percent(wizardState.tempMin)}</span>
+          <input type="range" min="${sliderMin}" max="1" step="0.01" value="${wizardState.tempMax}" data-axis-wizard-slider="max" aria-label="${axis} maximum limit position" />
+        </div>
+      </div>
+      <div class="axis-wizard-fine-tune">
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="max,-0.05">-5%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="max,-0.01">-1%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="max,0.01">+1%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-adjust="max,0.05">+5%</button>
+        <button type="button" class="button button-secondary" data-axis-wizard-set="max,1.0">Top (100%)</button>
+      </div>
+      <div class="axis-wizard-limit-info">
+        <span aria-hidden="true">🛡️</span>
+        <span>Safety limit auto-adapted to <strong>${percent(Math.max(0, wizardState.tempMin - 0.01))} ~ ${percent(Math.min(1, wizardState.tempMax + 0.01))}</strong> with limit protection enabled.</span>
+      </div>
+    `;
+
+    footerHtml = `
+      <button type="button" class="button button-secondary" data-axis-wizard-prev="max">&larr; Back to minimum</button>
+      <button type="button" class="button button-primary" data-axis-wizard-next="max">${isLast ? "Finish & review summary &rarr;" : "Next axis &rarr;"}</button>
+    `;
+  } else if (wizardState.step === "summary") {
+    stepBadge = "Step 3 of 3 · Finalize";
+    wizardTitle = "Calibration summary";
+    wizardSubtitle = `Verified ranges and limits for ${Object.keys(wizardState.results).length} axes. Choose how to apply.`;
+
+    const rowsHtml = Object.entries(wizardState.results).map(([axis, res]) => {
+      const span = res.maximum - res.minimum;
+      return `<tr><td><strong>${axis}</strong> <small style="color:var(--subtle)">${escapeHtml(axisFriendlyNames[axis] ?? "")}</small></td><td><span class="rate-value">${percent(res.minimum)} ~ ${percent(res.maximum)}</span></td><td><span style="color:#38bdf8">${percent(res.limitMinimum)} ~ ${percent(res.limitMaximum)}</span></td><td><span class="status-badge status-online">${percent(span)} travel</span></td></tr>`;
+    }).join("");
+
+    bodyHtml = `
+      <div class="axis-wizard-table-wrap">
+        <table class="axis-wizard-table">
+          <thead>
+            <tr><th>Axis</th><th>Output range</th><th>Safety limit</th><th>Span</th></tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+      <p class="axis-wizard-instruction"><strong>Save draft:</strong> updates the form below so you can inspect before saving.<br/><strong>Save & apply:</strong> permanently persists to server and activates hardware output immediately.</p>
+    `;
+
+    footerHtml = `
+      <button type="button" class="button button-secondary" data-axis-wizard-cancel>Cancel</button>
+      <button type="button" class="button button-secondary" data-axis-wizard-save="draft">Save draft</button>
+      <button type="button" class="button button-primary" data-axis-wizard-save="apply">Save & apply to hardware</button>
+    `;
+  }
+
+  return `
+    <div class="axis-wizard-modal" data-axis-wizard-modal role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+      <div class="axis-wizard-dialog">
+        <div class="axis-wizard-header">
+          <div>
+            <span class="eyebrow">${stepBadge}</span>
+            <h2 id="wizard-title">${wizardTitle}</h2>
+            <p class="axis-wizard-subtitle">${wizardSubtitle}</p>
+          </div>
+          <button type="button" class="axis-wizard-close" data-axis-wizard-cancel aria-label="Close wizard">&times;</button>
+        </div>
+        <div class="axis-wizard-body">
+          ${bodyHtml}
+        </div>
+        <div class="axis-wizard-footer">
+          ${footerHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
 const axisPreviewPositions: Record<ModeledAxisName, number> = Object.fromEntries(
   modeledAxisNames.map((axis) => [axis, 0.5]),
 ) as Record<ModeledAxisName, number>;
@@ -136,9 +403,47 @@ function renderPreviewRange(axis: DeviceAxisSetting, group: 'output' | 'limit'):
   return `<div class="dual-range-control axis-preview-range${group === 'limit' && !axis.limitEnabled ? ' is-disabled' : ''}" data-axis-preview-range="${group}" style="--range-start:${minimum * 100}%;--range-end:${maximum * 100}%"><div class="dual-range-track"><span></span></div><input class="dual-range-input range-lower" data-axis-preview-field="${minimumField}" aria-label="Preview ${escapeHtml(axis.axis)} ${group === 'output' ? 'output minimum' : 'limit minimum'}" type="range" min="0" max="1" step="0.01" value="${minimum}" /><input class="dual-range-input range-upper" data-axis-preview-field="${maximumField}" aria-label="Preview ${escapeHtml(axis.axis)} ${group === 'output' ? 'output maximum' : 'limit maximum'}" type="range" min="0" max="1" step="0.01" value="${maximum}" /><div class="dual-range-values"><output data-axis-preview-range-value="minimum">${percent(minimum)}</output><output data-axis-preview-range-value="maximum">${percent(maximum)}</output></div></div>`;
 }
 
-function renderDeviceAxisVisualization(axes: DeviceAxisSetting[]): string {
+function renderDeviceAxisVisualization(axes: DeviceAxisSetting[], state?: AppState): string {
   const axis = axisOrDefault(axes, selectedAxisPreview);
-  return `<div class="axis-model-layout"><div class="axis-model-stage" data-axis-model-host role="img" aria-label="Interactive SR6 axis movement preview"><span class="axis-model-status">Loading SR6 model...</span></div><div class="axis-model-controls"><div class="axis-model-tabs" role="tablist" aria-label="Axis to preview">${modeledAxisNames.map((name) => `<button class="axis-model-tab${name === selectedAxisPreview ? ' is-active' : ''}" type="button" role="tab" aria-selected="${name === selectedAxisPreview}" data-axis-preview-select="${name}"><strong>${name}</strong><span>${escapeHtml(axisFriendlyNames[name])}</span></button>`).join('')}</div><div class="axis-preview-simulation"><div><strong>Simulation</strong><span data-axis-preview-simulation-status>6 axes</span></div><button class="button button-primary" type="button" data-axis-preview-simulate>Simulate all axes</button></div><div class="axis-model-selected"><div><p class="eyebrow">Selected movement</p><h3><span data-axis-preview-name>${axis.axis}</span> <small data-axis-preview-friendly>${escapeHtml(axisFriendlyNames[axis.axis])}</small></h3></div><output data-axis-preview-output>${percent(applyAxisPreview(axis, axisPreviewPositions[selectedAxisPreview]))}</output></div><label class="axis-preview-position"><span>Input position <output data-axis-preview-input-value>${percent(axisPreviewPositions[selectedAxisPreview])}</output></span><input data-axis-preview-position aria-label="${axis.axis} preview input position" type="range" min="0" max="1" step="0.01" value="${axisPreviewPositions[selectedAxisPreview]}" /></label><div class="axis-preview-presets"><button class="button button-secondary" type="button" data-axis-preview-preset="0">Minimum</button><button class="button button-secondary" type="button" data-axis-preview-preset="0.5">Center</button><button class="button button-secondary" type="button" data-axis-preview-preset="1">Maximum</button><button class="button button-secondary" type="button" data-axis-preview-sweep>Sweep axis</button></div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><strong>Output range</strong><span data-axis-preview-output-summary>${percent(axis.minimum)} to ${percent(axis.maximum)}</span></div>${renderPreviewRange(axis, 'output')}</div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><label class="axis-checkbox"><input data-axis-preview-field="limitEnabled" aria-label="Preview ${axis.axis} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Safety limit</label><span data-axis-preview-limit-summary>${axis.limitEnabled ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled'}</span></div>${renderPreviewRange(axis, 'limit')}</div><label class="axis-preview-reverse axis-checkbox"><input data-axis-preview-field="inverted" aria-label="Preview ${axis.axis} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> Reverse this axis</label><p class="axis-preview-travel" data-axis-travel-summary="${axis.axis}"></p></div></div>`;
+  const targets = state?.outputs ?? [];
+  if (selectedAxisTargetId === null || !targets.some((t) => t.id === selectedAxisTargetId)) {
+    selectedAxisTargetId = targets.find((t) => t.status === 'online')?.id ?? targets[0]?.id ?? null;
+  }
+  const activeTarget = targets.find((t) => t.id === selectedAxisTargetId);
+  const isOnline = activeTarget?.status === 'online';
+
+  const targetSelectorHtml = targets.length === 0
+    ? `<div class="axis-preview-target-empty"><span>No output targets configured.</span><button type="button" class="button button-secondary" data-route="outputs">Configure targets</button></div>`
+    : `<div class="axis-preview-target-row">
+        <select class="axis-preview-target-select" data-axis-target-select aria-label="Select output target for hardware sync">
+          ${targets.map((t) => `<option value="${escapeHtml(t.id)}"${t.id === selectedAxisTargetId ? ' selected' : ''}>${escapeHtml(t.name)} (${escapeHtml(t.protocol)}) · ${statusLabel(t.status)}</option>`).join('')}
+        </select>
+        <button type="button" class="button ${isOnline ? 'button-danger' : 'button-primary'}" data-axis-target-toggle="${escapeHtml(activeTarget?.id ?? '')}" ${activeTarget?.status === 'busy' ? 'disabled' : ''}>
+          <span class="status-dot ${statusClass(activeTarget?.status ?? 'offline')}" aria-hidden="true"></span>
+          <span>${isOnline ? 'Disconnect' : activeTarget?.status === 'busy' ? 'Connecting...' : 'Connect target'}</span>
+        </button>
+      </div>`;
+
+  const syncControlHtml = `
+    <div class="axis-preview-target-bar">
+      <div class="axis-preview-target-header">
+        <div>
+          <strong>Real device target</strong>
+          <span data-axis-target-status-label>${activeTarget ? `${escapeHtml(activeTarget.name)} · ${escapeHtml(activeTarget.endpoint)}` : 'Connect an output target to sync live movements'}</span>
+        </div>
+        <span class="status-badge ${statusClass(activeTarget?.status ?? 'offline')}" data-axis-target-badge>${statusDot(activeTarget?.status ?? 'offline')}<span data-axis-target-status-text>${statusLabel(activeTarget?.status ?? 'offline')}</span></span>
+      </div>
+      ${targetSelectorHtml}
+      <div class="axis-preview-target-sync-row">
+        <label class="axis-checkbox" title="Mirror real device movement during playback onto 3D model">
+          <input type="checkbox" data-axis-target-sync${followLiveTarget ? ' checked' : ''} />
+          <span>Follow live device movements</span>
+        </label>
+        <span data-axis-target-live-hint>${isOnline ? (followLiveTarget ? 'Live mirroring active' : 'Mirroring paused') : 'Device offline'}</span>
+      </div>
+    </div>`;
+
+  return `<div class="axis-model-layout"><div class="axis-model-stage" data-axis-model-host data-model-state="disabled" role="group" aria-label="Interactive SR6 axis movement preview"><div class="axis-model-status"><button type="button" class="button button-secondary" data-axis-model-enable>Enable 3D preview</button></div></div><div class="axis-model-controls">${syncControlHtml}<div class="axis-model-tabs" role="tablist" aria-label="Axis to preview">${modeledAxisNames.map((name) => `<button class="axis-model-tab${name === selectedAxisPreview ? ' is-active' : ''}" type="button" role="tab" aria-selected="${name === selectedAxisPreview}" data-axis-preview-select="${name}"><strong>${name}</strong><span>${escapeHtml(axisFriendlyNames[name])}</span></button>`).join('')}</div><div class="axis-preview-simulation"><div><strong>Simulation</strong><span data-axis-preview-simulation-status>6 axes</span></div><button class="button button-primary" type="button" data-axis-preview-simulate>Simulate all axes</button></div><div class="axis-model-selected"><div><p class="eyebrow">Selected movement</p><h3><span data-axis-preview-name>${axis.axis}</span> <small data-axis-preview-friendly>${escapeHtml(axisFriendlyNames[axis.axis])}</small></h3></div><output data-axis-preview-output>${percent(applyAxisPreview(axis, axisPreviewPositions[selectedAxisPreview]))}</output></div><label class="axis-preview-position"><span>Input position <output data-axis-preview-input-value>${percent(axisPreviewPositions[selectedAxisPreview])}</output></span><input data-axis-preview-position aria-label="${axis.axis} preview input position" type="range" min="0" max="1" step="0.01" value="${axisPreviewPositions[selectedAxisPreview]}" /></label><div class="axis-wizard-banner"><div><strong>Axis calibration wizard</strong><span>Teach physical min/max step-by-step with live 3D & hardware sync.</span></div><button type="button" class="button button-primary" data-axis-wizard-open>📐 Guided calibration</button></div><div class="axis-preview-presets"><button class="button button-secondary" type="button" data-axis-preview-preset="0">Minimum</button><button class="button button-secondary" type="button" data-axis-preview-preset="0.5">Center</button><button class="button button-secondary" type="button" data-axis-preview-preset="1">Maximum</button><button class="button button-secondary" type="button" data-axis-preview-sweep>Sweep axis</button></div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><strong>Output range</strong><span data-axis-preview-output-summary>${percent(axis.minimum)} to ${percent(axis.maximum)}</span></div>${renderPreviewRange(axis, 'output')}</div><div class="axis-preview-setting"><div class="axis-preview-setting-heading"><label class="axis-checkbox"><input data-axis-preview-field="limitEnabled" aria-label="Preview ${axis.axis} limit enabled" type="checkbox"${axis.limitEnabled ? ' checked' : ''} /> Safety limit</label><span data-axis-preview-limit-summary>${axis.limitEnabled ? `${percent(axis.limitMinimum)} to ${percent(axis.limitMaximum)}` : 'Disabled'}</span></div>${renderPreviewRange(axis, 'limit')}</div><label class="axis-preview-reverse axis-checkbox"><input data-axis-preview-field="inverted" aria-label="Preview ${axis.axis} inverted" type="checkbox"${axis.inverted ? ' checked' : ''} /> Reverse this axis</label><p class="axis-preview-travel" data-axis-travel-summary="${axis.axis}"></p></div></div>`;
 }
 
 function renderDualRange(axis: DeviceAxisSetting, group: 'output' | 'limit', minimum: number, maximum: number): string {
@@ -157,10 +462,11 @@ function renderAuthScreen(message = '') {
 async function connectRemoteStore(showError = false): Promise<boolean> {
   try {
     const remoteStore = createRemoteStore(apiClient);
-    await remoteStore.connect();
+    try { await remoteStore.connect(); } catch (error) { remoteStore.close(); throw error; }
     unsubscribeStore();
+    store.close();
     store = remoteStore;
-    unsubscribeStore = store.subscribe(render);
+    unsubscribeStore = store.subscribe(onStoreChanged);
     if (routes.some((route) => route.id === initialRoute)) store.setRoute(initialRoute);
     return true;
   } catch (error) {
@@ -227,10 +533,7 @@ function prepareRouteControls(main: HTMLElement) {
   if (outputForm) synchronizeOutputForm(outputForm, true);
   const axisForm = main.querySelector<HTMLFormElement>('[data-resource-form="axis"]');
   const axisModelHost = main.querySelector<HTMLElement>('[data-axis-model-host]');
-  if (axisForm && axisModelHost) {
-    updateAxisVisualization(axisForm);
-    void mountOsrAxisPreview(axisModelHost).then(() => updateAxisVisualization(axisForm));
-  }
+  if (axisForm && axisModelHost) updateAxisVisualization(axisForm);
   if (main.querySelector('[data-runtime-router]'))
     window.requestAnimationFrame(() => drawRuntimeWires());
 }
@@ -652,6 +955,12 @@ function updateStatusBindings(state: AppState) {
         speed.disabled = !available || !source.controls.canSetPlaybackSpeed;
         if (document.activeElement !== speed) speed.value = String(media?.playbackSpeed ?? 1);
       }
+      const scriptSelect = control.querySelector<HTMLSelectElement>(`[data-runtime-source-script="${source.id}"]`);
+      if (scriptSelect && document.activeElement !== scriptSelect) {
+        const route = state.runtimeRoutes.find((item) => item.sourceId === source.id);
+        const scriptId = route?.scriptId ?? '';
+        if (scriptSelect.value !== scriptId) scriptSelect.value = scriptId;
+      }
     });
     const healthList = main.querySelector<HTMLElement>('.health-list');
     const healthRows = healthList?.querySelectorAll<HTMLElement>('[data-health-index]');
@@ -678,6 +987,53 @@ function updateStatusBindings(state: AppState) {
     }
     return;
   }
+  if (state.route === 'settings') {
+    const targets = state.outputs;
+    if (selectedAxisTargetId === null || !targets.some((t) => t.id === selectedAxisTargetId)) {
+      selectedAxisTargetId = targets.find((t) => t.status === 'online')?.id ?? targets[0]?.id ?? null;
+    }
+    const activeTarget = targets.find((t) => t.id === selectedAxisTargetId);
+    const isOnline = activeTarget?.status === 'online';
+
+    const badge = main.querySelector<HTMLElement>('[data-axis-target-badge]');
+    if (badge && activeTarget) {
+      badge.className = `status-badge ${statusClass(activeTarget.status)}`;
+      badge.innerHTML = `${statusDot(activeTarget.status)}<span data-axis-target-status-text>${statusLabel(activeTarget.status)}</span>`;
+    }
+    const statusLabelEl = main.querySelector<HTMLElement>('[data-axis-target-status-label]');
+    if (statusLabelEl && activeTarget) {
+      statusLabelEl.textContent = `${activeTarget.name} · ${activeTarget.endpoint}`;
+    }
+    const toggleButton = main.querySelector<HTMLButtonElement>('[data-axis-target-toggle]');
+    if (toggleButton && activeTarget) {
+      toggleButton.dataset.axisTargetToggle = activeTarget.id;
+      toggleButton.className = `button ${isOnline ? 'button-danger' : 'button-primary'}`;
+      toggleButton.innerHTML = `<span class="status-dot ${statusClass(activeTarget.status)}" aria-hidden="true"></span><span>${isOnline ? 'Disconnect' : activeTarget.status === 'busy' ? 'Connecting...' : 'Connect target'}</span>`;
+      toggleButton.disabled = activeTarget.status === 'busy';
+    }
+    const liveHint = main.querySelector<HTMLElement>('[data-axis-target-live-hint]');
+    if (liveHint) {
+      liveHint.textContent = isOnline ? (followLiveTarget ? 'Live mirroring active' : 'Mirroring paused') : 'Device offline';
+    }
+
+    if (followLiveTarget) {
+      const host = main.querySelector<HTMLElement>('[data-axis-model-host]');
+      if (host && host.dataset.modelState === 'ready') {
+        const live = state.axisValues;
+        const liveValues: Partial<Record<ModeledAxisName, number>> = {};
+        for (const name of modeledAxisNames) {
+          if (live[name] !== undefined) liveValues[name] = live[name];
+        }
+        if (Object.keys(liveValues).length > 0) {
+          updateOsrAxisPreview(liveValues);
+          const currentAxisVal = liveValues[selectedAxisPreview];
+          const modelOutput = main.querySelector<HTMLOutputElement>('[data-axis-preview-output]');
+          if (modelOutput && currentAxisVal !== undefined) modelOutput.value = percent(currentAxisVal);
+        }
+      }
+    }
+    return;
+  }
 }
 
 function renderOutputs(state: AppState): string {
@@ -694,9 +1050,9 @@ function renderOutputForm(): string {
 function renderDeviceSettings(state: AppState): string {
   return `${pageHeading('Devices', 'Axis settings', 'Tune the fixed TCode axis set and save it as one device configuration.', '<button class="button button-primary" data-action="focus-axis-form">Edit axis configuration</button>')}
     <div class="notice notice-info"><strong>One configuration, 11 fixed axes.</strong><span>All rows are validated together, persisted in one server file, and applied to routed output sessions as one snapshot.</span></div>
-    <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Mechanical preview</p><h2 id="axis-map-title">SR6 axis model</h2></div><span class="result-count">L0 / L1 / L2 / R0 / R1 / R2</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes)}</div></section>
+    <section class="panel axis-spatial-panel" aria-labelledby="axis-map-title"><div class="panel-heading"><div><p class="eyebrow">Mechanical preview</p><h2 id="axis-map-title">SR6 axis model</h2></div><span class="result-count">L0 / L1 / L2 / R0 / R1 / R2</span></div><div data-axis-visualization>${renderDeviceAxisVisualization(state.deviceAxes, state)}</div></section>
     ${renderDeviceAxisForm(state.deviceAxes)}
-    ${renderServerSettings(state)}`;
+    ${renderServerSettings(state)}${renderCalibrationWizardModal()}`;
 }
 
 function renderDeviceAxisForm(axes: DeviceAxisSetting[]): string {
@@ -1260,6 +1616,148 @@ function handleClick(event: MouseEvent) {
     document.querySelector<HTMLElement>('.main-content')?.focus({ preventScroll: true });
     return;
   }
+  if (target.closest('[data-axis-wizard-open]')) {
+    event.preventDefault();
+    stopAxisPreviewAnimations();
+    wizardState.active = true;
+    wizardState.step = 'select-axes';
+    wizardState.selectedAxes = modeledAxisNames.slice(0, 6);
+    wizardState.currentAxisIndex = 0;
+    wizardState.results = {};
+    wizardState.backupAxes = store.getState().deviceAxes.map((a) => ({ ...a }));
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-wizard-cancel]')) {
+    event.preventDefault();
+    wizardState.active = false;
+    syncWizardPose('L0', 0.5);
+    render(store.getState(), 'full');
+    return;
+  }
+  const wizardPreset = target.closest<HTMLElement>('[data-axis-wizard-preset]')?.dataset.axisWizardPreset;
+  if (wizardPreset) {
+    event.preventDefault();
+    if (wizardPreset === '6axes') wizardState.selectedAxes = modeledAxisNames.slice(0, 6);
+    else if (wizardPreset === 'all') wizardState.selectedAxes = [...modeledAxisNames];
+    else if (wizardPreset === 'none') wizardState.selectedAxes = [];
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-wizard-start-calibration]')) {
+    event.preventDefault();
+    if (wizardState.selectedAxes.length === 0) return;
+    wizardState.step = 'calibrating-min';
+    wizardState.currentAxisIndex = 0;
+    const axis = wizardState.selectedAxes[0];
+    const existing = store.getState().deviceAxes.find((a) => a.axis === axis);
+    wizardState.tempMin = existing ? existing.minimum : 0.2;
+    syncWizardPose(axis, wizardState.tempMin);
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-wizard-next="min"]')) {
+    event.preventDefault();
+    wizardState.step = 'calibrating-max';
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    const existing = store.getState().deviceAxes.find((a) => a.axis === axis);
+    wizardState.tempMax = Math.max(Number((wizardState.tempMin + 0.05).toFixed(2)), existing ? existing.maximum : 0.8);
+    syncWizardPose(axis, wizardState.tempMax);
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-wizard-prev="max"]')) {
+    event.preventDefault();
+    wizardState.step = 'calibrating-min';
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    syncWizardPose(axis, wizardState.tempMin);
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-wizard-next="max"]')) {
+    event.preventDefault();
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    wizardState.results[axis] = {
+      minimum: wizardState.tempMin,
+      maximum: wizardState.tempMax,
+      limitMinimum: Math.max(0, Number((wizardState.tempMin - 0.01).toFixed(2))),
+      limitMaximum: Math.min(1, Number((wizardState.tempMax + 0.01).toFixed(2))),
+      limitEnabled: true,
+    };
+    wizardState.currentAxisIndex += 1;
+    if (wizardState.currentAxisIndex < wizardState.selectedAxes.length) {
+      wizardState.step = 'calibrating-min';
+      const nextAxis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+      const nextExisting = store.getState().deviceAxes.find((a) => a.axis === nextAxis);
+      wizardState.tempMin = nextExisting ? nextExisting.minimum : 0.2;
+      syncWizardPose(nextAxis, wizardState.tempMin);
+    } else {
+      wizardState.step = 'summary';
+      syncWizardPose(axis, 0.5);
+    }
+    render(store.getState(), 'full');
+    return;
+  }
+  const wizardAdjust = target.closest<HTMLElement>('[data-axis-wizard-adjust]')?.dataset.axisWizardAdjust;
+  if (wizardAdjust) {
+    event.preventDefault();
+    const [targetType, deltaStr] = wizardAdjust.split(',');
+    const delta = Number(deltaStr);
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    if (targetType === 'min') {
+      wizardState.tempMin = Math.max(0, Math.min(0.95, Number((wizardState.tempMin + delta).toFixed(2))));
+      syncWizardPose(axis, wizardState.tempMin);
+    } else {
+      wizardState.tempMax = Math.max(Number((wizardState.tempMin + 0.01).toFixed(2)), Math.min(1, Number((wizardState.tempMax + delta).toFixed(2))));
+      syncWizardPose(axis, wizardState.tempMax);
+    }
+    render(store.getState(), 'full');
+    return;
+  }
+  const wizardSet = target.closest<HTMLElement>('[data-axis-wizard-set]')?.dataset.axisWizardSet;
+  if (wizardSet) {
+    event.preventDefault();
+    const [targetType, valStr] = wizardSet.split(',');
+    const val = Number(valStr);
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    if (targetType === 'min') {
+      wizardState.tempMin = Math.max(0, Math.min(0.95, val));
+      syncWizardPose(axis, wizardState.tempMin);
+    } else {
+      wizardState.tempMax = Math.max(Number((wizardState.tempMin + 0.01).toFixed(2)), Math.min(1, val));
+      syncWizardPose(axis, wizardState.tempMax);
+    }
+    render(store.getState(), 'full');
+    return;
+  }
+  const wizardSave = target.closest<HTMLElement>('[data-axis-wizard-save]')?.dataset.axisWizardSave;
+  if (wizardSave) {
+    event.preventDefault();
+    applyWizardResultsToForm(wizardState.results);
+    wizardState.active = false;
+    syncWizardPose('L0', 0.5);
+    if (wizardSave === 'apply') {
+      const form = currentAxisForm();
+      if (form) {
+        const inputs = readDeviceAxisForm(form);
+        void store.setDeviceAxes(inputs)
+          .then(() => showToast('Calibrated axis configuration applied & saved!'))
+          .catch((err: unknown) => showToast(err instanceof Error ? err.message : 'Calibration save failed', 'error'));
+      }
+    } else {
+      showToast('Calibrated parameters saved to form draft.');
+    }
+    render(store.getState(), 'full');
+    return;
+  }
+  if (target.closest('[data-axis-model-enable]')) {
+    const host = document.querySelector<HTMLElement>('[data-axis-model-host]');
+    const form = currentAxisForm();
+    if (host && form) void mountOsrAxisPreview(host).then(() => {
+      if (form.isConnected) updateAxisVisualization(form);
+    });
+    return;
+  }
   const deleteFolderPath = target.closest<HTMLElement>('[data-delete-script-folder]')?.dataset.deleteScriptFolder;
   if (deleteFolderPath) {
     event.preventDefault();
@@ -1569,6 +2067,18 @@ function handleClick(event: MouseEvent) {
       void store.seekMediaSource(mediaSeekId, position).catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Media seek failed.', 'error'));
     }
   }
+  const axisTargetToggleId = target.closest<HTMLElement>('[data-axis-target-toggle]')?.dataset.axisTargetToggle;
+  if (axisTargetToggleId) {
+    const output = store.getState().outputs.find((item) => item.id === axisTargetToggleId);
+    if (output) {
+      const isOnline = output.status === 'online';
+      const request = isOnline ? store.disconnectOutputTarget(axisTargetToggleId) : store.connectOutputTarget(axisTargetToggleId);
+      void request
+        .then(() => showToast(isOnline ? `Disconnected from ${output.name}` : `Connected to ${output.name}`))
+        .catch((error: unknown) => showToast(error instanceof Error ? error.message : 'Output target action failed.', 'error'));
+    }
+    return;
+  }
   const outputId = target.closest<HTMLElement>('[data-output-toggle]')?.dataset.outputToggle;
   if (outputId) {
     const output = store.getState().outputs.find((item) => item.id === outputId);
@@ -1625,7 +2135,7 @@ async function handleSubmit(event: SubmitEvent) {
     }
     return;
   }
-  if (form.dataset.folderAdd) {
+  if (form.hasAttribute('data-folder-add')) {
     event.preventDefault();
     const input = form.querySelector<HTMLInputElement>('#script-folder-name');
     const path = input?.value.trim() ?? '';
@@ -1741,8 +2251,79 @@ function updateAxisVisualization(form: HTMLFormElement) {
 
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement | HTMLSelectElement;
+  const wizardSelectAxis = (target as HTMLInputElement).dataset?.axisWizardSelect;
+  if (wizardSelectAxis) {
+    const checked = (target as HTMLInputElement).checked;
+    if (checked && !wizardState.selectedAxes.includes(wizardSelectAxis)) {
+      wizardState.selectedAxes = [...wizardState.selectedAxes, wizardSelectAxis];
+    } else if (!checked && wizardState.selectedAxes.includes(wizardSelectAxis)) {
+      wizardState.selectedAxes = wizardState.selectedAxes.filter((a) => a !== wizardSelectAxis);
+    }
+    const startBtn = document.querySelector<HTMLButtonElement>('[data-axis-wizard-start-calibration]');
+    if (startBtn) {
+      startBtn.disabled = wizardState.selectedAxes.length === 0;
+      startBtn.textContent = `Start calibration (${wizardState.selectedAxes.length} axes) →`;
+    }
+    return;
+  }
+  const wizardSliderType = (target as HTMLInputElement).dataset?.axisWizardSlider;
+  if (wizardSliderType) {
+    const axis = wizardState.selectedAxes[wizardState.currentAxisIndex];
+    if (wizardSliderType === 'min') {
+      wizardState.tempMin = Number(target.value);
+      const out = document.querySelector<HTMLOutputElement>('[data-axis-wizard-min-output]');
+      if (out) out.value = percent(wizardState.tempMin);
+      syncWizardPose(axis, wizardState.tempMin);
+    } else {
+      let val = Number(target.value);
+      if (val < wizardState.tempMin + 0.01) {
+        val = Number((wizardState.tempMin + 0.01).toFixed(2));
+        target.value = String(val);
+      }
+      wizardState.tempMax = val;
+      const out = document.querySelector<HTMLOutputElement>('[data-axis-wizard-max-output]');
+      if (out) out.value = percent(wizardState.tempMax);
+      syncWizardPose(axis, wizardState.tempMax);
+    }
+    return;
+  }
+  if (target instanceof HTMLSelectElement && target.hasAttribute('data-axis-target-select')) {
+    selectedAxisTargetId = target.value;
+    const form = currentAxisForm();
+    if (form) updateAxisVisualization(form);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.hasAttribute('data-axis-target-sync')) {
+    followLiveTarget = target.checked;
+    if (followLiveTarget) {
+      stopAxisPreviewAnimations();
+      const live = store.getState().axisValues;
+      const liveValues: Partial<Record<ModeledAxisName, number>> = {};
+      for (const name of modeledAxisNames) {
+        if (live[name] !== undefined) liveValues[name] = live[name];
+      }
+      if (Object.keys(liveValues).length > 0) updateOsrAxisPreview(liveValues);
+    } else {
+      const form = currentAxisForm();
+      if (form) updateAxisPreviewPose(form);
+    }
+    const liveHint = document.querySelector<HTMLElement>('[data-axis-target-live-hint]');
+    const activeTarget = store.getState().outputs.find((t) => t.id === selectedAxisTargetId);
+    const isOnline = activeTarget?.status === 'online';
+    if (liveHint) {
+      liveHint.textContent = isOnline ? (followLiveTarget ? 'Live mirroring active' : 'Mirroring paused') : 'Device offline';
+    }
+    return;
+  }
   if (target instanceof HTMLInputElement && target.hasAttribute('data-axis-preview-position')) {
     stopAxisPreviewAnimations();
+    if (followLiveTarget) {
+      followLiveTarget = false;
+      const syncCheckbox = document.querySelector<HTMLInputElement>('[data-axis-target-sync]');
+      if (syncCheckbox) syncCheckbox.checked = false;
+      const liveHint = document.querySelector<HTMLElement>('[data-axis-target-live-hint]');
+      if (liveHint) liveHint.textContent = 'Manual preview';
+    }
     axisPreviewPositions[selectedAxisPreview] = Number(target.value);
     const form = currentAxisForm();
     if (form) updateAxisPreviewPose(form);
@@ -1848,14 +2429,30 @@ appRoot.addEventListener('submit', (event) => { void handleSubmit(event); });
 appRoot.addEventListener('input', handleInput);
 appRoot.addEventListener('change', handleInput);
 importInput.addEventListener('change', () => { void importSelectedFile(); });
-unsubscribeStore = store.subscribe(render);
-window.setInterval(() => {
-  if (store.getState().route === 'runtime') store.tick();
-}, 100);
-window.setInterval(() => {
-  if (store.getState().route === 'runtime')
-    void store.refreshRuntimeStatus().catch(() => undefined);
-}, 500);
+unsubscribeStore = store.subscribe(onStoreChanged);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopAxisPreviewAnimations();
+    if (statusRenderTimer !== undefined) clearTimeout(statusRenderTimer);
+    statusRenderTimer = undefined;
+  }
+  store.setVisible(!document.hidden);
+  onStoreChanged(store.getState(), 'status');
+});
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) store.setVisible(false); else store.close();
+  stopAxisPreviewAnimations();
+  destroyOsrAxisPreview();
+  if (demoTimer !== undefined) clearInterval(demoTimer);
+  if (runtimePollTimer !== undefined) clearTimeout(runtimePollTimer);
+  if (statusRenderTimer !== undefined) clearTimeout(statusRenderTimer);
+  demoTimer = runtimePollTimer = statusRenderTimer = undefined;
+});
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted) return;
+  store.setVisible(!document.hidden);
+  onStoreChanged(store.getState(), 'full');
+});
 window.addEventListener('resize', () => {
   if (store.getState().route === 'runtime') drawRuntimeWires();
 });

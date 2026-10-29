@@ -92,6 +92,16 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         }
     }
 
+    public event Action? Changed;
+
+    public bool HasConnectedRoute(IEnumerable<string> outputIds)
+    {
+        _gate.Wait();
+        try { return outputIds.Any(id => _targets.TryGetValue(id, out var target)
+            && target.Sink is not null && (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true)); }
+        finally { _gate.Release(); }
+    }
+
     public IReadOnlyList<OutputTargetResponse> List()
     {
         _gate.Wait();
@@ -151,6 +161,42 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
                 return false;
             target.Sink.Publish(frame);
             return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public int PublishPose(OutputFrame frame, string? targetId = null)
+    {
+        _gate.Wait();
+        try
+        {
+            var sent = 0;
+            if (!string.IsNullOrWhiteSpace(targetId))
+            {
+                if (_targets.TryGetValue(targetId, out var target) && target.Sink is not null)
+                {
+                    target.Sink.Publish(frame);
+                    sent++;
+                }
+                return sent;
+            }
+
+            foreach (var target in _targets.Values)
+            {
+                if (target.Sink is not null && (target.Transport?.IsConnected == true || target.Adapter?.IsConnected == true))
+                {
+                    try
+                    {
+                        target.Sink.Publish(frame);
+                        sent++;
+                    }
+                    catch { }
+                }
+            }
+            return sent;
         }
         finally
         {
@@ -507,6 +553,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
             if (target.HasConnected)
                 target.Reconnects++;
             target.HasConnected = true;
+            Changed?.Invoke();
             target.LastError = null;
             return true;
         }
@@ -527,10 +574,15 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
     {
         if (target.Sink is not null && target.Registration is null
             && !_runtimeRoutedOutputs.Contains(target.Definition.Id))
+        {
             target.Registration = _engine.AddSink(target.Sink);
+            var snapshot = _engine.Current;
+            if (snapshot.Values.Count > 0)
+                target.Sink.Publish(new OutputFrame(snapshot.Position, snapshot.Values));
+        }
     }
 
-    private static async Task DisconnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
+    private async Task DisconnectLockedAsync(RuntimeTarget target, CancellationToken cancellationToken)
     {
         CaptureDiagnostics(target);
         target.Registration?.Dispose();
@@ -549,6 +601,7 @@ public sealed class OutputTargetRegistry : IHostedService, IAsyncDisposable
         target.Sink = null;
         target.Adapter = null;
         target.Transport = null;
+        Changed?.Invoke();
     }
 
     private async Task PersistLockedAsync(CancellationToken cancellationToken)

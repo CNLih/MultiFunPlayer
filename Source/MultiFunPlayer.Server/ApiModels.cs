@@ -174,6 +174,11 @@ public sealed record SeekRequest(double PositionSeconds);
 
 public sealed record PlaybackSpeedRequest(double PlaybackSpeed);
 
+public sealed record DeviceAxesPoseRequest(
+    Dictionary<string, double>? Axes = null,
+    string? TargetId = null,
+    double? IntervalMilliseconds = null);
+
 public sealed record RuntimeSourceRouteRequest(
     string? SourceId,
     string[]? OutputIds,

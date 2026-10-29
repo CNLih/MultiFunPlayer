@@ -651,7 +651,9 @@ export function createMockStore() {
       }
       if (changed) notify('status');
     },
-    async refreshRuntimeStatus(): Promise<void> { notify('status'); },
+    async refreshRuntimeStatus(): Promise<void> { },
+    setVisible(_visible: boolean) { lastTickAt = Date.now(); },
+    close() { },
   };
 }
 
@@ -675,6 +677,35 @@ export function createRemoteStore(client: MfpApiClient) {
   state.serialDevices = [];
   const listeners = new Set<Listener>();
   let socket: WebSocket | undefined;
+  let socketPath: string | undefined;
+  let visible = !document.hidden;
+  let closed = false;
+  let socketGeneration = 0;
+  let reconnectTimer: number | undefined;
+  let reconnectDelay = 1000;
+  const closeSocket = () => {
+    socketGeneration++;
+    socket?.close();
+    socket = undefined;
+    if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  };
+  const openSocket = () => {
+    if (closed || !visible || !socketPath) return;
+    closeSocket();
+    const generation = socketGeneration;
+    socket = client.connectState(socketPath, status => {
+      if (generation !== socketGeneration || closed || !visible) return;
+      reconnectDelay = 1000;
+      applyStatus(status);
+    }, () => {
+      if (generation !== socketGeneration || closed || !visible) return;
+      handleStateDisconnect();
+      if (reconnectTimer !== undefined) return;
+      reconnectTimer = window.setTimeout(() => { reconnectTimer = undefined; openSocket(); }, reconnectDelay);
+      reconnectDelay = Math.min(30000, reconnectDelay * 2);
+    });
+  };
   let stateStreamDisconnected = false;
   let runtimeRefreshInFlight = false;
   const notify = (change: StoreChange = 'full') => listeners.forEach((listener) => listener(state, change));
@@ -1093,12 +1124,17 @@ export function createRemoteStore(client: MfpApiClient) {
       if (!target) return;
       void (target.status === 'online' ? this.disconnectOutputTarget(id) : this.connectOutputTarget(id));
     },
-    tick() { notify('status'); },
+    tick() { },
     async refreshRuntimeStatus(): Promise<void> {
-      if (runtimeRefreshInFlight || state.route !== 'runtime') return;
+      if (runtimeRefreshInFlight || state.route !== 'runtime' || !visible || closed) return;
       runtimeRefreshInFlight = true;
       try {
-        state.media = (await client.listMediaSources()).map(mediaFromResponse);
+        const [media, routes] = await Promise.all([
+          client.listMediaSources(),
+          client.listRuntimeRoutes(),
+        ]);
+        state.media = media.map(mediaFromResponse);
+        state.runtimeRoutes = routes.map(routeFromResponse);
         notify('status');
       } finally {
         runtimeRefreshInFlight = false;
@@ -1106,11 +1142,15 @@ export function createRemoteStore(client: MfpApiClient) {
     },
     async connect() {
       const capabilities: ApiCapabilities = await client.getCapabilities();
-      socket = client.connectState(capabilities.webSocketPath,
-        (status) => applyStatus(status, false), handleStateDisconnect);
+      socketPath = capabilities.webSocketPath;
       await refresh();
+      openSocket();
     },
-    close() { socket?.close(); },
+    setVisible(value: boolean) {
+      visible = value;
+      if (visible) openSocket(); else closeSocket();
+    },
+    close() { closed = true; closeSocket(); listeners.clear(); },
   };
 }
 

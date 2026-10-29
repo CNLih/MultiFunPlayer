@@ -319,6 +319,13 @@ public static class ServerProgram
         app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocument.Value));
         app.MapGet("/api/v1/axes", (HeadlessPlayerEngine engine) => Results.Ok(engine.Current.Values));
         app.MapGet("/api/v1/device-axes", (DeviceAxisRegistry registry) => Results.Ok(registry.List()));
+        app.MapPost("/api/v1/device-axes/pose", (DeviceAxesPoseRequest request, OutputTargetRegistry targets) =>
+        {
+            var values = request.Axes ?? new Dictionary<string, double>();
+            var frame = new OutputFrame(TimeSpan.Zero, values, request.IntervalMilliseconds ?? 50);
+            var count = targets.PublishPose(frame, request.TargetId);
+            return Results.Ok(new { sent = count });
+        });
         app.MapPut("/api/v1/device-axes", async (DeviceAxesRequest request,
             DeviceAxisRegistry registry, CancellationToken cancellationToken) =>
             MapDeviceAxesOperation(await registry.ReplaceAsync(request, cancellationToken)

@@ -327,6 +327,13 @@ export class MfpApiClient {
     });
   }
 
+  async sendDeviceAxesPose(axes: Record<string, number>, targetId?: string | null, intervalMilliseconds = 50): Promise<{ sent: number }> {
+    return this.request<{ sent: number }>('/device-axes/pose', {
+      method: 'POST',
+      body: JSON.stringify({ axes, targetId, intervalMilliseconds }),
+    });
+  }
+
   async listDeviceAxes(): Promise<ApiDeviceAxis[]> {
     return this.request<ApiDeviceAxis[]>('/device-axes');
   }
